@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../ui/api";
-import type { AppRunResult, AppSnapshot } from "../ui/types";
+import type { AppRunResult, AppSnapshot, OperationEntry } from "../ui/types";
 
 type RunOptions = {
   silent?: boolean;
@@ -16,6 +16,7 @@ export function useAppState() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyCount, setBusyCount] = useState(0);
   const [actionLabel, setActionLabel] = useState<string | null>(null);
+  const [operations, setOperations] = useState<OperationEntry[]>([]);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const busy = busyCount > 0;
 
@@ -44,10 +45,19 @@ export function useAppState() {
   const execute = useCallback(async (action: () => Promise<AppRunResult>, options?: RunOptions) => {
     const silent = options?.silent === true;
     const label = options?.label ?? "Action in progress...";
+    const operationId = crypto.randomUUID();
+    const startedAt = Date.now();
     try {
       if (!silent) {
         setBusyCount((count) => count + 1);
         setActionLabel(label);
+        const operation: OperationEntry = {
+          id: operationId,
+          label,
+          status: "running",
+          startedAt: new Date(startedAt).toISOString()
+        };
+        setOperations((items) => [operation, ...items].slice(0, 6));
       }
       setError(null);
       setNotice(null);
@@ -55,11 +65,31 @@ export function useAppState() {
       if (result && typeof result === "object" && "services" in result) {
         startTransition(() => setState(result));
       }
-      if (!silent && options?.successLabel) setNotice(options.successLabel);
+      if (!silent) {
+        const finishedAt = Date.now();
+        setOperations((items) => items.map((item) => item.id === operationId ? {
+          ...item,
+          status: "success",
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: finishedAt - startedAt,
+          message: options?.successLabel
+        } : item));
+        if (options?.successLabel) setNotice(options.successLabel);
+      }
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
+      if (!silent) {
+        const finishedAt = Date.now();
+        setOperations((items) => items.map((item) => item.id === operationId ? {
+          ...item,
+          status: "error",
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: finishedAt - startedAt,
+          message
+        } : item));
+      }
       throw err;
     } finally {
       if (!silent) {
@@ -88,5 +118,5 @@ export function useAppState() {
     return () => window.clearInterval(timer);
   }, [busy, refresh]);
 
-  return useMemo(() => ({ state, loading, error, notice, busy, actionLabel, refresh, run, setError }), [state, loading, error, notice, busy, actionLabel, refresh, run]);
+  return useMemo(() => ({ state, loading, error, notice, busy, actionLabel, operations, refresh, run, setError }), [state, loading, error, notice, busy, actionLabel, operations, refresh, run]);
 }

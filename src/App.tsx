@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Shell } from "./components/Shell";
 import { TrayPanel } from "./components/TrayPanel";
+import { Button } from "./components/Button";
 import { useAppState } from "./stores/useAppState";
 import type { HostInfo, PageKey, ServiceInfo } from "./ui/types";
 import { OverviewPage } from "./pages/Overview";
@@ -15,9 +16,10 @@ import { SslPage } from "./pages/Ssl";
 import { LogsPage } from "./pages/Logs";
 import { SettingsPage } from "./pages/Settings";
 import { I18nProvider, useT } from "./ui/i18n";
+import { api } from "./ui/api";
 
 export default function App() {
-  const { state, loading, error, notice, busy, actionLabel, run, refresh } = useAppState();
+  const { state, loading, error, notice, busy, actionLabel, operations, run, refresh } = useAppState();
   const [page, setPageState] = useState<PageKey>(() => pageFromHash());
   const [selectedHost, setSelectedHost] = useState<HostInfo | undefined>();
   const [editingHost, setEditingHost] = useState<HostInfo | undefined>();
@@ -72,6 +74,7 @@ export default function App() {
         notice={notice}
         busy={busy}
         actionLabel={actionLabel}
+        operations={operations}
         run={run}
         selectedHost={selectedHost}
         setSelectedHost={setSelectedHost}
@@ -99,6 +102,7 @@ function AppContent({
   notice,
   busy,
   actionLabel,
+  operations,
   run,
   selectedHost,
   setSelectedHost,
@@ -114,6 +118,7 @@ function AppContent({
   notice: string | null;
   busy: boolean;
   actionLabel: string | null;
+  operations: ReturnType<typeof useAppState>["operations"];
   run: ReturnType<typeof useAppState>["run"];
   selectedHost?: HostInfo;
   setSelectedHost: (host?: HostInfo) => void;
@@ -133,7 +138,8 @@ function AppContent({
         </div>
       )}
       {notice && <div className="success-banner">{t(notice)}</div>}
-      {error && <div className="error-banner">{t(error)}</div>}
+      {error && <SmartError message={error} run={run} />}
+      {operations.length > 0 && <OperationCenter operations={operations} />}
       {page === "overview" && <OverviewPage state={state} run={run} selectedHost={selectedHost} selectHost={setSelectedHost} editHost={editHost} />}
       {page === "hosts" && <HostsPage state={state} run={run} selected={selectedHost} setSelected={setSelectedHost} editHost={editHost} />}
       {page === "host-editor" && <HostEditorPage state={state} initial={editingHost} run={run} back={() => setPage("hosts")} />}
@@ -146,6 +152,58 @@ function AppContent({
       {page === "settings" && <SettingsPage state={state} run={run} />}
     </Shell>
   );
+}
+
+function OperationCenter({ operations }: { operations: ReturnType<typeof useAppState>["operations"] }) {
+  const t = useT();
+  return (
+    <div className="operation-center" title={String(t("Recent actions"))}>
+      <div className="operation-title">
+        <strong>{t("Action Center")}</strong>
+        <span>{operations.filter((item) => item.status === "running").length} {t("active")}</span>
+      </div>
+      <div className="operation-list">
+        {operations.slice(0, 3).map((item) => (
+          <div className={`operation-item operation-${item.status}`} key={item.id} title={item.message ? String(t(item.message)) : String(t(item.label))}>
+            <i />
+            <strong>{t(item.label)}</strong>
+            <small>{item.status === "running" ? t("Running") : item.durationMs ? `${Math.max(1, Math.round(item.durationMs / 1000))}s` : t(item.status)}</small>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SmartError({ message, run }: { message: string; run: ReturnType<typeof useAppState>["run"] }) {
+  const t = useT();
+  const help = errorHelp(message);
+  return (
+    <div className="smart-error">
+      <div>
+        <strong>{t(help.title)}</strong>
+        <span>{t(message)}</span>
+        <small>{t(help.hint)}</small>
+      </div>
+      {help.action === "sync-hosts" && <Button onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>{t("Fix")}</Button>}
+      {help.action === "repair" && <Button onClick={() => void run(() => api.repairEnvironment(), { label: "Repairing environment..." })}>{t("Fix")}</Button>}
+      {help.action === "install" && <Button onClick={() => void run(() => api.installAllMissingDependencies(), { label: "Installing missing service dependencies..." })}>{t("Install Missing")}</Button>}
+    </div>
+  );
+}
+
+function errorHelp(message: string) {
+  const text = message.toLowerCase();
+  if (text.includes("hosts file") || text.includes("not mapped")) {
+    return { title: "Hosts file issue", hint: "Sync the Windows hosts file and approve administrator access.", action: "sync-hosts" };
+  }
+  if (text.includes("executable was not found") || text.includes("not found or installed")) {
+    return { title: "Missing dependency", hint: "Install missing service files or detect installed tools.", action: "install" };
+  }
+  if (text.includes("cannot start") || text.includes("did not start") || text.includes("port")) {
+    return { title: "Service startup issue", hint: "Run automatic repair to refresh configs, ports and service state.", action: "repair" };
+  }
+  return { title: "Action failed", hint: "Check the details, then retry the action or open Logs.", action: undefined };
 }
 
 function useNativeTooltips(t: (value: string) => string | number | null | undefined, page: PageKey) {

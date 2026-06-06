@@ -1,4 +1,4 @@
-import { Database, ExternalLink, Folder, Globe2, List, MoreVertical, Play, Plus, Search, Terminal } from "lucide-react";
+import { Database, ExternalLink, Folder, Globe2, List, MoreVertical, Play, Plus, Search, Star, Terminal, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, saveJsonFile } from "../ui/dialogs";
@@ -8,6 +8,7 @@ import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { TopServices } from "../components/TopServices";
 import { hostReadinessScore, readinessClass, readinessLabel } from "../ui/readiness";
+import { useStoredList } from "../ui/preferences";
 
 export function OverviewPage({
   state,
@@ -25,7 +26,20 @@ export function OverviewPage({
   const selected = state.hosts.find((host) => host.id === selectedHost?.id) ?? state.hosts.find((host) => host.domain === "shop.test") ?? state.hosts[0];
   const [query, setQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
-  const visibleHosts = useMemo(() => state.hosts.filter((host) => `${host.domain} ${host.rootFolder}`.toLowerCase().includes(query.toLowerCase())), [query, state.hosts]);
+  const favorites = useStoredList("localstack.favoriteHosts");
+  const visibleHosts = useMemo(() => state.hosts
+    .filter((host) => `${host.domain} ${host.rootFolder}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => Number(favorites.items.includes(b.id)) - Number(favorites.items.includes(a.id)) || a.domain.localeCompare(b.domain)), [favorites.items, query, state.hosts]);
+  const issues = useMemo(() => {
+    const stoppedServices = state.services.filter((service) => service.autostart && service.status !== "running").length;
+    const weakHosts = state.hosts.filter((host) => hostReadinessScore(state, host) < 100).length;
+    const sslIssues = state.hosts.filter((host) => host.ssl && !state.certificates.some((cert) => cert.domain === host.domain && cert.trusted)).length;
+    return [
+      { key: "services", label: "Autostart services stopped", count: stoppedServices, action: () => run(api.startAll, { label: "Starting all services..." }) },
+      { key: "hosts", label: "Hosts need attention", count: weakHosts, action: () => run(() => api.repairEnvironment(), { label: "Repairing environment..." }) },
+      { key: "ssl", label: "SSL trust checks", count: sslIssues, action: () => run(() => api.openMainPage("ssl"), { label: "Opening SSL..." }) }
+    ].filter((item) => item.count > 0);
+  }, [run, state]);
   const portCards = useMemo(() => {
     const serviceForPort = (port: number) => state.services.find((service) => service.ports.includes(port));
     return [
@@ -63,6 +77,19 @@ export function OverviewPage({
         onOpenSite={() => selected && void run(() => api.openHost(selected.id), { label: `Opening ${selected.domain}...` })}
         onToggleService={(serviceId, running) => void run(() => running ? api.stopService(serviceId) : api.startService(serviceId), { label: `${running ? "Stopping" : "Starting"} ${serviceId}...` })}
       />
+      {issues.length > 0 && (
+        <Panel title="Needs Attention">
+          <div className="issue-grid">
+            {issues.map((issue) => (
+              <button key={issue.key} className="issue-card" onClick={() => void issue.action()}>
+                <Wrench size={16} />
+                <strong>{issue.count}</strong>
+                <span>{issue.label}</span>
+              </button>
+            ))}
+          </div>
+        </Panel>
+      )}
       <div className="overview-grid">
         <section className="stack-left">
           <Panel
@@ -107,6 +134,7 @@ export function OverviewPage({
                   return (
                   <tr key={host.id} className={selected?.id === host.id ? "selected" : ""} onClick={() => selectHost(host)}>
                     <td>
+                      <button className={`star-button ${favorites.items.includes(host.id) ? "active" : ""}`} onClick={(event) => { event.stopPropagation(); favorites.toggle(host.id); }}><Star size={14} /></button>
                       <Globe2 size={18} />
                       <strong>{host.domain}</strong>
                     </td>

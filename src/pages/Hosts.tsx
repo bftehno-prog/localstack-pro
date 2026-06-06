@@ -1,4 +1,4 @@
-import { Copy, Download, ExternalLink, Filter, Folder, MoreVertical, Play, Plus, Search, ShieldCheck, Trash2, Upload, Wrench } from "lucide-react";
+import { Copy, Download, ExternalLink, Filter, Folder, MoreVertical, Play, Plus, Search, ShieldCheck, Star, Trash2, Upload, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, saveJsonFile } from "../ui/dialogs";
@@ -8,6 +8,7 @@ import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { hostUrl } from "./Overview";
 import { hostReadinessScore, readinessClass, readinessLabel } from "../ui/readiness";
+import { useStoredBoolean, useStoredList } from "../ui/preferences";
 
 export function HostsPage({
   state,
@@ -30,8 +31,11 @@ export function HostsPage({
   const [ssl, setSsl] = useState("SSL: All");
   const [readinessFilter, setReadinessFilter] = useState("All Readiness");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [tab, setTab] = useState("General");
   const [diagnostics, setDiagnostics] = useState<HostDiagnosticReport | null>(null);
+  const favorites = useStoredList("localstack.favoriteHosts");
+  const [compactRows, setCompactRows] = useStoredBoolean("localstack.hosts.compactRows", false);
   useEffect(() => {
     if (selected && !state.hosts.some((item) => item.id === selected.id)) {
       setSelected(state.hosts[0]);
@@ -87,7 +91,7 @@ export function HostsPage({
       || (readinessFilter === "Ready" && score === 100)
       || (readinessFilter === "Needs Attention" && score < 100);
     return matchesQuery && matchesStatus && matchesEnvironment && matchesPhp && matchesSsl && matchesReadiness;
-  }), [environment, phpVersion, query, readinessFilter, ssl, state, status]);
+  }).sort((a, b) => Number(favorites.items.includes(b.id)) - Number(favorites.items.includes(a.id)) || a.domain.localeCompare(b.domain)), [environment, favorites.items, phpVersion, query, readinessFilter, ssl, state, status]);
   return (
     <div className="page-grid">
       <section>
@@ -110,11 +114,14 @@ export function HostsPage({
             <Button icon={<Wrench size={16} />} disabled={!host} onClick={() => host && void repair(host)}>
               Repair Host
             </Button>
-            <Button variant="danger" icon={<Trash2 size={16} />} disabled={!host} onClick={() => host && void deleteSelected(host)}>
+              <Button variant="danger" icon={<Trash2 size={16} />} disabled={!host} onClick={() => host && void deleteSelected(host)}>
               Delete
             </Button>
             <Button icon={<ShieldCheck size={16} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>
               Sync Hosts File
+            </Button>
+            <Button icon={<Star size={16} />} onClick={() => host && favorites.toggle(host.id)} disabled={!host}>
+              {host && favorites.items.includes(host.id) ? "Unpin" : "Pin"}
             </Button>
           </div>
         </div>
@@ -139,8 +146,9 @@ export function HostsPage({
                 </div>
               )}
             </div>
+            <Button onClick={() => setCompactRows((value) => !value)}>{compactRows ? "Comfortable Rows" : "Compact Rows"}</Button>
           </div>
-          <table className="data-table hosts-table">
+          <table className={`data-table hosts-table ${compactRows ? "compact-table" : ""}`}>
             <thead>
               <tr>
                 <th></th>
@@ -161,7 +169,7 @@ export function HostsPage({
                 return (
                 <tr key={row.id} className={host?.id === row.id ? "selected" : ""} onClick={() => setSelected(row)}>
                   <td><input type="checkbox" checked={host?.id === row.id} readOnly /></td>
-                  <td><strong>{row.domain}</strong><small>{hostUrl(row)}</small></td>
+                  <td><button className={`star-button ${favorites.items.includes(row.id) ? "active" : ""}`} onClick={(event) => { event.stopPropagation(); favorites.toggle(row.id); }}><Star size={14} /></button><strong>{row.domain}</strong><small>{hostUrl(row)}</small></td>
                   <td><StatusDot status={row.status} /></td>
                   <td><span className="pill blue">{row.environment}</span></td>
                   <td>{row.phpVersion}</td>
@@ -172,7 +180,18 @@ export function HostsPage({
                   <td className="row-actions">
                     <Button variant="icon" icon={<Play size={15} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openHost(row.id), { label: `Opening ${row.domain}...` }); }} />
                     <Button variant="icon" icon={<Folder size={15} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(row.rootFolder), { label: `Opening ${row.rootFolder}...` }); }} />
-                    <Button variant="icon" icon={<MoreVertical size={15} />} onClick={(event) => { event.stopPropagation(); editHost(row); }} />
+                    <div className="menu-anchor">
+                      <Button variant="icon" aria-label="More host actions" icon={<MoreVertical size={15} />} onClick={(event) => { event.stopPropagation(); setOpenMenuId(openMenuId === row.id ? null : row.id); }} />
+                      {openMenuId === row.id && (
+                        <div className="action-menu" onMouseLeave={() => setOpenMenuId(null)}>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); editHost(row); }}>Edit</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void run(() => api.duplicateHost(row.id), { label: `Duplicating ${row.domain}...` }); }}>Duplicate</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void diagnose(row); }}>Diagnose</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void repair(row); }}>Repair Host</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void deleteSelected(row); }}>Delete</button>
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
                 );
