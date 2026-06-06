@@ -123,6 +123,7 @@ function AppContent({
   editHost: (host?: HostInfo) => void;
 }) {
   const t = useT();
+  useNativeTooltips(t, page);
   return (
     <Shell page={page} setPage={setPage} state={state}>
       {busy && (
@@ -145,4 +146,26 @@ function AppContent({
       {page === "settings" && <SettingsPage state={state} run={run} />}
     </Shell>
   );
+}
+
+function useNativeTooltips(t: (value: string) => string | number | null | undefined, page: PageKey) {
+  useEffect(() => {
+    const apply = () => {
+      document.querySelectorAll<HTMLElement>("button, a, input, select, textarea, [role='button']").forEach((element) => {
+        if (element.title && element.dataset.autoTooltip !== "1") return;
+        const aria = element.getAttribute("aria-label")?.trim();
+        const placeholder = element.getAttribute("placeholder")?.trim();
+        const text = element.textContent?.replace(/\s+/g, " ").trim();
+        const label = aria || placeholder || text;
+        if (label) {
+          element.title = String(t(label) ?? label);
+          element.dataset.autoTooltip = "1";
+        }
+      });
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [page, t]);
 }

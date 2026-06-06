@@ -28,6 +28,8 @@ export function HostsPage({
   const [environment, setEnvironment] = useState("All Environments");
   const [phpVersion, setPhpVersion] = useState("All PHP Versions");
   const [ssl, setSsl] = useState("SSL: All");
+  const [readinessFilter, setReadinessFilter] = useState("All Readiness");
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [tab, setTab] = useState("General");
   const [diagnostics, setDiagnostics] = useState<HostDiagnosticReport | null>(null);
   useEffect(() => {
@@ -65,14 +67,27 @@ export function HostsPage({
     setDiagnostics(null);
     setSelected(next);
   };
+  const resetFilters = () => {
+    setQuery("");
+    setStatus("All Status");
+    setEnvironment("All Environments");
+    setPhpVersion("All PHP Versions");
+    setSsl("SSL: All");
+    setReadinessFilter("All Readiness");
+    setFilterMenuOpen(false);
+  };
   const filteredHosts = useMemo(() => state.hosts.filter((item) => {
     const matchesQuery = !query.trim() || `${item.domain} ${item.rootFolder} ${item.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase());
     const matchesStatus = status === "All Status" || item.status === status.toLowerCase();
     const matchesEnvironment = environment === "All Environments" || item.environment === environment;
     const matchesPhp = phpVersion === "All PHP Versions" || item.phpVersion === phpVersion;
     const matchesSsl = ssl === "SSL: All" || (ssl === "SSL: Enabled" ? item.ssl : !item.ssl);
-    return matchesQuery && matchesStatus && matchesEnvironment && matchesPhp && matchesSsl;
-  }), [environment, phpVersion, query, ssl, state.hosts, status]);
+    const score = hostReadinessScore(state, item);
+    const matchesReadiness = readinessFilter === "All Readiness"
+      || (readinessFilter === "Ready" && score === 100)
+      || (readinessFilter === "Needs Attention" && score < 100);
+    return matchesQuery && matchesStatus && matchesEnvironment && matchesPhp && matchesSsl && matchesReadiness;
+  }), [environment, phpVersion, query, readinessFilter, ssl, state, status]);
   return (
     <div className="page-grid">
       <section>
@@ -113,7 +128,17 @@ export function HostsPage({
             <select value={environment} onChange={(event) => setEnvironment(event.target.value)}><option>All Environments</option>{Array.from(new Set(state.hosts.map((item) => item.environment))).map((item) => <option key={item}>{item}</option>)}</select>
             <select value={phpVersion} onChange={(event) => setPhpVersion(event.target.value)}><option>All PHP Versions</option>{state.phpVersions.map((item) => <option key={item.version}>{item.version}</option>)}</select>
             <select value={ssl} onChange={(event) => setSsl(event.target.value)}><option>SSL: All</option><option>SSL: Enabled</option><option>SSL: Disabled</option></select>
-            <Button icon={<Filter size={16} />} onClick={() => { setQuery(""); setStatus("All Status"); setEnvironment("All Environments"); setPhpVersion("All PHP Versions"); setSsl("SSL: All"); }}>Filters</Button>
+            <div className="menu-anchor">
+              <Button icon={<Filter size={16} />} aria-label="Open filter presets" onClick={() => setFilterMenuOpen((value) => !value)}>Filters</Button>
+              {filterMenuOpen && (
+                <div className="action-menu" onMouseLeave={() => setFilterMenuOpen(false)}>
+                  <button onClick={resetFilters}>Reset Filters</button>
+                  <button onClick={() => { setStatus("running"); setFilterMenuOpen(false); }}>Running Hosts</button>
+                  <button onClick={() => { setSsl("SSL: Enabled"); setFilterMenuOpen(false); }}>SSL Enabled</button>
+                  <button onClick={() => { setReadinessFilter("Needs Attention"); setFilterMenuOpen(false); }}>Needs Attention</button>
+                </div>
+              )}
+            </div>
           </div>
           <table className="data-table hosts-table">
             <thead>

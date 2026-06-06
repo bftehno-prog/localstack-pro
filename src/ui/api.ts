@@ -195,6 +195,7 @@ export const api = {
   stopAll: () => call<AppSnapshot>("stop_all"),
   restartAll: () => call<AppSnapshot>("restart_all"),
   startService: (serviceId: string) => call<AppSnapshot>("start_service", { serviceId }),
+  startServiceProfile: (serviceIds: string[]) => call<AppSnapshot>("start_service_profile", { serviceIds }),
   stopService: (serviceId: string) => call<AppSnapshot>("stop_service", { serviceId }),
   restartService: (serviceId: string) => call<AppSnapshot>("restart_service", { serviceId }),
   saveService: (service: ServiceInfo) => call<AppSnapshot>("save_service", { service }),

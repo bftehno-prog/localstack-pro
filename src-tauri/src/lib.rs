@@ -255,6 +255,10 @@ fn start_service(service_id: String) -> AppResult<AppSnapshot> {
     services::start_service(service_id).map(cache_snapshot)
 }
 #[tauri::command]
+fn start_service_profile(service_ids: Vec<String>) -> AppResult<AppSnapshot> {
+    services::start_service_profile(service_ids).map(cache_snapshot)
+}
+#[tauri::command]
 fn stop_service(service_id: String) -> AppResult<AppSnapshot> {
     services::stop_service(service_id).map(cache_snapshot)
 }
@@ -562,6 +566,7 @@ pub fn run() {
             stop_all,
             restart_all,
             start_service,
+            start_service_profile,
             stop_service,
             restart_service,
             save_service,

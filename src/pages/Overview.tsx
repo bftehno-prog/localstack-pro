@@ -24,6 +24,7 @@ export function OverviewPage({
 }) {
   const selected = state.hosts.find((host) => host.id === selectedHost?.id) ?? state.hosts.find((host) => host.domain === "shop.test") ?? state.hosts[0];
   const [query, setQuery] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
   const visibleHosts = useMemo(() => state.hosts.filter((host) => `${host.domain} ${host.rootFolder}`.toLowerCase().includes(query.toLowerCase())), [query, state.hosts]);
   const portCards = useMemo(() => {
     const serviceForPort = (port: number) => state.services.find((service) => service.ports.includes(port));
@@ -76,7 +77,16 @@ export function OverviewPage({
                   New Host
                 </Button>
                 <Button icon={<ExternalLink size={16} />} onClick={() => void importHosts()}>Import</Button>
-                <Button variant="icon" icon={<MoreVertical size={17} />} onClick={() => void exportHosts()} />
+                <div className="menu-anchor">
+                  <Button variant="icon" aria-label="More host actions" icon={<MoreVertical size={17} />} onClick={() => setMoreOpen((value) => !value)} />
+                  {moreOpen && (
+                    <div className="action-menu" onMouseLeave={() => setMoreOpen(false)}>
+                      <button onClick={() => { setMoreOpen(false); void exportHosts(); }}>Export Hosts</button>
+                      <button onClick={() => { setMoreOpen(false); void run(() => api.openPath(`${state.appDataDir}\\hosts`), { label: "Opening hosts folder..." }); }}>Open Hosts Folder</button>
+                      <button onClick={() => { setMoreOpen(false); void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." }); }}>Sync Hosts File</button>
+                    </div>
+                  )}
+                </div>
               </div>
             }
           >

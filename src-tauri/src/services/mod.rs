@@ -71,6 +71,35 @@ pub fn restart_service(service_id: String) -> AppResult<crate::state::AppSnapsho
     Ok(snapshot)
 }
 
+pub fn start_service_profile(service_ids: Vec<String>) -> AppResult<crate::state::AppSnapshot> {
+    let _guard = service_operation_guard()?;
+    let store = Store::new()?;
+    let mut snapshot = store.load_static()?;
+    for service_id in service_ids {
+        let Some(index) = snapshot
+            .services
+            .iter()
+            .position(|service| service.id == service_id)
+        else {
+            continue;
+        };
+        if snapshot.services[index].status == ServiceStatus::Running
+            && service_is_live(&snapshot.services[index])
+        {
+            continue;
+        }
+        if let Err(err) = start_service_at_quick(&store, &mut snapshot, index) {
+            let name = snapshot.services[index].name.clone();
+            store.log(&mut snapshot, LogLevel::Error, &name, err.clone(), None);
+            snapshot.services[index].last_error = Some(err);
+            snapshot.services[index].status = ServiceStatus::Error;
+        }
+    }
+    sync_host_statuses(&mut snapshot);
+    store.save(&snapshot)?;
+    Ok(snapshot)
+}
+
 pub fn start_all() -> AppResult<crate::state::AppSnapshot> {
     let _guard = service_operation_guard()?;
     let store = Store::new()?;

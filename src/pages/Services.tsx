@@ -19,13 +19,12 @@ export function ServicesPage({
   const current = selected
     ? state.services.find((service) => service.id === selected.id) ?? selected
     : state.services[0];
-  const startProfile = async (name: string, serviceIds: string[]) => {
-    for (const serviceId of serviceIds) {
-      const service = state.services.find((item) => item.id === serviceId);
-      if (service && service.status !== "running") {
-        await run(() => api.startService(serviceId), { label: `Starting ${service.name} for ${name} profile...` });
-      }
-    }
+  const startProfile = (name: string, serviceIds: string[]) => {
+    const availableIds = serviceIds.filter((serviceId) => state.services.some((item) => item.id === serviceId));
+    void run(() => api.startServiceProfile(availableIds), {
+      label: `Starting ${name} profile...`,
+      successLabel: `${name} profile started.`
+    });
   };
   return (
     <div className="page-grid">
@@ -43,11 +42,11 @@ export function ServicesPage({
         </div>
         <Panel title="Service Profiles">
           <div className="profile-grid">
-            <Button icon={<Play size={15} />} onClick={() => void startProfile("WordPress", ["apache", "mysql", "mailpit"])}>WordPress</Button>
-            <Button icon={<Play size={15} />} onClick={() => void startProfile("Laravel", ["apache", "mysql", "redis", "mailpit"])}>Laravel</Button>
-            <Button icon={<Play size={15} />} onClick={() => void startProfile("Static", ["nginx", "node-proxy"])}>Static</Button>
-            <Button icon={<Play size={15} />} onClick={() => void startProfile("Database", ["mysql", "postgresql", "redis"])}>Database</Button>
-            <Button icon={<Play size={15} />} onClick={() => void startProfile("PHP-only", ["apache"])}>PHP-only</Button>
+            <Button icon={<Play size={15} />} title="Start Apache, MySQL and Mailpit" onClick={() => startProfile("WordPress", ["apache", "mysql", "mailpit"])}>WordPress</Button>
+            <Button icon={<Play size={15} />} title="Start Apache, MySQL, Redis and Mailpit" onClick={() => startProfile("Laravel", ["apache", "mysql", "redis", "mailpit"])}>Laravel</Button>
+            <Button icon={<Play size={15} />} title="Start Nginx and Node.js Proxy" onClick={() => startProfile("Static", ["nginx", "node-proxy"])}>Static</Button>
+            <Button icon={<Play size={15} />} title="Start MySQL, PostgreSQL and Redis" onClick={() => startProfile("Database", ["mysql", "postgresql", "redis"])}>Database</Button>
+            <Button icon={<Play size={15} />} title="Start Apache for PHP hosts" onClick={() => startProfile("PHP-only", ["apache"])}>PHP-only</Button>
           </div>
         </Panel>
         <div className="service-list">
