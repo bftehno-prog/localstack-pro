@@ -1,4 +1,4 @@
-import { ArrowLeft, ExternalLink, KeyRound, Plus, Save, TestTube2, Trash2, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitBranch, KeyRound, Plus, Save, TestTube2, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../ui/api";
 import type { AppRun, AppSnapshot, DatabaseInfo, HostInfo } from "../ui/types";
@@ -44,6 +44,8 @@ export function HostEditorPage({
   const [createDatabaseWithHost, setCreateDatabaseWithHost] = useState(!initial);
   const [databaseUser, setDatabaseUser] = useState(() => `${normalizeDatabaseName((initial ?? blank).database)}_user`);
   const [databasePassword, setDatabasePassword] = useState(() => generatePassword());
+  const [environmentPreset, setEnvironmentPreset] = useState("PHP CMS");
+  const [gitUrl, setGitUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [configOk, setConfigOk] = useState<string | null>(null);
   const forceHttps = host.rewriteRules.includes("FORCE_HTTPS=1");
@@ -93,6 +95,22 @@ export function HostEditorPage({
     update("envVariables", next);
   };
   const toggleForceHttps = () => update("rewriteRules", forceHttps ? host.rewriteRules.replace(/\n?FORCE_HTTPS=1/g, "") : `${host.rewriteRules}${host.rewriteRules ? "\n" : ""}FORCE_HTTPS=1`);
+  const applyPreset = (preset: string) => {
+    setEnvironmentPreset(preset);
+    const presetSlug = preset.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    setHost((current) => ({
+      ...current,
+      documentRoot: preset === "Next.js" || preset === "Static" ? "." : "public",
+      webServer: preset === "Next.js" || preset === "Static" ? "Nginx" : "Apache",
+      ssl: preset === "Production" || current.ssl,
+      database: preset === "Static" || preset === "Next.js" ? current.database : current.database || `${presetSlug}_db`,
+      tags: Array.from(new Set([...current.tags, presetSlug])),
+      updatedAt: new Date().toISOString()
+    }));
+    if (preset === "Next.js" || preset === "Static") {
+      setCreateDatabaseWithHost(false);
+    }
+  };
   const updateDatabaseName = (value: string) => {
     const previousUser = `${normalizeDatabaseName(host.database)}_user`;
     update("database", value);
@@ -161,9 +179,16 @@ export function HostEditorPage({
         <section className="editor-main">
           <Panel title="Basic Information">
             <div className="form-grid">
+              <label>Environment Preset<select value={environmentPreset} onChange={(event) => applyPreset(event.target.value)}><option>PHP CMS</option><option>WordPress</option><option>Laravel</option><option>Next.js</option><option>Static</option><option>Production</option></select></label>
               <label>Host Name *<input value={host.domain} onChange={(event) => updateDomain(event.target.value)} /></label>
               <label>Domain *<input value={host.domain} onChange={(event) => updateDomain(event.target.value)} /></label>
               <label>Description<input value={host.notes} onChange={(event) => update("notes", event.target.value)} /></label>
+            </div>
+          </Panel>
+          <Panel title="Git Import">
+            <div className="form-grid">
+              <label>Repository URL<input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder="https://github.com/user/project.git" /></label>
+              <Button icon={<GitBranch size={16} />} disabled={!gitUrl.trim()} onClick={() => void run(() => api.cloneProjectRepository(gitUrl, host.rootFolder), { label: `Cloning repository into ${host.rootFolder}...` })}>Import from Git</Button>
             </div>
           </Panel>
           <Panel title="Paths">

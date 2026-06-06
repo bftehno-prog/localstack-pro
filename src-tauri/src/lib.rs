@@ -9,6 +9,7 @@ mod services;
 mod settings;
 mod ssl;
 mod state;
+mod tools;
 mod tray;
 
 use state::{
@@ -458,6 +459,18 @@ fn open_database_admin(kind: String) -> AppResult<()> {
     settings::open_database_admin(kind)
 }
 #[tauri::command]
+fn scan_ports() -> AppResult<Vec<tools::PortInspection>> {
+    tools::scan_ports()
+}
+#[tauri::command]
+fn run_project_command(path: String, command_key: String) -> AppResult<String> {
+    tools::run_project_command(path, command_key)
+}
+#[tauri::command]
+fn clone_project_repository(url: String, folder: String) -> AppResult<String> {
+    tools::clone_project_repository(url, folder)
+}
+#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -615,6 +628,9 @@ pub fn run() {
             open_terminal,
             open_host,
             open_database_admin,
+            scan_ports,
+            run_project_command,
+            clone_project_repository,
             quit_app,
             hide_tray_panel,
             open_main_page,

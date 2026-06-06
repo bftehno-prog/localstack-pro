@@ -27,6 +27,7 @@ export function CmsPage({
   const [databasePassword, setDatabasePassword] = useState(() => generatePassword());
   const [overwrite, setOverwrite] = useState(false);
   const [formError, setFormError] = useState("");
+  const [lastInstallDomain, setLastInstallDomain] = useState("");
 
   useEffect(() => {
     void api.getCmsTemplates().then((items) => {
@@ -98,6 +99,8 @@ export function CmsPage({
       overwrite
     };
     await run(() => api.installCms(request), { label: `Installing ${selected.name} at ${request.domain}...` });
+    setLastInstallDomain(request.domain);
+    await run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file...", silent: true }).catch(() => undefined);
   };
   const refreshTemplates = async () => {
     const result = await run(api.getCmsTemplates, { label: "Refreshing CMS templates..." });
@@ -266,6 +269,15 @@ export function CmsPage({
             </div>
           </Panel>
           <Panel title="Install Flow">
+            <div className="wizard-steps">
+              {[
+                ["Project", rootFolder.trim() ? "ready" : "waiting"],
+                ["Database", selected?.requiresDatabase && createDatabase ? databaseName || "waiting" : "skip"],
+                ["Services", servicesReady ? "ready" : "start needed"],
+                ["SSL", ssl ? "enabled" : "off"],
+                ["Install", selected ? "ready" : "waiting"]
+              ].map(([name, value]) => <span key={name}><strong>{name}</strong><small>{value}</small></span>)}
+            </div>
             <div className="kv form-kv detail-kv">
               <span>Download</span><strong>{selected?.name ?? "CMS package"}</strong>
               <span>Extract to</span><strong>{rootFolder}\\{selected?.documentRoot ?? "public"}</strong>
@@ -277,6 +289,10 @@ export function CmsPage({
                 Download and Install
               </Button>
               <Button icon={<Globe2 size={16} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>Sync Hosts File</Button>
+              {lastInstallDomain && <Button icon={<ExternalLink size={16} />} onClick={() => {
+                const installed = state.hosts.find((host) => host.domain === lastInstallDomain);
+                void run(() => installed ? api.openHost(installed.id) : api.openUrl(`http://${lastInstallDomain}`), { label: `Opening ${lastInstallDomain}...` });
+              }}>Open Installed Site</Button>}
             </div>
           </Panel>
         </aside>

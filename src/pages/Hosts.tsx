@@ -230,6 +230,9 @@ export function HostsPage({
               <Button icon={<Wrench size={17} />} onClick={() => void repair(host)}>Repair Host</Button>
               <Button icon={<ShieldCheck size={17} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>Sync Hosts File</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.openPath(`${state.appDataDir}\\certs`), { label: "Opening certificates folder..." })}>SSL Certificate</Button>
+              <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "npm-install"), { label: `Running npm install for ${host.domain}...` })}>npm install</Button>
+              <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "npm-dev"), { label: `Starting Node dev server for ${host.domain}...` })}>npm run dev</Button>
+              <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "composer-install"), { label: `Running composer install for ${host.domain}...` })}>composer install</Button>
             </div>
           </Panel>
           {diagnostics?.hostId === host.id && (

@@ -239,6 +239,15 @@ export interface DatabaseDiagnosticReport {
   checks: DatabaseDiagnosticCheck[];
 }
 
+export interface PortInspection {
+  port: number;
+  status: string;
+  service?: string;
+  pid?: number;
+  process?: string;
+  action: string;
+}
+
 export interface LogFileTail {
   source: string;
   path: string;
@@ -246,7 +255,7 @@ export interface LogFileTail {
   lines: string[];
 }
 
-export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | string | void;
+export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | string | void;
 
 export type AppRun = (
   action: () => Promise<AppRunResult>,

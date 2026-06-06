@@ -67,6 +67,16 @@ export function OverviewPage({
       await run(() => api.exportHosts(path));
     }
   };
+  const openSelectedWithChecks = async (host: HostInfo) => {
+    await run(() => api.diagnoseHost(host.id), { label: `Checking ${host.domain}...` }).catch(() => undefined);
+    const serviceId = host.webServer.toLowerCase() === "nginx" ? "nginx" : "apache";
+    const service = state.services.find((item) => item.id === serviceId);
+    if (service?.status !== "running") {
+      await run(() => api.startService(serviceId), { label: `Starting ${host.webServer}...` });
+    }
+    await run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." }).catch(() => undefined);
+    await run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` });
+  };
   return (
     <>
       <TopServices
@@ -74,7 +84,7 @@ export function OverviewPage({
         onStartAll={() => void run(api.startAll, { label: "Starting all services..." })}
         onStopAll={() => void run(api.stopAll, { label: "Stopping all services..." })}
         onRestartAll={() => void run(api.restartAll, { label: "Restarting all services..." })}
-        onOpenSite={() => selected && void run(() => api.openHost(selected.id), { label: `Opening ${selected.domain}...` })}
+        onOpenSite={() => selected && void openSelectedWithChecks(selected)}
         onToggleService={(serviceId, running) => void run(() => running ? api.stopService(serviceId) : api.startService(serviceId), { label: `${running ? "Stopping" : "Starting"} ${serviceId}...` })}
       />
       {issues.length > 0 && (
@@ -211,7 +221,7 @@ export function OverviewPage({
             </Panel>
             <Panel title="Quick Actions">
               <div className="quick-grid">
-                <Button icon={<Globe2 size={17} />} onClick={() => void run(() => api.openHost(selected.id))}>
+                <Button icon={<Globe2 size={17} />} onClick={() => void openSelectedWithChecks(selected)}>
                   Open in Browser
                 </Button>
                 <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(selected.rootFolder))}>
@@ -222,6 +232,15 @@ export function OverviewPage({
                 </Button>
                 <Button icon={<Database size={17} />} onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"))}>
                   phpMyAdmin
+                </Button>
+                <Button icon={<Terminal size={17} />} onClick={() => void run(() => api.runProjectCommand(selected.rootFolder, "npm-install"), { label: `Running npm install for ${selected.domain}...` })}>
+                  npm install
+                </Button>
+                <Button icon={<Terminal size={17} />} onClick={() => void run(() => api.runProjectCommand(selected.rootFolder, "composer-install"), { label: `Running composer install for ${selected.domain}...` })}>
+                  composer install
+                </Button>
+                <Button icon={<Terminal size={17} />} onClick={() => void run(() => api.runProjectCommand(selected.rootFolder, "artisan-migrate"), { label: `Running migrations for ${selected.domain}...` })}>
+                  artisan migrate
                 </Button>
               </div>
             </Panel>

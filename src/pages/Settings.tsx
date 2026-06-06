@@ -2,10 +2,11 @@ import { Bell, Database, Folder, Globe2, Link, RefreshCw, Save, Settings as Sett
 import { useEffect, useRef, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
-import type { AppRun, AppSettings, AppSnapshot, HealthReport } from "../ui/types";
+import type { AppRun, AppSettings, AppSnapshot, HealthReport, PortInspection } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { useT } from "../ui/i18n";
+import { useStoredBoolean } from "../ui/preferences";
 
 const tabs = ["General", "Paths", "Startup", "Network", "Theme", "Notifications", "Integrations", "Updates", "Backups", "Advanced"];
 const themeOptions = ["Light", "Pearl", "Graphite", "Azure", "Forest", "Dark", "Midnight", "Carbon", "High Contrast", "System"];
@@ -22,6 +23,9 @@ export function SettingsPage({
   const [activeTab, setActiveTab] = useState("General");
   const [health, setHealth] = useState<HealthReport>();
   const [healthError, setHealthError] = useState("");
+  const [ports, setPorts] = useState<PortInspection[]>([]);
+  const [notificationLevel, setNotificationLevel] = useState(localStorage.getItem("localstack.notificationLevel") ?? "Errors only");
+  const [scheduledBackups, setScheduledBackups] = useStoredBoolean("localstack.scheduledBackups", false);
   const saveTimer = useRef<number | undefined>(undefined);
   const availableThemeOptions = themeOptions.includes(settings.theme) || !settings.theme
     ? themeOptions
@@ -56,6 +60,14 @@ export function SettingsPage({
     } catch (error) {
       setHealthError(error instanceof Error ? error.message : String(error));
     }
+  };
+  const scanPorts = async () => {
+    const result = await run(api.scanPorts, { label: "Scanning service ports..." });
+    if (Array.isArray(result)) setPorts(result as PortInspection[]);
+  };
+  const updateNotificationLevel = (value: string) => {
+    setNotificationLevel(value);
+    localStorage.setItem("localstack.notificationLevel", value);
   };
   const repairAll = async () => {
     setHealthError("");
@@ -97,6 +109,11 @@ export function SettingsPage({
       await run(() => api.createAppBackup(path), { label: "Creating application backup..." });
     }
   };
+  const backupAllDatabases = async () => {
+    for (const database of state.databases) {
+      await run(() => api.backupDatabase(database.id), { label: `Backing up ${database.name}...`, serial: true });
+    }
+  };
   const restoreBackup = async () => {
     const path = await pickZipFile();
     if (path) {
@@ -129,11 +146,17 @@ export function SettingsPage({
             <Switch label="Start Minimized to Tray" checked={settings.minimizeToTray} onChange={(value) => update("minimizeToTray", value)} />
             <Switch label="Close to System Tray" checked={settings.closeToTray} onChange={(value) => update("closeToTray", value)} />
           </Panel>}
-          {activeTab === "Network" && <Panel title="Network">
+          {activeTab === "Network" && <><Panel title="Network">
             <SettingNumber label="HTTP Port Start" value={settings.httpPortStart} onChange={(value) => update("httpPortStart", value)} />
             <SettingNumber label="HTTP Port End" value={settings.httpPortEnd} onChange={(value) => update("httpPortEnd", value)} />
             <Switch label="Proxy Enabled" checked={settings.proxyEnabled} onChange={(value) => update("proxyEnabled", value)} />
-          </Panel>}
+          </Panel><Panel title="Port Manager" action={<Button icon={<RefreshCw size={16} />} onClick={() => void scanPorts()}>Scan Ports</Button>}>
+            <table className="data-table compact-table">
+              <thead><tr><th>Port</th><th>Status</th><th>Service</th><th>PID</th><th>Process</th></tr></thead>
+              <tbody>{ports.map((port) => <tr key={port.port}><td><strong>{port.port}</strong></td><td>{port.status}</td><td>{port.service ?? "-"}</td><td>{port.pid ?? "-"}</td><td>{port.process ?? port.action}</td></tr>)}</tbody>
+            </table>
+            {ports.length === 0 && <p className="muted">{t("Click Scan Ports to inspect local service ports.")}</p>}
+          </Panel></>}
           {activeTab === "Theme" && <Panel title="Theme">
             <SettingSelect label="Theme" value={settings.theme} onChange={(value) => update("theme", value, true)} options={availableThemeOptions} />
             <SettingSelect label="UI Density" value={settings.uiDensity} onChange={(value) => update("uiDensity", value)} options={["Comfortable", "Compact"]} />
@@ -141,6 +164,7 @@ export function SettingsPage({
           {activeTab === "Notifications" && <Panel title="Notifications">
             <Switch label="Show Notifications" checked={settings.showNotifications} onChange={(value) => update("showNotifications", value)} />
             <Switch label="Play Sound on Events" checked={settings.playSound} onChange={(value) => update("playSound", value)} />
+            <SettingSelect label="Notification Level" value={notificationLevel} onChange={updateNotificationLevel} options={["Errors only", "Errors and completed actions", "All events"]} />
           </Panel>}
           {activeTab === "Integrations" && <Panel title="Integrations">
             <SettingSelect label="Preferred Browser" value={settings.preferredBrowser} onChange={(value) => update("preferredBrowser", value)} options={["Default System Browser", "Chrome", "Edge", "Firefox"]} />
@@ -153,11 +177,14 @@ export function SettingsPage({
           {activeTab === "Backups" && <Panel title="Backups">
             <SettingInput label="Backups Folder" value={settings.backupsFolder} onChange={(value) => update("backupsFolder", value)} />
             <SettingNumber label="Backup Retention Days" value={settings.backupRetentionDays} onChange={(value) => update("backupRetentionDays", value)} />
+            <Switch label="Scheduled Backups" checked={scheduledBackups} onChange={setScheduledBackups} />
             <div className="toolbar">
               <Button icon={<Save size={16} />} onClick={() => void createBackup()}>Create Backup</Button>
+              <Button icon={<Database size={16} />} onClick={() => void backupAllDatabases()}>Backup Databases</Button>
               <Button icon={<Upload size={16} />} onClick={() => void restoreBackup()}>Restore Backup</Button>
               <Button icon={<Folder size={16} />} onClick={() => void run(() => api.openPath(settings.backupsFolder))}>Open Backups</Button>
             </div>
+            <p className="muted">{scheduledBackups ? t("Scheduled backups are enabled for the local reminder panel.") : t("Scheduled backups are paused.")}</p>
           </Panel>}
           {activeTab === "Advanced" && <><Panel title="Logging">
               <SettingSelect label="Log Level" value={settings.logLevel} onChange={(value) => update("logLevel", value)} options={["Information", "Warning", "Error", "Debug"]} />
@@ -192,8 +219,27 @@ export function SettingsPage({
           <Panel title="Security Center">
             <SecurityCenter state={state} />
           </Panel>
+          <Panel title="Performance">
+            <PerformanceCenter state={state} />
+          </Panel>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function PerformanceCenter({ state }: { state: AppSnapshot }) {
+  const slowServices = state.services
+    .filter((service) => service.status === "running")
+    .sort((a, b) => (b.cpu + b.memoryMb / 128) - (a.cpu + a.memoryMb / 128))
+    .slice(0, 5);
+  const healthScore = Math.max(0, Math.round(100 - state.services.filter((service) => service.status === "error").length * 15 - state.hosts.filter((host) => host.status === "error").length * 12));
+  return (
+    <div className="security-list">
+      <div><strong>{healthScore}%</strong><span>Health Score</span><small>{state.services.filter((service) => service.status === "running").length} running services</small></div>
+      <div><strong>{state.system.cpu}%</strong><span>CPU</span><small>System load</small></div>
+      <div><strong>{state.system.memoryGb.toFixed(1)} GB</strong><span>Memory</span><small>Application snapshot</small></div>
+      <div><strong>{slowServices[0]?.name ?? "None"}</strong><span>Top Service</span><small>{slowServices[0] ? `${slowServices[0].cpu.toFixed(1)}% CPU, ${slowServices[0].memoryMb} MB` : "No running services"}</small></div>
     </div>
   );
 }

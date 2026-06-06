@@ -12,6 +12,7 @@ import type {
   HostInfo,
   LogFileTail,
   PhpVersion,
+  PortInspection,
   ServiceInfo
 } from "./types";
 
@@ -285,6 +286,9 @@ export const api = {
   openTerminal: (path: string) => call<void>("open_terminal", { path }),
   openHost: (hostId: string) => call<AppSnapshot>("open_host", { hostId }),
   openDatabaseAdmin: (kind: "phpmyadmin" | "adminer") => call<void>("open_database_admin", { kind }),
+  scanPorts: () => call<PortInspection[]>("scan_ports"),
+  runProjectCommand: (path: string, commandKey: string) => call<string>("run_project_command", { path, commandKey }),
+  cloneProjectRepository: (url: string, folder: string) => call<string>("clone_project_repository", { url, folder }),
   hideTrayPanel: () => call<void>("hide_tray_panel"),
   openMainPage: (page?: string) => call<void>("open_main_page", { page }),
   quit: () => call<void>("quit_app")
