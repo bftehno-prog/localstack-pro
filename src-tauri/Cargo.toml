@@ -1,0 +1,28 @@
+[package]
+name = "localstack-pro"
+version = "1.0.0"
+description = "LocalStack Pro"
+authors = ["LocalStack Pro"]
+edition = "2021"
+
+[lib]
+name = "localstack_pro_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+directories = "6"
+open = "5"
+rcgen = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.33"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

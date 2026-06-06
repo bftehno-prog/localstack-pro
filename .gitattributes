@@ -1,0 +1,1 @@
+src-tauri/bundled-services/packages/*.zip filter=lfs diff=lfs merge=lfs -text

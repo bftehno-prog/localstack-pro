@@ -1,0 +1,107 @@
+{
+  "generatedAt": "2026-06-06",
+  "packages": [
+    {
+      "id": "apache",
+      "archive": "packages/apache-httpd-2.4.67.zip",
+      "extractTo": "apache"
+    },
+    {
+      "id": "nginx",
+      "archive": "packages/nginx-1.29.8.zip",
+      "extractTo": "nginx"
+    },
+    {
+      "id": "php",
+      "archive": "packages/php-8.4.22-nts-Win32-vs17-x64.zip",
+      "extractTo": "php/php-8.4.22-nts-Win32-vs17-x64"
+    },
+    {
+      "id": "mysql",
+      "archive": "packages/mysql-9.7.0-winx64.zip",
+      "extractTo": "mysql"
+    },
+    {
+      "id": "mariadb",
+      "archive": "packages/mariadb-11.8.6-winx64.zip",
+      "extractTo": "mariadb"
+    },
+    {
+      "id": "postgresql",
+      "archive": "packages/postgresql-18.4-binaries.zip",
+      "extractTo": "postgresql"
+    },
+    {
+      "id": "redis",
+      "archive": "packages/Redis-x64-5.0.14.1.zip",
+      "extractTo": "redis/Redis-x64-5.0.14.1"
+    },
+    {
+      "id": "mailpit",
+      "archive": "packages/mailpit-windows-amd64.zip",
+      "extractTo": "mailpit"
+    },
+    {
+      "id": "nodejs",
+      "archive": "packages/node-v26.2.0-win-x64.zip",
+      "extractTo": "nodejs"
+    }
+  ],
+  "services": [
+    {
+      "id": "apache",
+      "version": "2.4.67",
+      "executable": "apache/Apache24/bin/httpd.exe"
+    },
+    {
+      "id": "nginx",
+      "version": "1.29.8",
+      "executable": "nginx/nginx-1.29.8/nginx.exe"
+    },
+    {
+      "id": "mysql",
+      "version": "9.7.0",
+      "executable": "mysql/mysql-9.7.0-winx64/bin/mysqld.exe"
+    },
+    {
+      "id": "mariadb",
+      "version": "11.8.6",
+      "executable": "mariadb/mariadb-11.8.6-winx64/bin/mariadbd.exe"
+    },
+    {
+      "id": "postgresql",
+      "version": "18.4",
+      "executable": "postgresql/pgsql/bin/postgres.exe"
+    },
+    {
+      "id": "redis",
+      "version": "5.0.14.1",
+      "executable": "redis/Redis-x64-5.0.14.1/redis-server.exe"
+    },
+    {
+      "id": "mailpit",
+      "version": "1.30.0",
+      "executable": "mailpit/mailpit.exe"
+    },
+    {
+      "id": "node-proxy",
+      "version": "26.2.0",
+      "executable": "nodejs/node-v26.2.0-win-x64/node.exe"
+    }
+  ],
+  "phpVersions": [
+    {
+      "version": "8.4.22",
+      "label": "8.4",
+      "executable": "php/php-8.4.22-nts-Win32-vs17-x64/php-cgi.exe",
+      "default": true,
+      "sapiMode": "CGI"
+    },
+    {
+      "version": "8.4.22-cli",
+      "label": "8.4 CLI",
+      "executable": "php/php-8.4.22-nts-Win32-vs17-x64/php.exe",
+      "sapiMode": "CGI"
+    }
+  ]
+}

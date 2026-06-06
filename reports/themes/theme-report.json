@@ -1,0 +1,340 @@
+{
+  "generatedAt": "2026-05-05T13:40:04.981Z",
+  "total": 9,
+  "failures": 0,
+  "results": [
+    {
+      "theme": "light",
+      "screenshot": "light.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 14.65,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 5.34,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 4.73,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "pearl",
+      "screenshot": "pearl.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 14.93,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 6.35,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 5.44,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "graphite",
+      "screenshot": "graphite.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 14.41,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 6.26,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 5.3,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "azure",
+      "screenshot": "azure.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 15.02,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 5.86,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 5.22,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "forest",
+      "screenshot": "forest.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 14.66,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 6.3,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 5.1,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "screenshot": "dark.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 9.42,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 4.79,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 5.39,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "midnight",
+      "screenshot": "midnight.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 14.07,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 4.62,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 5.47,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "carbon",
+      "screenshot": "carbon.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 13.37,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 4.79,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 6.02,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "theme": "high-contrast",
+      "screenshot": "high-contrast.png",
+      "checks": [
+        {
+          "selector": ".btn",
+          "label": "button",
+          "ratio": 12.03,
+          "ok": true
+        },
+        {
+          "selector": ".btn-primary",
+          "label": "primary button",
+          "ratio": 5.83,
+          "ok": true
+        },
+        {
+          "selector": ".btn-danger",
+          "label": "danger button",
+          "ratio": 7,
+          "ok": true
+        },
+        {
+          "selector": ".nav button.active",
+          "label": "active nav",
+          "ratio": 5.24,
+          "ok": true
+        },
+        {
+          "selector": ".pill.blue",
+          "label": "blue pill",
+          "ratio": 4.73,
+          "ok": true
+        }
+      ],
+      "issues": []
+    }
+  ]
+}
