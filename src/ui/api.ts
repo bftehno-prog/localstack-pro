@@ -5,6 +5,7 @@ import type {
   CertificateInfo,
   CmsInstallRequest,
   CmsTemplate,
+  ConfigFile,
   DatabaseInfo,
   DatabaseDiagnosticReport,
   HealthReport,
@@ -16,7 +17,8 @@ import type {
   ProjectInspection,
   ReleaseInfo,
   ServiceInfo,
-  SitePreview
+  SitePreview,
+  SslDiagnostic
 } from "./types";
 
 const now = new Date().toISOString();
@@ -297,6 +299,12 @@ export const api = {
   previewHost: (hostId: string) => call<SitePreview>("preview_host", { hostId }),
   exportPortableHost: (hostId: string, target: string) => call<string>("export_portable_host", { hostId, target }),
   checkLatestRelease: () => call<ReleaseInfo>("check_latest_release"),
+  downloadLatestReleaseInstaller: () => call<string>("download_latest_release_installer"),
+  installDownloadedUpdate: (path: string) => call<string>("install_downloaded_update", { path }),
+  readConfigFile: (path: string) => call<ConfigFile>("read_config_file", { path }),
+  saveConfigFile: (path: string, content: string) => call<string>("save_config_file", { path, content }),
+  createDiagnosticBundle: (target: string) => call<string>("create_diagnostic_bundle", { target }),
+  diagnoseSsl: (domain: string) => call<SslDiagnostic>("diagnose_ssl", { domain }),
   hideTrayPanel: () => call<void>("hide_tray_panel"),
   openMainPage: (page?: string) => call<void>("open_main_page", { page }),
   quit: () => call<void>("quit_app")

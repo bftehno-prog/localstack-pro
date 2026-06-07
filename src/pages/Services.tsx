@@ -1,4 +1,5 @@
 import { Box, Database, Download, FileText, Folder, MoreVertical, Play, RefreshCw, Search, Settings, Square } from "lucide-react";
+import { useState } from "react";
 import { api } from "../ui/api";
 import type { AppRun, AppSnapshot, ServiceInfo } from "../ui/types";
 import { Button } from "../components/Button";
@@ -19,12 +20,21 @@ export function ServicesPage({
   const current = selected
     ? state.services.find((service) => service.id === selected.id) ?? selected
     : state.services[0];
+  const [configPath, setConfigPath] = useState("");
+  const [configText, setConfigText] = useState("");
   const startProfile = (name: string, serviceIds: string[]) => {
     const availableIds = serviceIds.filter((serviceId) => state.services.some((item) => item.id === serviceId));
     void run(() => api.startServiceProfile(availableIds), {
       label: `Starting ${name} profile...`,
       successLabel: `${name} profile started.`
     });
+  };
+  const loadConfig = async (service: ServiceInfo) => {
+    const result = await run(() => api.readConfigFile(service.configPath), { label: `Reading ${service.name} config...` });
+    if (result && typeof result === "object" && "content" in result) {
+      setConfigPath(result.path);
+      setConfigText(result.content);
+    }
   };
   return (
     <div className="page-grid">
@@ -49,6 +59,19 @@ export function ServicesPage({
             <Button icon={<Play size={15} />} title="Start Apache for PHP hosts" onClick={() => startProfile("PHP-only", ["apache"])}>PHP-only</Button>
           </div>
         </Panel>
+        <Panel title="Dependency Graph">
+          <div className="dependency-graph">
+            {state.hosts.slice(0, 6).map((host) => (
+              <div key={host.id}>
+                <strong>{host.domain}</strong>
+                <span>{host.webServer}</span>
+                <span>PHP {host.phpVersion}</span>
+                <span>{host.database || "No DB"}</span>
+                <span>{host.ssl ? "SSL" : "No SSL"}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
         <div className="service-list">
           {state.services.map((service) => (
             <Panel key={service.id} className={current?.id === service.id ? "selected-panel" : ""}>
@@ -70,7 +93,7 @@ export function ServicesPage({
                     {service.status === "running" ? "Stop" : "Start"}
                   </Button>
                   <Button icon={<RefreshCw size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.restartService(service.id), { label: `Restarting ${service.name}...` }); }}>Restart</Button>
-                  <Button icon={<Settings size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(service.configPath), { label: `Opening ${service.name} config...` }); }}>Config</Button>
+                  <Button icon={<Settings size={16} />} onClick={(event) => { event.stopPropagation(); void loadConfig(service); }}>Config</Button>
                   <Button icon={<FileText size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(service.logPath), { label: `Opening ${service.name} logs...` }); }}>Logs</Button>
                   <Button icon={<Download size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, successLabel: `${service.name} installed or detected.` }); }}>Install</Button>
                 </div>
@@ -95,13 +118,17 @@ export function ServicesPage({
           </Panel>
           <Panel title="Quick Actions">
             <div className="quick-grid">
-              <Button icon={<Settings size={17} />} onClick={() => void run(() => api.openPath(current.configPath), { label: `Opening ${current.name} config...` })}>Edit Config</Button>
+              <Button icon={<Settings size={17} />} onClick={() => void loadConfig(current)}>Edit Config</Button>
               <Button icon={<FileText size={17} />} onClick={() => void run(() => api.openPath(current.logPath), { label: `Opening ${current.name} logs...` })}>View Logs</Button>
               <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} folder...` })}>Open Root Folder</Button>
               <Button icon={<Download size={17} />} onClick={() => void run(() => api.installServiceDependency(current.id), { label: `Installing ${current.name}...`, successLabel: `${current.name} installed or detected.` })}>Install</Button>
               <Button icon={<RefreshCw size={17} />} onClick={() => void run(() => api.restartService(current.id), { label: `Restarting ${current.name}...` })}>Restart</Button>
             </div>
           </Panel>
+          {configPath && <Panel title="Config Editor" action={<Button icon={<Settings size={16} />} onClick={() => void run(() => api.saveConfigFile(configPath, configText), { label: `Saving ${current.name} config...` })}>Save Config</Button>}>
+            <textarea className="config-editor" value={configText} onChange={(event) => setConfigText(event.target.value)} />
+            <p className="muted">{configPath}</p>
+          </Panel>}
         </aside>
       )}
     </div>

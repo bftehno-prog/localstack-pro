@@ -1,4 +1,4 @@
-import { Bell, Database, Folder, Globe2, Link, RefreshCw, Save, Settings as SettingsIcon, Upload, Wrench } from "lucide-react";
+import { Bell, Database, Download, Folder, Globe2, Link, RefreshCw, Save, Settings as SettingsIcon, Upload, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
@@ -25,6 +25,7 @@ export function SettingsPage({
   const [healthError, setHealthError] = useState("");
   const [ports, setPorts] = useState<PortInspection[]>([]);
   const [release, setRelease] = useState<ReleaseInfo>();
+  const [downloadedInstaller, setDownloadedInstaller] = useState("");
   const [notificationLevel, setNotificationLevel] = useState(localStorage.getItem("localstack.notificationLevel") ?? "Errors only");
   const [scheduledBackups, setScheduledBackups] = useStoredBoolean("localstack.scheduledBackups", false);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -69,6 +70,15 @@ export function SettingsPage({
   const checkRelease = async () => {
     const result = await run(api.checkLatestRelease, { label: "Checking for updates..." });
     if (result && typeof result === "object" && "latestVersion" in result) setRelease(result as ReleaseInfo);
+  };
+  const downloadUpdate = async () => {
+    const result = await run(api.downloadLatestReleaseInstaller, { label: "Downloading update installer..." });
+    if (typeof result === "string") setDownloadedInstaller(result);
+  };
+  const createDiagnosticBundle = async () => {
+    const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+    const path = await saveZipFile(`${settings.backupsFolder}\\localstack-diagnostics-${stamp}.zip`);
+    if (path) await run(() => api.createDiagnosticBundle(path), { label: "Creating diagnostic bundle..." });
   };
   const updateNotificationLevel = (value: string) => {
     setNotificationLevel(value);
@@ -178,7 +188,7 @@ export function SettingsPage({
           {activeTab === "Updates" && <Panel title="Updates">
             <Switch label="Check for Updates on Startup" checked={settings.checkUpdatesOnStartup} onChange={(value) => update("checkUpdatesOnStartup", value)} />
             <Button icon={<RefreshCw size={16} />} onClick={() => void checkRelease()}>Check Now</Button>
-            {release && <div className="release-card"><strong>{release.updateAvailable ? t("Update available") : t("You are up to date")}</strong><span>{release.currentVersion} → {release.latestVersion}</span><Button onClick={() => void run(() => api.openUrl(release.url))}>Open Release</Button></div>}
+            {release && <div className="release-card"><strong>{release.updateAvailable ? t("Update available") : t("You are up to date")}</strong><span>{release.currentVersion} → {release.latestVersion}</span><div className="toolbar"><Button onClick={() => void run(() => api.openUrl(release.url))}>Open Release</Button><Button onClick={() => void downloadUpdate()}>Download Update</Button>{downloadedInstaller && <Button variant="primary" onClick={() => void run(() => api.installDownloadedUpdate(downloadedInstaller), { label: "Starting update installer..." })}>Install Update</Button>}</div></div>}
           </Panel>}
           {activeTab === "Backups" && <Panel title="Backups">
             <SettingInput label="Backups Folder" value={settings.backupsFolder} onChange={(value) => update("backupsFolder", value)} />
@@ -198,6 +208,7 @@ export function SettingsPage({
               <SettingNumber label="Retain Logs Days" value={settings.retainLogsDays} onChange={(value) => update("retainLogsDays", value)} />
               <Switch label="Show Timestamps" checked={settings.showTimestamps} onChange={(value) => update("showTimestamps", value)} />
               <Button icon={<RefreshCw size={16} />} onClick={() => void run(api.clearLogs)}>Reset All Warnings</Button>
+              <Button icon={<Download size={16} />} onClick={() => void createDiagnosticBundle()}>Export Diagnostic Bundle</Button>
             </Panel></>}
           <Panel title="Import / Export Settings">
             <Button icon={<Upload size={16} />} onClick={() => void importSettings()}>Import Settings</Button>

@@ -1,7 +1,7 @@
 import { Download, FileText, Pause, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../ui/api";
-import { saveTextFile } from "../ui/dialogs";
+import { saveTextFile, saveZipFile } from "../ui/dialogs";
 import type { AppRun, AppSnapshot, LogEntry, LogFileTail, LogLevel } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
@@ -74,6 +74,10 @@ export function LogsPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       await run(() => api.exportLogs(path));
     }
   };
+  const exportDiagnostics = async () => {
+    const path = await saveZipFile(`${state.appDataDir}\\localstack-diagnostics.zip`);
+    if (path) await run(() => api.createDiagnosticBundle(path), { label: "Exporting diagnostic bundle..." });
+  };
   return (
     <div className="logs-page">
       <div className="stat-row">
@@ -98,6 +102,7 @@ export function LogsPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <Button icon={<RefreshCw size={16} />} onClick={() => void tailFile()}>Tail File</Button>
               <Button icon={<Trash2 size={16} />} onClick={() => void run(api.clearLogs)}>Clear</Button>
               <Button icon={<Download size={16} />} onClick={() => void exportLogs()}>Export</Button>
+              <Button icon={<FileText size={16} />} onClick={() => void exportDiagnostics()}>Diagnostic Bundle</Button>
               <Button icon={<FileText size={16} />} onClick={() => void run(() => api.openPath(fileTail?.path ?? `${state.appDataDir}\\logs`))}>Open File</Button>
             </div>
             <div className="log-box" ref={logBoxRef}>

@@ -2,13 +2,14 @@ import { Download, MoreVertical, RefreshCw, Shield, Upload } from "lucide-react"
 import { useEffect, useState } from "react";
 import { api } from "../ui/api";
 import { pickFolder } from "../ui/dialogs";
-import type { AppRun, AppSnapshot, CertificateInfo } from "../ui/types";
+import type { AppRun, AppSnapshot, CertificateInfo, SslDiagnostic } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { TopServices } from "../components/TopServices";
 
 export function SslPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [selectedId, setSelectedId] = useState<string | null>(state.certificates[0]?.id ?? null);
+  const [diagnostic, setDiagnostic] = useState<SslDiagnostic>();
   const cert = state.certificates.find((item) => item.id === selectedId) ?? state.certificates[0] ?? null;
   useEffect(() => {
     if (!cert && state.certificates[0]) setSelectedId(state.certificates[0].id);
@@ -20,12 +21,16 @@ export function SslPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       await run(() => api.exportCertificate(certificate.id, folder), { label: `Exporting certificate for ${certificate.domain}...` });
     }
   };
+  const diagnose = async (certificate: CertificateInfo) => {
+    const result = await run(() => api.diagnoseSsl(certificate.domain), { label: `Diagnosing SSL for ${certificate.domain}...` });
+    if (result && typeof result === "object" && "summary" in result) setDiagnostic(result as SslDiagnostic);
+  };
   return (
     <>
       <TopServices state={state} onStartAll={() => void run(api.startAll, { label: "Starting all services..." })} onStopAll={() => void run(api.stopAll, { label: "Stopping all services..." })} onRestartAll={() => void run(api.restartAll, { label: "Restarting all services..." })} onOpenSite={() => state.hosts[0] && void run(() => api.openHost(state.hosts[0].id), { label: `Opening ${state.hosts[0].domain}...` })} onToggleService={(serviceId, running) => void run(() => running ? api.stopService(serviceId) : api.startService(serviceId), { label: `${running ? "Stopping" : "Starting"} ${serviceId}...` })} />
       <div className="page-grid">
         <section>
-          <Panel title="SSL Certificates" action={<><Button variant="primary" icon={<Shield size={16} />} onClick={() => void run(() => api.generateCertificate(firstDomain, [firstDomain, `www.${firstDomain}`]), { label: `Generating certificate for ${firstDomain}...` })}>Generate Certificate</Button><Button icon={<Upload size={16} />} disabled={!cert} onClick={() => cert && void run(() => api.trustCertificate(cert.id), { label: `Trusting certificate for ${cert.domain}...` })}>Trust Certificate</Button><Button variant="danger" disabled={!cert} onClick={() => cert && void run(() => api.revokeCertificate(cert.id), { label: `Revoking certificate for ${cert.domain}...` })}>Revoke</Button><Button icon={<Download size={16} />} disabled={!cert} onClick={() => cert && void exportCert(cert)}>Export</Button></>}>
+          <Panel title="SSL Certificates" action={<><Button variant="primary" icon={<Shield size={16} />} onClick={() => void run(() => api.generateCertificate(firstDomain, [firstDomain, `www.${firstDomain}`]), { label: `Generating certificate for ${firstDomain}...` })}>Generate Certificate</Button><Button icon={<Upload size={16} />} disabled={!cert} onClick={() => cert && void run(() => api.trustCertificate(cert.id), { label: `Trusting certificate for ${cert.domain}...` })}>Trust Certificate</Button><Button icon={<RefreshCw size={16} />} disabled={!cert} onClick={() => cert && void diagnose(cert)}>Diagnose SSL</Button><Button variant="danger" disabled={!cert} onClick={() => cert && void run(() => api.revokeCertificate(cert.id), { label: `Revoking certificate for ${cert.domain}...` })}>Revoke</Button><Button icon={<Download size={16} />} disabled={!cert} onClick={() => cert && void exportCert(cert)}>Export</Button></>}>
             <table className="data-table">
               <thead><tr><th>Domain</th><th>Status</th><th>Trust</th><th>Expires</th><th>Issuer</th><th>SAN Domains</th><th>Auto-Renew</th><th>Actions</th></tr></thead>
               <tbody>
@@ -34,6 +39,16 @@ export function SslPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               </tbody>
             </table>
           </Panel>
+          {diagnostic && <Panel title="SSL Diagnostics">
+            <div className="health-mini-grid">
+              <span><strong>{diagnostic.caTrusted ? "OK" : "Fix"}</strong><small>CA trusted</small></span>
+              <span><strong>{diagnostic.certExists ? "OK" : "Missing"}</strong><small>Certificate</small></span>
+              <span><strong>{diagnostic.keyExists ? "OK" : "Missing"}</strong><small>Private key</small></span>
+              <span><strong>{diagnostic.sanCorrect ? "OK" : "Fix"}</strong><small>SAN domain</small></span>
+              <span><strong>{diagnostic.vhostConfigured ? "OK" : "Fix"}</strong><small>Virtual host</small></span>
+            </div>
+            <p className="muted">{diagnostic.summary}</p>
+          </Panel>}
           <Panel title="Browser Trust Status">
             <div className="trust-status"><Shield size={52} /><div><h2>Your LocalStack CA is trusted by this system.</h2><p>Web browsers on this machine will trust certificates issued by LocalStack CA for the domains listed above.</p></div><Button onClick={() => void run(api.openCertificateStore, { label: "Opening Windows Certificate Store..." })}>Open Certificate Store</Button></div>
           </Panel>

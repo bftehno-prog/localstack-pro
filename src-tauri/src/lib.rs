@@ -498,6 +498,30 @@ fn check_latest_release() -> AppResult<tools::ReleaseInfo> {
     tools::check_latest_release()
 }
 #[tauri::command]
+fn download_latest_release_installer() -> AppResult<String> {
+    tools::download_latest_release_installer()
+}
+#[tauri::command]
+fn install_downloaded_update(path: String) -> AppResult<String> {
+    tools::install_downloaded_update(path)
+}
+#[tauri::command]
+fn read_config_file(path: String) -> AppResult<tools::ConfigFile> {
+    tools::read_config_file(path)
+}
+#[tauri::command]
+fn save_config_file(path: String, content: String) -> AppResult<String> {
+    tools::save_config_file(path, content)
+}
+#[tauri::command]
+fn create_diagnostic_bundle(target: String) -> AppResult<String> {
+    tools::create_diagnostic_bundle(target)
+}
+#[tauri::command]
+fn diagnose_ssl(domain: String) -> AppResult<tools::SslDiagnostic> {
+    tools::diagnose_ssl(domain)
+}
+#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -663,6 +687,12 @@ pub fn run() {
             preview_host,
             export_portable_host,
             check_latest_release,
+            download_latest_release_installer,
+            install_downloaded_update,
+            read_config_file,
+            save_config_file,
+            create_diagnostic_bundle,
+            diagnose_ssl,
             quit_app,
             hide_tray_panel,
             open_main_page,

@@ -273,6 +273,21 @@ export interface ReleaseInfo {
   url: string;
 }
 
+export interface ConfigFile {
+  path: string;
+  content: string;
+}
+
+export interface SslDiagnostic {
+  domain: string;
+  caTrusted: boolean;
+  certExists: boolean;
+  keyExists: boolean;
+  sanCorrect: boolean;
+  vhostConfigured: boolean;
+  summary: string;
+}
+
 export interface LogFileTail {
   source: string;
   path: string;
@@ -280,7 +295,7 @@ export interface LogFileTail {
   lines: string[];
 }
 
-export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | string | void;
+export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | string | void;
 
 export type AppRun = (
   action: () => Promise<AppRunResult>,

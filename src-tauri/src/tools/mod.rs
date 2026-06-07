@@ -66,6 +66,25 @@ pub struct ReleaseInfo {
     pub url: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigFile {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SslDiagnostic {
+    pub domain: String,
+    pub ca_trusted: bool,
+    pub cert_exists: bool,
+    pub key_exists: bool,
+    pub san_correct: bool,
+    pub vhost_configured: bool,
+    pub summary: String,
+}
+
 pub fn scan_ports() -> AppResult<Vec<PortInspection>> {
     let store = Store::new()?;
     let snapshot = store.load_static()?;
@@ -437,6 +456,173 @@ pub fn check_latest_release() -> AppResult<ReleaseInfo> {
     })
 }
 
+pub fn download_latest_release_installer() -> AppResult<String> {
+    let store = Store::new()?;
+    let target = store
+        .dir
+        .join("updates")
+        .join("LocalStack-Pro-latest-setup.exe");
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("Cannot create updates folder: {err}"))?;
+    }
+    let script = format!(
+        "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $release=Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/bftehno-prog/localstack-pro/releases/latest'; $asset=$release.assets | Where-Object {{ $_.name -like '*.exe' }} | Select-Object -First 1; if (!$asset) {{ throw 'Release has no installer asset.' }}; Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile '{}'",
+        target.display().to_string().replace('\'', "''")
+    );
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot start update download: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Cannot download update. {detail}"));
+    }
+    Ok(target.display().to_string())
+}
+
+pub fn install_downloaded_update(path: String) -> AppResult<String> {
+    let installer = PathBuf::from(path.trim());
+    if !installer.is_file() {
+        return Err(format!("Installer not found: {}", installer.display()));
+    }
+    let mut command = Command::new(&installer);
+    command
+        .arg("/S")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+        .spawn()
+        .map_err(|err| format!("Cannot start installer: {err}"))?;
+    Ok(format!("Installer started: {}", installer.display()))
+}
+
+pub fn read_config_file(path: String) -> AppResult<ConfigFile> {
+    let target = allowed_text_path(path)?;
+    let content = fs::read_to_string(&target)
+        .map_err(|err| format!("Cannot read config {}: {err}", target.display()))?;
+    Ok(ConfigFile {
+        path: target.display().to_string(),
+        content,
+    })
+}
+
+pub fn save_config_file(path: String, content: String) -> AppResult<String> {
+    let target = allowed_text_path(path)?;
+    if target.exists() {
+        let backup = target.with_extension(format!(
+            "{}.backup-{}",
+            target
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("txt"),
+            Utc::now().format("%Y%m%d%H%M%S")
+        ));
+        fs::copy(&target, &backup).map_err(|err| format!("Cannot create config backup: {err}"))?;
+    }
+    fs::write(&target, content)
+        .map_err(|err| format!("Cannot write config {}: {err}", target.display()))?;
+    Ok(target.display().to_string())
+}
+
+pub fn create_diagnostic_bundle(target: String) -> AppResult<String> {
+    let store = Store::new()?;
+    let snapshot = store.load()?;
+    let target = if target.trim().ends_with(".zip") {
+        PathBuf::from(target.trim())
+    } else {
+        snapshot
+            .settings
+            .backups_folder
+            .parse::<PathBuf>()
+            .unwrap_or_else(|_| store.dir.join("backups"))
+            .join(format!(
+                "localstack-diagnostics-{}.zip",
+                Utc::now().format("%Y%m%d-%H%M%S")
+            ))
+    };
+    let temp = store
+        .dir
+        .join("temp")
+        .join(format!("diagnostics-{}", Utc::now().format("%Y%m%d%H%M%S")));
+    let _ = fs::remove_dir_all(&temp);
+    fs::create_dir_all(&temp).map_err(|err| format!("Cannot create diagnostics temp: {err}"))?;
+    fs::write(
+        temp.join("state.json"),
+        serde_json::to_string_pretty(&snapshot)
+            .map_err(|err| format!("Cannot serialize state: {err}"))?,
+    )
+    .map_err(|err| format!("Cannot write diagnostic state: {err}"))?;
+    fs::write(
+        temp.join("health.json"),
+        serde_json::to_string_pretty(&crate::health::run_health_check()?)
+            .map_err(|err| format!("Cannot serialize health: {err}"))?,
+    )
+    .map_err(|err| format!("Cannot write health report: {err}"))?;
+    for name in ["logs", "configs", "hosts"] {
+        let source = store.dir.join(name);
+        if source.exists() {
+            copy_dir(&source, &temp.join(name))?;
+        }
+    }
+    compress_folder(&temp, &target)?;
+    let _ = fs::remove_dir_all(&temp);
+    Ok(target.display().to_string())
+}
+
+pub fn diagnose_ssl(domain: String) -> AppResult<SslDiagnostic> {
+    let store = Store::new()?;
+    let snapshot = store.load_static()?;
+    let cert = snapshot
+        .certificates
+        .iter()
+        .find(|item| item.domain.eq_ignore_ascii_case(domain.trim()))
+        .ok_or_else(|| "Certificate not found.".to_string())?;
+    let cert_exists = PathBuf::from(&cert.cert_path).is_file();
+    let key_exists = PathBuf::from(&cert.key_path).is_file();
+    let san_correct = cert
+        .san_domains
+        .iter()
+        .any(|san| san.eq_ignore_ascii_case(&cert.domain));
+    let vhost_configured = snapshot
+        .hosts
+        .iter()
+        .any(|host| host.domain.eq_ignore_ascii_case(&cert.domain) && host.ssl);
+    let ca_trusted = cert.trusted;
+    let ok = cert_exists && key_exists && san_correct && vhost_configured && ca_trusted;
+    Ok(SslDiagnostic {
+        domain: cert.domain.clone(),
+        ca_trusted,
+        cert_exists,
+        key_exists,
+        san_correct,
+        vhost_configured,
+        summary: if ok {
+            "SSL is ready for this host."
+        } else {
+            "SSL needs repair."
+        }
+        .to_string(),
+    })
+}
+
 pub fn clone_project_repository(url: String, folder: String) -> AppResult<String> {
     let url = url.trim();
     if !(url.starts_with("https://") || url.starts_with("git@")) || !url.ends_with(".git") {
@@ -580,6 +766,31 @@ fn compress_folder(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
         return Err(format!("Cannot create portable archive. {detail}"));
     }
     Ok(())
+}
+
+fn allowed_text_path(path: String) -> AppResult<PathBuf> {
+    let store = Store::new()?;
+    let target = PathBuf::from(path.trim());
+    if !target.is_absolute() {
+        return Err("Config path must be absolute.".to_string());
+    }
+    let allowed_root = store.dir.canonicalize().unwrap_or(store.dir.clone());
+    let canonical = target.canonicalize().unwrap_or(target.clone());
+    if !canonical.starts_with(&allowed_root) {
+        return Err("Config editor can only edit LocalStack Pro data files.".to_string());
+    }
+    let extension = canonical
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !matches!(
+        extension.as_str(),
+        "conf" | "ini" | "cnf" | "txt" | "log" | "json" | "php" | "js" | "env"
+    ) {
+        return Err("Unsupported config file type.".to_string());
+    }
+    Ok(canonical)
 }
 
 fn ensure_project_path(path: String) -> AppResult<PathBuf> {

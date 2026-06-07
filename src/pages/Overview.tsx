@@ -27,6 +27,8 @@ export function OverviewPage({
   const [query, setQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [preview, setPreview] = useState<SitePreview>();
+  const [monitorResults, setMonitorResults] = useState<Record<string, SitePreview>>({});
+  const [linksVersion, setLinksVersion] = useState(0);
   const favorites = useStoredList("localstack.favoriteHosts");
   const visibleHosts = useMemo(() => state.hosts
     .filter((host) => `${host.domain} ${host.rootFolder}`.toLowerCase().includes(query.toLowerCase()))
@@ -81,6 +83,36 @@ export function OverviewPage({
   const previewSelected = async (host: HostInfo) => {
     const result = await run(() => api.previewHost(host.id), { label: `Previewing ${host.domain}...` });
     if (result && typeof result === "object" && "responseTimeMs" in result) setPreview(result as SitePreview);
+  };
+  const runHttpMonitor = async () => {
+    const next: Record<string, SitePreview> = {};
+    for (const host of visibleHosts.slice(0, 8)) {
+      const result = await run(() => api.previewHost(host.id), { label: `Checking ${host.domain}...`, serial: true });
+      if (result && typeof result === "object" && "responseTimeMs" in result) next[host.id] = result as SitePreview;
+    }
+    setMonitorResults(next);
+  };
+  const storageKey = selected ? `localstack.accessLinks.${selected.id}` : "";
+  const accessLinks = useMemo(() => {
+    if (!selected || typeof window === "undefined") return [];
+    try {
+      return JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as Array<{ label: string; url: string }>;
+    } catch {
+      return [];
+    }
+  }, [linksVersion, selected, storageKey]);
+  const addAccessLink = () => {
+    if (!selected || typeof window === "undefined") return;
+    const label = window.prompt("Link name");
+    const url = window.prompt("URL");
+    if (!label?.trim() || !url?.trim()) return;
+    window.localStorage.setItem(storageKey, JSON.stringify([...accessLinks, { label: label.trim(), url: url.trim() }]));
+    setLinksVersion((value) => value + 1);
+  };
+  const removeAccessLink = (index: number) => {
+    if (!selected || typeof window === "undefined") return;
+    window.localStorage.setItem(storageKey, JSON.stringify(accessLinks.filter((_, itemIndex) => itemIndex !== index)));
+    setLinksVersion((value) => value + 1);
   };
   const exportPortable = async (host: HostInfo) => {
     const path = await saveZipFile(`${state.settings.backupsFolder}\\${host.domain}-portable.zip`);
@@ -177,7 +209,7 @@ export function OverviewPage({
               </div>
             </div>
           </Panel>
-          <Panel title="Ports">
+          <Panel title="Ports" action={<Button icon={<Search size={16} />} onClick={() => void runHttpMonitor()}>Run Monitor</Button>}>
             <div className="port-grid">
               {portCards.map(({ name, port, running }) => (
                 <div className="port-card" key={name}>
@@ -188,6 +220,24 @@ export function OverviewPage({
               ))}
             </div>
           </Panel>
+          {Object.keys(monitorResults).length > 0 && (
+            <Panel title="HTTP Monitor">
+              <div className="monitor-list">
+                {visibleHosts.filter((host) => monitorResults[host.id]).map((host) => {
+                  const result = monitorResults[host.id];
+                  const ok = /^2|^3/.test(result.status);
+                  return (
+                    <button key={host.id} className="monitor-row" onClick={() => void run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` })}>
+                      <span className={`status-dot ${ok ? "green" : "error"}`} />
+                      <strong>{host.domain}</strong>
+                      <span>{result.status}</span>
+                      <small>{result.responseTimeMs}ms</small>
+                    </button>
+                  );
+                })}
+              </div>
+            </Panel>
+          )}
           <Panel title="Logs" action={<Button variant="icon" icon={<MoreVertical size={16} />} onClick={() => void run(() => api.openPath(`${state.appDataDir}\\logs`))} />}>
             <div className="log-box compact-log">
               {state.logs.slice(0, 5).map((entry) => (
@@ -259,6 +309,19 @@ export function OverviewPage({
                 </Button>
               </div>
               {preview && <div className="preview-result"><strong>{preview.status}</strong><span>{preview.responseTimeMs}ms · {preview.contentType}</span><small>{preview.redirectedTo ?? preview.message}</small></div>}
+            </Panel>
+            <Panel title="Access Links" action={<Button icon={<Plus size={15} />} onClick={addAccessLink}>Add Link</Button>}>
+              <div className="access-link-list">
+                <button onClick={() => void run(() => api.openHost(selected.id), { label: `Opening ${selected.domain}...` })}><Globe2 size={16} />{hostUrl(selected)}</button>
+                <button onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." })}><Database size={16} />phpMyAdmin</button>
+                <button onClick={() => void run(() => api.openDatabaseAdmin("adminer"), { label: "Opening Adminer..." })}><Database size={16} />Adminer</button>
+                {accessLinks.map((link, index) => (
+                  <span className="access-link-item" key={`${link.url}-${index}`}>
+                    <button onClick={() => void run(() => api.openUrl(link.url), { label: `Opening ${link.label}...` })}><ExternalLink size={16} />{link.label}</button>
+                    <Button variant="icon" aria-label="Delete" icon={<MoreVertical size={14} />} onClick={() => removeAccessLink(index)} />
+                  </span>
+                ))}
+              </div>
             </Panel>
           </aside>
         )}
