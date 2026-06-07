@@ -101,7 +101,6 @@ export function useAppState() {
 
   const run = useCallback((action: () => Promise<AppRunResult>, options?: RunOptions) => {
     if (options?.silent) return execute(action, options);
-    if (!options?.serial) return execute(action, options);
 
     const next = queueRef.current
       .catch(() => undefined)

@@ -494,6 +494,14 @@ fn export_portable_host(host_id: String, target: String) -> AppResult<String> {
     tools::export_portable_host(host_id, target)
 }
 #[tauri::command]
+fn backup_host(host_id: String, target: String) -> AppResult<String> {
+    tools::backup_host(host_id, target)
+}
+#[tauri::command]
+fn restore_host_backup(path: String) -> AppResult<AppSnapshot> {
+    tools::restore_host_backup(path).map(cache_snapshot)
+}
+#[tauri::command]
 fn check_latest_release() -> AppResult<tools::ReleaseInfo> {
     tools::check_latest_release()
 }
@@ -520,6 +528,10 @@ fn create_diagnostic_bundle(target: String) -> AppResult<String> {
 #[tauri::command]
 fn diagnose_ssl(domain: String) -> AppResult<tools::SslDiagnostic> {
     tools::diagnose_ssl(domain)
+}
+#[tauri::command]
+fn inspect_installed_tools() -> AppResult<Vec<tools::InstalledTool>> {
+    tools::inspect_installed_tools()
 }
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
@@ -686,6 +698,8 @@ pub fn run() {
             generate_env_template,
             preview_host,
             export_portable_host,
+            backup_host,
+            restore_host_backup,
             check_latest_release,
             download_latest_release_installer,
             install_downloaded_update,
@@ -693,6 +707,7 @@ pub fn run() {
             save_config_file,
             create_diagnostic_bundle,
             diagnose_ssl,
+            inspect_installed_tools,
             quit_app,
             hide_tray_panel,
             open_main_page,

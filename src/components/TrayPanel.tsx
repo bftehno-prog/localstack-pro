@@ -34,7 +34,6 @@ export function TrayPanel({
 }) {
   const t = useT();
   const shellRef = useRef<HTMLDivElement>(null);
-  const hideTimer = useRef<number | undefined>(undefined);
   const lastRefresh = useRef(0);
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
@@ -51,9 +50,6 @@ export function TrayPanel({
     });
     return () => unsubscribe?.();
   }, [refresh]);
-  useEffect(() => () => {
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
-  }, []);
 
   const runningServices = state.services.filter((service) => service.status === "running").length;
   const runningHosts = state.hosts.filter((host) => host.status === "running").length;
@@ -64,15 +60,7 @@ export function TrayPanel({
 
   const openMain = (page?: string) => void api.openMainPage(page);
   const closeTray = () => {
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
     if ("__TAURI_INTERNALS__" in window) void api.hideTrayPanel();
-  };
-  const keepTrayOpen = () => {
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
-  };
-  const scheduleTrayClose = () => {
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(closeTray, 700);
   };
   const openHost = (host?: HostInfo) => {
     if (host) {
@@ -87,8 +75,6 @@ export function TrayPanel({
     <div
       ref={shellRef}
       className="tray-shell"
-      onMouseEnter={keepTrayOpen}
-      onMouseLeave={scheduleTrayClose}
       onKeyDown={(event) => event.key === "Escape" && closeTray()}
       tabIndex={-1}
     >

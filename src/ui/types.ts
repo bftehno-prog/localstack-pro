@@ -288,6 +288,15 @@ export interface SslDiagnostic {
   summary: string;
 }
 
+export interface InstalledTool {
+  id: string;
+  name: string;
+  command: string;
+  path?: string;
+  version?: string;
+  status: string;
+}
+
 export interface LogFileTail {
   source: string;
   path: string;
@@ -295,7 +304,7 @@ export interface LogFileTail {
   lines: string[];
 }
 
-export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | string | void;
+export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | InstalledTool[] | string | void;
 
 export type AppRun = (
   action: () => Promise<AppRunResult>,

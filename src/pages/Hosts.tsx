@@ -1,7 +1,7 @@
 import { Copy, Download, ExternalLink, Filter, Folder, MoreVertical, Play, Plus, Search, ShieldCheck, Star, Trash2, Upload, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../ui/api";
-import { pickJsonFile, saveJsonFile } from "../ui/dialogs";
+import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
 import type { AppRun, AppSnapshot, HostDiagnosticReport, HostInfo } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
@@ -52,6 +52,14 @@ export function HostsPage({
     if (path) {
       await run(() => api.exportHosts(path), { label: "Exporting hosts..." });
     }
+  };
+  const backupHost = async (target: HostInfo) => {
+    const path = await saveZipFile(`${state.settings.backupsFolder}\\${target.domain}-host-backup.zip`);
+    if (path) await run(() => api.backupHost(target.id, path), { label: `Backing up ${target.domain}...` });
+  };
+  const restoreHost = async () => {
+    const path = await pickZipFile();
+    if (path) await run(() => api.restoreHostBackup(path), { label: "Restoring host backup..." });
   };
   const diagnose = async (target: HostInfo) => {
     const report = await run(() => api.diagnoseHost(target.id), { label: `Diagnosing ${target.domain}...` });
@@ -107,6 +115,12 @@ export function HostsPage({
             <Button icon={<Download size={16} />} onClick={() => void importHosts()}>Import</Button>
             <Button icon={<Upload size={16} />} onClick={() => void exportHosts()}>
               Export
+            </Button>
+            <Button icon={<Upload size={16} />} disabled={!host} onClick={() => host && void backupHost(host)}>
+              Backup Host
+            </Button>
+            <Button icon={<Download size={16} />} onClick={() => void restoreHost()}>
+              Restore Host
             </Button>
             <Button icon={<ShieldCheck size={16} />} disabled={!host} onClick={() => host && void diagnose(host)}>
               Diagnose
@@ -228,6 +242,8 @@ export function HostsPage({
               <Button icon={<Trash2 size={17} />} onClick={() => void run(() => api.openPath(`${host.rootFolder}\\logs`), { label: `Opening logs for ${host.domain}...` })}>View Logs</Button>
               <Button icon={<ShieldCheck size={17} />} onClick={() => void diagnose(host)}>Diagnose</Button>
               <Button icon={<Wrench size={17} />} onClick={() => void repair(host)}>Repair Host</Button>
+              <Button icon={<Upload size={17} />} onClick={() => void backupHost(host)}>Backup Host</Button>
+              <Button icon={<Download size={17} />} onClick={() => void restoreHost()}>Restore Host</Button>
               <Button icon={<ShieldCheck size={17} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>Sync Hosts File</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.openPath(`${state.appDataDir}\\certs`), { label: "Opening certificates folder..." })}>SSL Certificate</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "npm-install"), { label: `Running npm install for ${host.domain}...` })}>npm install</Button>

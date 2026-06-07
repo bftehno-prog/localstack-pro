@@ -1,7 +1,7 @@
 import { Box, Database, Download, FileText, Folder, MoreVertical, Play, RefreshCw, Search, Settings, Square } from "lucide-react";
 import { useState } from "react";
 import { api } from "../ui/api";
-import type { AppRun, AppSnapshot, ServiceInfo } from "../ui/types";
+import type { AppRun, AppSnapshot, InstalledTool, ServiceInfo } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
@@ -22,6 +22,7 @@ export function ServicesPage({
     : state.services[0];
   const [configPath, setConfigPath] = useState("");
   const [configText, setConfigText] = useState("");
+  const [tools, setTools] = useState<InstalledTool[]>([]);
   const startProfile = (name: string, serviceIds: string[]) => {
     const availableIds = serviceIds.filter((serviceId) => state.services.some((item) => item.id === serviceId));
     void run(() => api.startServiceProfile(availableIds), {
@@ -36,6 +37,10 @@ export function ServicesPage({
       setConfigText(result.content);
     }
   };
+  const inspectTools = async () => {
+    const result = await run(api.inspectInstalledTools, { label: "Inspecting installed tools..." });
+    if (Array.isArray(result)) setTools(result as InstalledTool[]);
+  };
   return (
     <div className="page-grid">
       <section>
@@ -46,6 +51,7 @@ export function ServicesPage({
             <Button icon={<Square size={15} />} onClick={() => void run(api.stopAll, { label: "Stopping all services..." })}>Stop All</Button>
             <Button icon={<RefreshCw size={15} />} onClick={() => void run(api.restartAll, { label: "Restarting all services..." })}>Restart All</Button>
             <Button icon={<Search size={15} />} onClick={() => void run(api.detectDependencies, { label: "Detecting installed dependencies..." })}>Detect</Button>
+            <Button icon={<Search size={15} />} onClick={() => void inspectTools()}>Installed Tools</Button>
             <Button icon={<Download size={15} />} onClick={() => void run(api.installAllMissingDependencies, { label: "Installing missing service dependencies...", successLabel: "Missing dependencies installed or detected." })}>Install Missing</Button>
             <Button variant="icon" icon={<MoreVertical size={17} />} onClick={() => void run(() => api.openPath(state.settings.servicesFolder), { label: "Opening services folder..." })} />
           </div>
@@ -72,6 +78,20 @@ export function ServicesPage({
             ))}
           </div>
         </Panel>
+        {tools.length > 0 && (
+          <Panel title="Installed Tools">
+            <div className="tools-grid">
+              {tools.map((tool) => (
+                <div className="tool-card" key={tool.id}>
+                  <strong>{tool.name}</strong>
+                  <span className={tool.status === "installed" ? "green-text" : "orange-text"}>{tool.status}</span>
+                  <small>{tool.version ?? "-"}</small>
+                  <code>{tool.path ?? tool.command}</code>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
         <div className="service-list">
           {state.services.map((service) => (
             <Panel key={service.id} className={current?.id === service.id ? "selected-panel" : ""}>

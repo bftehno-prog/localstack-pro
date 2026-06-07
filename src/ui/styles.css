@@ -982,7 +982,8 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
 
 .monitor-list,
 .access-link-list,
-.dependency-graph {
+.dependency-graph,
+.tools-grid {
   display: grid;
   gap: 8px;
 }
@@ -1060,6 +1061,35 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   display: grid;
   gap: 5px;
   padding: 10px;
+}
+
+.tools-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.tool-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  padding: 9px 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.tool-card strong,
+.tool-card span,
+.tool-card small,
+.tool-card code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-card code {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .dependency-graph strong,
@@ -1441,7 +1471,7 @@ body:has(.tray-shell) {
 .tray-shell {
   width: 100vw;
   height: 100vh;
-  padding: 6px;
+  padding: 5px;
   background: transparent;
   color: var(--text);
   font-family: "Segoe UI", Arial, sans-serif;
@@ -1450,19 +1480,19 @@ body:has(.tray-shell) {
 .tray-card {
   width: 100%;
   height: 100%;
-  padding: 8px;
+  padding: 7px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 9px;
   background: color-mix(in srgb, var(--card) 96%, transparent);
   box-shadow: 0 18px 46px rgba(18, 28, 43, 0.20);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 .tray-card > * + * { margin-top: 0; }
 .tray-head {
-  min-height: 32px;
+  min-height: 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1474,8 +1504,8 @@ body:has(.tray-shell) {
   min-width: 0;
 }
 .tray-logo {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   position: relative;
   flex: 0 0 auto;
 }
@@ -1493,16 +1523,16 @@ body:has(.tray-shell) {
 .tray-logo span:nth-child(3) { top: 19px; background: var(--brand-3); }
 .tray-brand strong {
   display: block;
-  font-size: 15px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 16px;
   color: var(--text-strong);
   font-weight: 700;
 }
 .tray-brand p {
   margin-top: 1px;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 14px;
 }
 .tray-dot {
   display: inline-block;
@@ -1533,14 +1563,14 @@ body:has(.tray-shell) {
 .tray-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
   flex: 0 0 auto;
 }
 .tray-action {
   min-width: 0;
-  height: 48px;
+  height: 42px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--control);
   color: var(--control-text);
   display: grid;
@@ -1575,9 +1605,9 @@ body:has(.tray-shell) {
   fill: none;
 }
 .tray-progress {
-  height: 24px;
+  height: 22px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--control);
   color: var(--muted);
   position: relative;
@@ -1606,38 +1636,38 @@ body:has(.tray-shell) {
 }
 .tray-section {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--card);
-  padding: 7px;
+  padding: 6px;
   overflow: hidden;
   flex: 0 0 auto;
 }
 .tray-section-head {
-  min-height: 22px;
+  min-height: 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 .tray-section h2 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 .tray-chip,
 .tray-more {
-  min-height: 22px;
+  min-height: 20px;
   padding: 0 7px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--control);
   color: var(--muted);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 10px;
   white-space: nowrap;
 }
 .tray-chip:hover,
@@ -1647,21 +1677,21 @@ body:has(.tray-shell) {
 }
 .tray-host-list {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 7px;
   overflow: hidden;
 }
 .tray-host-row {
   width: 100%;
-  height: 28px;
+  height: 25px;
   border: 0;
   border-bottom: 1px solid var(--line);
   background: var(--card);
   color: var(--text);
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 76px 18px;
+  grid-template-columns: 20px minmax(0, 1fr) 70px 16px;
   align-items: center;
   gap: 5px;
-  padding: 0 7px;
+  padding: 0 6px;
   text-align: left;
   overflow: hidden;
 }
@@ -1676,7 +1706,7 @@ body:has(.tray-shell) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
 }
 .tray-status {
@@ -1684,7 +1714,7 @@ body:has(.tray-shell) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 10px;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -1692,14 +1722,14 @@ body:has(.tray-shell) {
 .tray-services {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
+  gap: 4px;
 }
 .tray-service {
   min-width: 0;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  grid-template-rows: 15px 15px 18px;
-  column-gap: 5px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-rows: 13px 13px 16px;
+  column-gap: 4px;
   align-items: center;
   overflow: hidden;
 }
@@ -1708,19 +1738,19 @@ body:has(.tray-shell) {
   color: var(--text);
 }
 .tray-service-mark.plain {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 .tray-service-mark.nginx {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 5px;
   background: #20a64a;
   color: #ffffff;
   display: grid;
   place-items: center;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 13px;
 }
 .tray-service-mark.redis {
   color: #d71f2a;
@@ -1731,17 +1761,17 @@ body:has(.tray-shell) {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-strong);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
 }
 .tray-service span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
 }
 .tray-toggle {
   grid-column: 2;
-  width: 28px;
-  height: 16px;
+  width: 26px;
+  height: 15px;
   border: 0;
   border-radius: 999px;
   background: color-mix(in srgb, var(--muted) 32%, var(--control));
@@ -1752,8 +1782,8 @@ body:has(.tray-shell) {
   position: absolute;
   left: 2px;
   top: 2px;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   background: var(--card);
   box-shadow: 0 1px 2px rgba(0,0,0,.24);
@@ -1763,7 +1793,7 @@ body:has(.tray-shell) {
   background: #2eb447;
 }
 .tray-toggle.on::after {
-  transform: translateX(12px);
+  transform: translateX(11px);
 }
 .tray-log-list {
   display: grid;
@@ -1826,13 +1856,13 @@ body:has(.tray-shell) {
 .tray-quick {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 5px;
 }
 .tray-quick button {
   min-width: 0;
-  min-height: 26px;
+  min-height: 24px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--control);
   color: var(--control-text);
   display: inline-flex;
@@ -2081,7 +2111,7 @@ textarea:hover,
   .editor-main, .settings-main, .split { grid-template-columns: 1fr; }
   .service-row { grid-template-columns: 52px minmax(120px, 1fr) 90px 108px; }
   .service-row .service-metrics, .service-row .service-actions { grid-column: 1 / -1; }
-  .dependency-graph { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dependency-graph, .tools-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1380px) {
@@ -2133,7 +2163,7 @@ textarea:hover,
   .panel-head { align-items: flex-start; flex-direction: column; }
   .monitor-row { grid-template-columns: 14px minmax(0, 1fr) auto; }
   .monitor-row small { grid-column: 2 / -1; }
-  .dependency-graph { grid-template-columns: 1fr; }
+  .dependency-graph, .tools-grid { grid-template-columns: 1fr; }
   .tabs { gap: 8px 12px; }
   .tabs button { height: auto; min-height: 34px; padding-bottom: 8px; text-align: left; }
   .filters input,

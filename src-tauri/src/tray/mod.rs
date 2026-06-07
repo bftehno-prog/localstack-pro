@@ -6,8 +6,8 @@ use tauri::{
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
-const TRAY_PANEL_WIDTH: f64 = 360.0;
-const TRAY_PANEL_HEIGHT: f64 = 430.0;
+const TRAY_PANEL_WIDTH: f64 = 340.0;
+const TRAY_PANEL_HEIGHT: f64 = 360.0;
 const TRAY_PANEL_MARGIN: f64 = 10.0;
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {

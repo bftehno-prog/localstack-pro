@@ -85,6 +85,17 @@ pub struct SslDiagnostic {
     pub summary: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledTool {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub path: Option<String>,
+    pub version: Option<String>,
+    pub status: String,
+}
+
 pub fn scan_ports() -> AppResult<Vec<PortInspection>> {
     let store = Store::new()?;
     let snapshot = store.load_static()?;
@@ -407,6 +418,92 @@ pub fn export_portable_host(host_id: String, target: String) -> AppResult<String
     compress_folder(&temp, &target)?;
     let _ = fs::remove_dir_all(&temp);
     Ok(target.display().to_string())
+}
+
+pub fn backup_host(host_id: String, target: String) -> AppResult<String> {
+    export_portable_host(host_id, target)
+}
+
+pub fn restore_host_backup(path: String) -> AppResult<crate::state::AppSnapshot> {
+    let store = Store::new()?;
+    let archive = PathBuf::from(path.trim());
+    if !archive.is_file() {
+        return Err(format!("Host backup not found: {}", archive.display()));
+    }
+    let temp = store.dir.join("temp").join(format!(
+        "host-restore-{}",
+        Utc::now().format("%Y%m%d%H%M%S")
+    ));
+    let _ = fs::remove_dir_all(&temp);
+    fs::create_dir_all(&temp).map_err(|err| format!("Cannot create restore temp: {err}"))?;
+    extract_archive(&archive, &temp)?;
+    let root = if temp.join("host.json").is_file() {
+        temp.clone()
+    } else {
+        fs::read_dir(&temp)
+            .map_err(|err| format!("Cannot read restore temp: {err}"))?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|item| item.join("host.json").is_file())
+            .ok_or_else(|| "Host backup manifest was not found.".to_string())?
+    };
+    let mut host: crate::state::HostInfo = serde_json::from_str(
+        &fs::read_to_string(root.join("host.json"))
+            .map_err(|err| format!("Cannot read host backup manifest: {err}"))?,
+    )
+    .map_err(|err| format!("Cannot parse host backup manifest: {err}"))?;
+    let project = root.join("project");
+    if project.is_dir() {
+        let project_root = PathBuf::from(&host.root_folder);
+        if project_root.exists() {
+            let backup = project_root
+                .with_extension(format!("pre-restore-{}", Utc::now().format("%Y%m%d%H%M%S")));
+            fs::rename(&project_root, &backup)
+                .map_err(|err| format!("Cannot move existing project folder: {err}"))?;
+        }
+        copy_dir(&project, &project_root)?;
+    }
+    host.updated_at = Utc::now().to_rfc3339();
+    let snapshot = crate::hosts::save_host(host)?;
+    let _ = fs::remove_dir_all(&temp);
+    Ok(snapshot)
+}
+
+pub fn inspect_installed_tools() -> AppResult<Vec<InstalledTool>> {
+    let tools = [
+        ("node", "Node.js", "node", "--version"),
+        ("npm", "npm", "npm", "--version"),
+        ("git", "Git", "git", "--version"),
+        ("composer", "Composer", "composer", "--version"),
+        ("php", "PHP", "php", "--version"),
+        ("mysql", "MySQL Client", "mysql", "--version"),
+        ("mysqldump", "MySQL Dump", "mysqldump", "--version"),
+        ("psql", "PostgreSQL Client", "psql", "--version"),
+        ("redis-cli", "Redis CLI", "redis-cli", "--version"),
+        ("winget", "Windows Package Manager", "winget", "--version"),
+    ];
+    Ok(tools
+        .iter()
+        .map(|(id, name, command, version_arg)| {
+            let path = find_command_path(command);
+            let version = path
+                .as_ref()
+                .and_then(|_| command_version(command, version_arg).ok());
+            InstalledTool {
+                id: (*id).to_string(),
+                name: (*name).to_string(),
+                command: (*command).to_string(),
+                path,
+                version,
+                status: if find_command_path(command).is_some() {
+                    "installed"
+                } else {
+                    "missing"
+                }
+                .to_string(),
+            }
+        })
+        .collect())
 }
 
 pub fn check_latest_release() -> AppResult<ReleaseInfo> {
@@ -766,6 +863,95 @@ fn compress_folder(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
         return Err(format!("Cannot create portable archive. {detail}"));
     }
     Ok(())
+}
+
+fn extract_archive(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
+    let script = format!(
+        "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+        source.display().to_string().replace('\'', "''"),
+        target.display().to_string().replace('\'', "''")
+    );
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot start archive extractor: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Cannot extract host backup. {detail}"));
+    }
+    Ok(())
+}
+
+fn find_command_path(command: &str) -> Option<String> {
+    let output = Command::new("where.exe")
+        .arg(command)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags_hidden()
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+}
+
+fn command_version(command: &str, version_arg: &str) -> AppResult<String> {
+    let output = Command::new(command)
+        .arg(version_arg)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags_hidden()
+        .output()
+        .map_err(|err| format!("Cannot run {command}: {err}"))?;
+    if !output.status.success() {
+        return Err(format!("{command} did not return a version."));
+    }
+    let text = String::from_utf8_lossy(if output.stdout.is_empty() {
+        &output.stderr
+    } else {
+        &output.stdout
+    })
+    .lines()
+    .next()
+    .unwrap_or("")
+    .trim()
+    .to_string();
+    Ok(text)
+}
+
+trait HiddenCommand {
+    fn creation_flags_hidden(&mut self) -> &mut Self;
+}
+
+impl HiddenCommand for Command {
+    fn creation_flags_hidden(&mut self) -> &mut Self {
+        #[cfg(windows)]
+        {
+            self.creation_flags(CREATE_NO_WINDOW);
+        }
+        self
+    }
 }
 
 fn allowed_text_path(path: String) -> AppResult<PathBuf> {
