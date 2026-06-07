@@ -313,6 +313,46 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --brand-2: #5b9dff;
   --brand-3: #8a8df5;
 }
+.theme-wet-asphalt {
+  color-scheme: dark;
+  --blue: #b7ff3c;
+  --blue-2: #253314;
+  --green: #b7ff3c;
+  --red: #ff6b66;
+  --orange: #d9b44a;
+  --line: #3a4248;
+  --muted: #aab4b9;
+  --card: #161d21;
+  --body: #0d1114;
+  --text: #edf2f4;
+  --text-strong: #ffffff;
+  --text-soft: #d7dee2;
+  --chrome: #11171b;
+  --chrome-start: #182025;
+  --chrome-end: #0f1417;
+  --control: #1c252a;
+  --control-hover: #263138;
+  --control-text: #f0f5f7;
+  --control-muted: #b5c0c5;
+  --control-border-hover: #6f7c83;
+  --selected: #263813;
+  --pill-bg: #243017;
+  --pill-text: #d6f6a6;
+  --primary-bg: #9be22d;
+  --primary-hover: #b7ff3c;
+  --primary-text: #101511;
+  --success-bg: #142714;
+  --success-border: #4f7d29;
+  --success-text: #b7ff3c;
+  --danger-bg: #2e1717;
+  --danger-border: #823b38;
+  --danger-soft: #3a1d1d;
+  --danger-text: #ffaaa6;
+  --code-bg: #11171b;
+  --brand-2: #b7ff3c;
+  --brand-3: #70a51e;
+  --shadow-subtle: 0 2px 12px rgba(0, 0, 0, 0.34);
+}
 .theme-high-contrast {
   --blue: #004c9f;
   --blue-2: #dcecff;
@@ -1328,6 +1368,166 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
 
 .content-results span {
   color: var(--muted);
+}
+
+.file-operation-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.selection-summary,
+.file-operation {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  padding: 7px 9px;
+}
+
+.selection-summary {
+  grid-template-columns: 18px auto minmax(0, 1fr);
+}
+
+.file-operation {
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+}
+
+.file-operation i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.file-operation-running i {
+  background: var(--orange);
+}
+
+.file-operation-done i {
+  background: var(--green);
+}
+
+.file-operation-error i {
+  background: var(--red);
+}
+
+.file-operation-cancelled i {
+  background: var(--muted);
+}
+
+.file-operation strong,
+.file-operation span,
+.selection-summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-operation button {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--control-text);
+}
+
+.file-context-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 190px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.file-context-menu button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 0 8px;
+}
+
+.file-context-menu button:hover {
+  background: var(--control-hover);
+}
+
+.file-context-menu button.danger {
+  color: var(--danger-text);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, .38);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.code-modal {
+  width: min(1280px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.code-modal-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.code-modal-head h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.code-modal-head code {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.cm-editor,
+.cm-scroller,
+.cm-content {
+  background: var(--input) !important;
+  color: var(--text) !important;
+}
+
+.cm-gutters {
+  background: var(--panel) !important;
+  color: var(--muted) !important;
+  border-color: var(--line) !important;
 }
 
 .file-pathbar,

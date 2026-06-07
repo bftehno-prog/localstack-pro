@@ -1,8 +1,10 @@
 use crate::state::{AppResult, Store};
 use chrono::Utc;
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use regex::RegexBuilder;
 use serde::Serialize;
 use std::{
+    fs::File,
     fs,
     io::{Read, Write},
     net::TcpStream,
@@ -10,6 +12,8 @@ use std::{
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
+use tar::{Archive as TarArchive, Builder as TarBuilder};
+use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -833,22 +837,9 @@ pub fn extract_archive_to(path: String, destination: String) -> AppResult<String
         .unwrap_or("")
         .to_lowercase();
     if lower.ends_with(".zip") {
-        extract_archive(&archive, &destination)?;
+        extract_zip_safe(&archive, &destination)?;
     } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz") {
-        let mut command = Command::new("tar.exe");
-        command
-            .args(["-xf", &archive.display().to_string(), "-C", &destination.display().to_string()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .creation_flags_hidden();
-        let output = command
-            .output()
-            .map_err(|err| format!("Cannot start archive extractor: {err}"))?;
-        if !output.status.success() {
-            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(format!("Cannot extract archive. {detail}"));
-        }
+        extract_tar_safe(&archive, &destination, lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz"))?;
     } else {
         return Err("Supported archives: zip, tar, tar.gz, tgz, gz.".to_string());
     }
@@ -873,61 +864,9 @@ pub fn create_archive(paths: Vec<String>, target: String) -> AppResult<String> {
         .unwrap_or("")
         .to_lowercase();
     if lower.ends_with(".zip") {
-        let literal_paths = sources
-            .iter()
-            .map(|path| format!("'{}'", path.display().to_string().replace('\'', "''")))
-            .collect::<Vec<_>>()
-            .join(",");
-        let script = format!(
-            "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Compress-Archive -LiteralPath @({}) -DestinationPath '{}' -Force",
-            literal_paths,
-            target.display().to_string().replace('\'', "''")
-        );
-        let mut command = Command::new("powershell.exe");
-        command
-            .args(["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .creation_flags_hidden();
-        let output = command
-            .output()
-            .map_err(|err| format!("Cannot start archive creation: {err}"))?;
-        if !output.status.success() {
-            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(format!("Cannot create archive. {detail}"));
-        }
+        create_zip_archive(&sources, &target)?;
     } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
-        let parent = sources[0]
-            .parent()
-            .ok_or_else(|| "Cannot detect archive source folder.".to_string())?
-            .to_path_buf();
-        let names = sources
-            .iter()
-            .map(|path| {
-                path.file_name()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or("")
-                    .to_string()
-            })
-            .collect::<Vec<_>>();
-        let mut command = Command::new("tar.exe");
-        command
-            .arg("-czf")
-            .arg(&target)
-            .args(names)
-            .current_dir(parent)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .creation_flags_hidden();
-        let output = command
-            .output()
-            .map_err(|err| format!("Cannot start tar archive creation: {err}"))?;
-        if !output.status.success() {
-            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(format!("Cannot create archive. {detail}"));
-        }
+        create_tar_archive(&sources, &target, lower.ends_with(".tar.gz") || lower.ends_with(".tgz"))?;
     } else {
         return Err("Archive target must end with .zip, .tar, .tar.gz or .tgz.".to_string());
     }
@@ -1497,6 +1436,155 @@ fn copy_dir_all(source: &Path, target: &Path) -> AppResult<()> {
             }
             fs::copy(&path, &destination)
                 .map_err(|err| format!("Cannot copy {}: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn extract_zip_safe(source: &Path, target: &Path) -> AppResult<()> {
+    let file = File::open(source)
+        .map_err(|err| format!("Cannot open archive {}: {err}", source.display()))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|err| format!("Cannot read zip archive {}: {err}", source.display()))?;
+    let target_root = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|err| format!("Cannot read zip entry: {err}"))?;
+        let Some(safe_name) = entry.enclosed_name().map(|path| path.to_path_buf()) else {
+            continue;
+        };
+        let destination = target.join(safe_name);
+        let normalized = destination
+            .parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .unwrap_or_else(|| target_root.clone());
+        if !normalized.starts_with(&target_root) {
+            return Err("Archive contains an unsafe path.".to_string());
+        }
+        if entry.is_dir() {
+            fs::create_dir_all(&destination)
+                .map_err(|err| format!("Cannot create folder {}: {err}", destination.display()))?;
+        } else {
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|err| format!("Cannot create folder {}: {err}", parent.display()))?;
+            }
+            let mut output = File::create(&destination)
+                .map_err(|err| format!("Cannot create file {}: {err}", destination.display()))?;
+            std::io::copy(&mut entry, &mut output)
+                .map_err(|err| format!("Cannot extract file {}: {err}", destination.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn extract_tar_safe(source: &Path, target: &Path, gzip: bool) -> AppResult<()> {
+    let file = File::open(source)
+        .map_err(|err| format!("Cannot open archive {}: {err}", source.display()))?;
+    if gzip {
+        let decoder = GzDecoder::new(file);
+        unpack_tar_entries(TarArchive::new(decoder), target)
+    } else {
+        unpack_tar_entries(TarArchive::new(file), target)
+    }
+}
+
+fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> AppResult<()> {
+    let target_root = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
+    for entry in archive
+        .entries()
+        .map_err(|err| format!("Cannot read tar entries: {err}"))?
+    {
+        let mut entry = entry.map_err(|err| format!("Cannot read tar entry: {err}"))?;
+        let path = entry
+            .path()
+            .map_err(|err| format!("Cannot read tar entry path: {err}"))?
+            .to_path_buf();
+        if path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+            return Err("Archive contains an unsafe path.".to_string());
+        }
+        let destination = target.join(path);
+        let normalized = destination
+            .parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .unwrap_or_else(|| target_root.clone());
+        if !normalized.starts_with(&target_root) {
+            return Err("Archive contains an unsafe path.".to_string());
+        }
+        entry
+            .unpack(&destination)
+            .map_err(|err| format!("Cannot unpack {}: {err}", destination.display()))?;
+    }
+    Ok(())
+}
+
+fn create_zip_archive(sources: &[PathBuf], target: &Path) -> AppResult<()> {
+    let file = File::create(target)
+        .map_err(|err| format!("Cannot create archive {}: {err}", target.display()))?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for source in sources {
+        let base = source
+            .parent()
+            .ok_or_else(|| "Cannot detect archive source folder.".to_string())?;
+        add_path_to_zip(&mut zip, source, base, options)?;
+    }
+    zip.finish()
+        .map_err(|err| format!("Cannot finish zip archive: {err}"))?;
+    Ok(())
+}
+
+fn add_path_to_zip(zip: &mut ZipWriter<File>, path: &Path, base: &Path, options: SimpleFileOptions) -> AppResult<()> {
+    let relative = path.strip_prefix(base).unwrap_or(path);
+    let name = relative.to_string_lossy().replace('\\', "/");
+    if path.is_dir() {
+        if !name.is_empty() {
+            zip.add_directory(format!("{name}/"), options)
+                .map_err(|err| format!("Cannot add folder to zip: {err}"))?;
+        }
+        for entry in fs::read_dir(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))? {
+            let entry = entry.map_err(|err| format!("Cannot read folder entry: {err}"))?;
+            add_path_to_zip(zip, &entry.path(), base, options)?;
+        }
+    } else {
+        zip.start_file(name, options)
+            .map_err(|err| format!("Cannot add file to zip: {err}"))?;
+        let mut file = File::open(path)
+            .map_err(|err| format!("Cannot open {}: {err}", path.display()))?;
+        std::io::copy(&mut file, zip)
+            .map_err(|err| format!("Cannot write zip file: {err}"))?;
+    }
+    Ok(())
+}
+
+fn create_tar_archive(sources: &[PathBuf], target: &Path, gzip: bool) -> AppResult<()> {
+    let file = File::create(target)
+        .map_err(|err| format!("Cannot create archive {}: {err}", target.display()))?;
+    if gzip {
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut tar = TarBuilder::new(encoder);
+        add_sources_to_tar(&mut tar, sources)?;
+        tar.finish().map_err(|err| format!("Cannot finish tar archive: {err}"))?;
+    } else {
+        let mut tar = TarBuilder::new(file);
+        add_sources_to_tar(&mut tar, sources)?;
+        tar.finish().map_err(|err| format!("Cannot finish tar archive: {err}"))?;
+    }
+    Ok(())
+}
+
+fn add_sources_to_tar<W: Write>(tar: &mut TarBuilder<W>, sources: &[PathBuf]) -> AppResult<()> {
+    for source in sources {
+        let name = source
+            .file_name()
+            .ok_or_else(|| "Cannot detect archive item name.".to_string())?;
+        if source.is_dir() {
+            tar.append_dir_all(name, source)
+                .map_err(|err| format!("Cannot add folder to tar: {err}"))?;
+        } else {
+            tar.append_path_with_name(source, name)
+                .map_err(|err| format!("Cannot add file to tar: {err}"))?;
         }
     }
     Ok(())

@@ -9,7 +9,7 @@ import { useT } from "../ui/i18n";
 import { useStoredBoolean } from "../ui/preferences";
 
 const tabs = ["General", "Paths", "Startup", "Network", "Theme", "Notifications", "Integrations", "Updates", "Backups", "Advanced"];
-const themeOptions = ["Light", "Pearl", "Graphite", "Azure", "Forest", "Dark", "Midnight", "Carbon", "High Contrast", "System"];
+const themeOptions = ["Light", "Pearl", "Graphite", "Azure", "Forest", "Dark", "Midnight", "Carbon", "Wet Asphalt", "High Contrast", "System"];
 
 export function SettingsPage({
   state,
