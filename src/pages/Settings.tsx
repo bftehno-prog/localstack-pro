@@ -2,7 +2,7 @@ import { Bell, Database, Folder, Globe2, Link, RefreshCw, Save, Settings as Sett
 import { useEffect, useRef, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
-import type { AppRun, AppSettings, AppSnapshot, HealthReport, PortInspection } from "../ui/types";
+import type { AppRun, AppSettings, AppSnapshot, HealthReport, PortInspection, ReleaseInfo } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { useT } from "../ui/i18n";
@@ -24,6 +24,7 @@ export function SettingsPage({
   const [health, setHealth] = useState<HealthReport>();
   const [healthError, setHealthError] = useState("");
   const [ports, setPorts] = useState<PortInspection[]>([]);
+  const [release, setRelease] = useState<ReleaseInfo>();
   const [notificationLevel, setNotificationLevel] = useState(localStorage.getItem("localstack.notificationLevel") ?? "Errors only");
   const [scheduledBackups, setScheduledBackups] = useStoredBoolean("localstack.scheduledBackups", false);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -64,6 +65,10 @@ export function SettingsPage({
   const scanPorts = async () => {
     const result = await run(api.scanPorts, { label: "Scanning service ports..." });
     if (Array.isArray(result)) setPorts(result as PortInspection[]);
+  };
+  const checkRelease = async () => {
+    const result = await run(api.checkLatestRelease, { label: "Checking for updates..." });
+    if (result && typeof result === "object" && "latestVersion" in result) setRelease(result as ReleaseInfo);
   };
   const updateNotificationLevel = (value: string) => {
     setNotificationLevel(value);
@@ -172,7 +177,8 @@ export function SettingsPage({
           </Panel>}
           {activeTab === "Updates" && <Panel title="Updates">
             <Switch label="Check for Updates on Startup" checked={settings.checkUpdatesOnStartup} onChange={(value) => update("checkUpdatesOnStartup", value)} />
-            <Button icon={<RefreshCw size={16} />} onClick={() => void runHealthCheck()}>Check Now</Button>
+            <Button icon={<RefreshCw size={16} />} onClick={() => void checkRelease()}>Check Now</Button>
+            {release && <div className="release-card"><strong>{release.updateAvailable ? t("Update available") : t("You are up to date")}</strong><span>{release.currentVersion} → {release.latestVersion}</span><Button onClick={() => void run(() => api.openUrl(release.url))}>Open Release</Button></div>}
           </Panel>}
           {activeTab === "Backups" && <Panel title="Backups">
             <SettingInput label="Backups Folder" value={settings.backupsFolder} onChange={(value) => update("backupsFolder", value)} />

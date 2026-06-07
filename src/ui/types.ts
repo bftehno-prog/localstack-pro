@@ -248,6 +248,31 @@ export interface PortInspection {
   action: string;
 }
 
+export interface ProjectInspection {
+  kind: string;
+  root: string;
+  documentRoot: string;
+  envTemplate: string;
+  commands: string[];
+  checks: Array<{ title: string; severity: string; message: string }>;
+}
+
+export interface SitePreview {
+  url: string;
+  status: string;
+  responseTimeMs: number;
+  contentType: string;
+  redirectedTo?: string;
+  message: string;
+}
+
+export interface ReleaseInfo {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  url: string;
+}
+
 export interface LogFileTail {
   source: string;
   path: string;
@@ -255,7 +280,7 @@ export interface LogFileTail {
   lines: string[];
 }
 
-export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | string | void;
+export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | string | void;
 
 export type AppRun = (
   action: () => Promise<AppRunResult>,

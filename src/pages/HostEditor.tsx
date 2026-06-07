@@ -1,7 +1,7 @@
 import { ArrowLeft, ExternalLink, GitBranch, KeyRound, Plus, Save, TestTube2, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../ui/api";
-import type { AppRun, AppSnapshot, DatabaseInfo, HostInfo } from "../ui/types";
+import type { AppRun, AppSnapshot, DatabaseInfo, HostInfo, ProjectInspection } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
@@ -46,6 +46,8 @@ export function HostEditorPage({
   const [databasePassword, setDatabasePassword] = useState(() => generatePassword());
   const [environmentPreset, setEnvironmentPreset] = useState("PHP CMS");
   const [gitUrl, setGitUrl] = useState("");
+  const [projectInfo, setProjectInfo] = useState<ProjectInspection>();
+  const [vaultName, setVaultName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [configOk, setConfigOk] = useState<string | null>(null);
   const forceHttps = host.rewriteRules.includes("FORCE_HTTPS=1");
@@ -119,6 +121,35 @@ export function HostEditorPage({
       setDatabaseUser(`${nextName}_user`);
     }
   };
+  const inspectProject = async () => {
+    const result = await run(() => api.inspectProject(host.rootFolder), { label: `Inspecting ${host.domain} project...` });
+    if (result && typeof result === "object" && "kind" in result) {
+      const info = result as ProjectInspection;
+      setProjectInfo(info);
+      applyPreset(info.kind);
+      update("documentRoot", info.documentRoot);
+    }
+  };
+  const saveVault = () => {
+    const key = vaultName.trim() || host.domain;
+    const current = JSON.parse(localStorage.getItem("localstack.dbVault") ?? "[]") as Array<Record<string, string>>;
+    const next = current.filter((item) => item.name !== key);
+    next.unshift({ name: key, database: host.database, user: databaseUser, password: databasePassword, engine: databaseEngine });
+    localStorage.setItem("localstack.dbVault", JSON.stringify(next.slice(0, 20)));
+    setVaultName(key);
+  };
+  const applyVault = (name: string) => {
+    const items = JSON.parse(localStorage.getItem("localstack.dbVault") ?? "[]") as Array<Record<string, string>>;
+    const item = items.find((entry) => entry.name === name);
+    if (!item) return;
+    update("database", item.database ?? host.database);
+    setDatabaseUser(item.user ?? databaseUser);
+    setDatabasePassword(item.password ?? databasePassword);
+    setDatabaseEngine((item.engine as DatabaseInfo["engine"]) ?? databaseEngine);
+  };
+  const vaultItems = (() => {
+    try { return JSON.parse(localStorage.getItem("localstack.dbVault") ?? "[]") as Array<Record<string, string>>; } catch { return []; }
+  })();
   const save = async (start: boolean) => {
     const validation = validateHost(host, state.hosts.filter((item) => item.id !== host.id));
     if (validation) {
@@ -191,6 +222,15 @@ export function HostEditorPage({
               <Button icon={<GitBranch size={16} />} disabled={!gitUrl.trim()} onClick={() => void run(() => api.cloneProjectRepository(gitUrl, host.rootFolder), { label: `Cloning repository into ${host.rootFolder}...` })}>Import from Git</Button>
             </div>
           </Panel>
+          <Panel title="Project Doctor" action={<Button icon={<TestTube2 size={16} />} onClick={() => void inspectProject()}>Detect Project</Button>}>
+            {projectInfo ? (
+              <>
+                <div className="kv detail-kv"><span>Type</span><strong>{projectInfo.kind}</strong><span>Document Root</span><strong>{projectInfo.documentRoot}</strong><span>Commands</span><strong>{projectInfo.commands.join(", ") || "None"}</strong></div>
+                <table className="mini-table"><tbody>{projectInfo.checks.map((check) => <tr key={check.title}><td>{check.title}</td><td>{check.severity}</td><td>{check.message}</td></tr>)}</tbody></table>
+                <Button onClick={() => void run(() => api.generateEnvTemplate(host.rootFolder, projectInfo.kind, host.database, databaseUser, databasePassword, host.domain), { label: `Generating .env for ${host.domain}...` })}>Generate .env</Button>
+              </>
+            ) : <p className="muted">Detect project type, document root, commands and .env template.</p>}
+          </Panel>
           <Panel title="Paths">
             <div className="form-grid two">
               <label>Root Folder *<input value={host.rootFolder} onChange={(event) => update("rootFolder", event.target.value)} /></label>
@@ -214,12 +254,15 @@ export function HostEditorPage({
           </Panel>
           <Panel title="Database">
             <div className="form-grid two">
+              <label>Credential Vault<select value="" onChange={(event) => applyVault(event.target.value)}><option value="">Select saved credentials</option>{vaultItems.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+              <label>Vault Name<input value={vaultName} onChange={(event) => setVaultName(event.target.value)} placeholder={host.domain} /></label>
               <label>Database Preset<select value={databasePresetFromEngine(databaseEngine)} onChange={(event) => setDatabaseEngine(databaseEngineFromPreset(event.target.value))}><option>MySQL 8.0</option><option>MariaDB 10.6</option><option>PostgreSQL 15</option></select></label>
               <label className="toggle-line">Create Database<span className={`toggle ${createDatabaseWithHost ? "on" : ""}`} onClick={() => setCreateDatabaseWithHost((value) => !value)} /></label>
               <label>Database Name<input value={host.database} onChange={(event) => updateDatabaseName(event.target.value)} /></label>
               <label>Database User<input value={databaseUser} disabled={!createDatabaseWithHost} onChange={(event) => setDatabaseUser(event.target.value)} /></label>
               <label>Database Password<input type="text" value={databasePassword} disabled={!createDatabaseWithHost} onChange={(event) => setDatabasePassword(event.target.value)} /></label>
               <label>Password Tool<button className="input-button" type="button" disabled={!createDatabaseWithHost} onClick={() => setDatabasePassword(generatePassword())}>Generate password <KeyRound size={15} /></button></label>
+              <label>Vault Tool<button className="input-button" type="button" onClick={saveVault}>Save credentials <KeyRound size={15} /></button></label>
             </div>
           </Panel>
           <Panel title="Environment Variables" action={<Button icon={<Plus size={15} />} onClick={addVariable}>Add Variable</Button>}>

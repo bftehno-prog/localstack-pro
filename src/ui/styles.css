@@ -1093,6 +1093,40 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   overflow-wrap: anywhere;
 }
 .smart-error small { color: var(--muted); }
+.first-run {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.first-run div {
+  min-width: 220px;
+  flex: 1;
+  display: grid;
+  gap: 3px;
+}
+.first-run span { color: var(--muted); font-size: 12px; }
+.release-card,
+.preview-result {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  padding: 9px 10px;
+  display: grid;
+  gap: 4px;
+}
+.release-card span,
+.release-card small,
+.preview-result span,
+.preview-result small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .issue-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

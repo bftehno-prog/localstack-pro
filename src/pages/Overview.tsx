@@ -1,8 +1,8 @@
 import { Database, ExternalLink, Folder, Globe2, List, MoreVertical, Play, Plus, Search, Star, Terminal, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../ui/api";
-import { pickJsonFile, saveJsonFile } from "../ui/dialogs";
-import type { AppRun, AppSnapshot, HostInfo } from "../ui/types";
+import { pickJsonFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
+import type { AppRun, AppSnapshot, HostInfo, SitePreview } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
@@ -26,6 +26,7 @@ export function OverviewPage({
   const selected = state.hosts.find((host) => host.id === selectedHost?.id) ?? state.hosts.find((host) => host.domain === "shop.test") ?? state.hosts[0];
   const [query, setQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
+  const [preview, setPreview] = useState<SitePreview>();
   const favorites = useStoredList("localstack.favoriteHosts");
   const visibleHosts = useMemo(() => state.hosts
     .filter((host) => `${host.domain} ${host.rootFolder}`.toLowerCase().includes(query.toLowerCase()))
@@ -76,6 +77,14 @@ export function OverviewPage({
     }
     await run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." }).catch(() => undefined);
     await run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` });
+  };
+  const previewSelected = async (host: HostInfo) => {
+    const result = await run(() => api.previewHost(host.id), { label: `Previewing ${host.domain}...` });
+    if (result && typeof result === "object" && "responseTimeMs" in result) setPreview(result as SitePreview);
+  };
+  const exportPortable = async (host: HostInfo) => {
+    const path = await saveZipFile(`${state.settings.backupsFolder}\\${host.domain}-portable.zip`);
+    if (path) await run(() => api.exportPortableHost(host.id, path), { label: `Exporting ${host.domain} portable package...` });
   };
   return (
     <>
@@ -233,6 +242,12 @@ export function OverviewPage({
                 <Button icon={<Database size={17} />} onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"))}>
                   phpMyAdmin
                 </Button>
+                <Button icon={<Search size={17} />} onClick={() => void previewSelected(selected)}>
+                  Preview Site
+                </Button>
+                <Button icon={<Folder size={17} />} onClick={() => void exportPortable(selected)}>
+                  Export Portable
+                </Button>
                 <Button icon={<Terminal size={17} />} onClick={() => void run(() => api.runProjectCommand(selected.rootFolder, "npm-install"), { label: `Running npm install for ${selected.domain}...` })}>
                   npm install
                 </Button>
@@ -243,6 +258,7 @@ export function OverviewPage({
                   artisan migrate
                 </Button>
               </div>
+              {preview && <div className="preview-result"><strong>{preview.status}</strong><span>{preview.responseTimeMs}ms · {preview.contentType}</span><small>{preview.redirectedTo ?? preview.message}</small></div>}
             </Panel>
           </aside>
         )}

@@ -1,11 +1,13 @@
 use crate::state::{AppResult, Store};
+use chrono::Utc;
 use serde::Serialize;
 use std::{
     fs,
+    io::{Read, Write},
     net::TcpStream,
     path::PathBuf,
     process::{Command, Stdio},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(windows)]
@@ -23,6 +25,45 @@ pub struct PortInspection {
     pub pid: Option<u32>,
     pub process: Option<String>,
     pub action: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectInspection {
+    pub kind: String,
+    pub root: String,
+    pub document_root: String,
+    pub env_template: String,
+    pub commands: Vec<String>,
+    pub checks: Vec<ProjectCheck>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCheck {
+    pub title: String,
+    pub severity: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SitePreview {
+    pub url: String,
+    pub status: String,
+    pub response_time_ms: u128,
+    pub content_type: String,
+    pub redirected_to: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub url: String,
 }
 
 pub fn scan_ports() -> AppResult<Vec<PortInspection>> {
@@ -71,6 +112,125 @@ pub fn scan_ports() -> AppResult<Vec<PortInspection>> {
         })
         .collect();
     Ok(result)
+}
+
+pub fn inspect_project(path: String) -> AppResult<ProjectInspection> {
+    let root = ensure_project_path(path)?;
+    let package = root.join("package.json");
+    let composer = root.join("composer.json");
+    let artisan = root.join("artisan");
+    let wp_config = root.join("wp-config.php");
+    let public = root.join("public");
+    let kind = if package.is_file() {
+        let text = fs::read_to_string(&package)
+            .unwrap_or_default()
+            .to_lowercase();
+        if text.contains("\"next\"") {
+            "Next.js"
+        } else if text.contains("\"vite\"") {
+            "Vite"
+        } else if text.contains("\"@nestjs") {
+            "NestJS"
+        } else if text.contains("\"express\"") {
+            "Express"
+        } else {
+            "Node.js"
+        }
+    } else if artisan.is_file() {
+        "Laravel"
+    } else if wp_config.is_file() || root.join("wp-admin").is_dir() {
+        "WordPress"
+    } else if composer.is_file() {
+        "PHP Composer"
+    } else {
+        "Custom PHP"
+    }
+    .to_string();
+    let document_root = if matches!(
+        kind.as_str(),
+        "Next.js" | "Vite" | "NestJS" | "Express" | "Node.js"
+    ) {
+        ".".to_string()
+    } else if public.is_dir() {
+        "public".to_string()
+    } else {
+        ".".to_string()
+    };
+    let mut checks = Vec::new();
+    push_project_check(
+        &mut checks,
+        "Project folder",
+        "ok",
+        format!("Found {}", root.display()),
+    );
+    push_project_check(
+        &mut checks,
+        "package.json",
+        if package.is_file() { "ok" } else { "warning" },
+        if package.is_file() {
+            "Node metadata found"
+        } else {
+            "No package.json found"
+        },
+    );
+    push_project_check(
+        &mut checks,
+        "composer.json",
+        if composer.is_file() { "ok" } else { "warning" },
+        if composer.is_file() {
+            "Composer metadata found"
+        } else {
+            "No composer.json found"
+        },
+    );
+    push_project_check(
+        &mut checks,
+        ".env",
+        if root.join(".env").is_file() {
+            "ok"
+        } else {
+            "warning"
+        },
+        if root.join(".env").is_file() {
+            ".env exists"
+        } else {
+            ".env can be generated"
+        },
+    );
+    let commands = project_commands(&kind);
+    Ok(ProjectInspection {
+        kind: kind.clone(),
+        root: root.display().to_string(),
+        document_root,
+        env_template: env_template(
+            &kind,
+            "local_db",
+            "local_user",
+            "local_password",
+            "local.test",
+        ),
+        commands,
+        checks,
+    })
+}
+
+pub fn generate_env_template(
+    path: String,
+    kind: String,
+    database: String,
+    user: String,
+    password: String,
+    domain: String,
+) -> AppResult<String> {
+    let root = ensure_project_path(path)?;
+    let env = root.join(".env");
+    if env.exists() {
+        let backup = root.join(format!(".env.backup-{}", Utc::now().format("%Y%m%d%H%M%S")));
+        fs::copy(&env, &backup).map_err(|err| format!("Cannot back up existing .env: {err}"))?;
+    }
+    let content = env_template(&kind, &database, &user, &password, &domain);
+    fs::write(&env, content).map_err(|err| format!("Cannot write .env: {err}"))?;
+    Ok(env.display().to_string())
 }
 
 pub fn run_project_command(path: String, command_key: String) -> AppResult<String> {
@@ -125,6 +285,158 @@ pub fn run_project_command(path: String, command_key: String) -> AppResult<Strin
     })
 }
 
+pub fn preview_host(host_id: String) -> AppResult<SitePreview> {
+    let store = Store::new()?;
+    let snapshot = store.load_static()?;
+    let host = snapshot
+        .hosts
+        .iter()
+        .find(|item| item.id == host_id || item.domain == host_id)
+        .ok_or_else(|| "Host not found.".to_string())?;
+    let scheme = if host.ssl { "https" } else { "http" };
+    let port = if host.ssl {
+        host.https_port
+    } else {
+        host.http_port
+    };
+    let url = if (scheme == "http" && port == 80) || (scheme == "https" && port == 443) {
+        format!("{scheme}://{}", host.domain)
+    } else {
+        format!("{scheme}://{}:{port}", host.domain)
+    };
+    let started = Instant::now();
+    let mut stream = TcpStream::connect_timeout(
+        &format!("127.0.0.1:{port}")
+            .parse()
+            .map_err(|err| format!("Cannot parse target socket: {err}"))?,
+        Duration::from_secs(2),
+    )
+    .map_err(|err| format!("Cannot connect to {url}: {err}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|err| format!("Cannot set read timeout: {err}"))?;
+    let request = format!(
+        "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: LocalStackProPreview\r\n\r\n",
+        host.domain
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|err| format!("Cannot request {url}: {err}"))?;
+    let mut buffer = String::new();
+    stream
+        .read_to_string(&mut buffer)
+        .map_err(|err| format!("Cannot read response from {url}: {err}"))?;
+    let response_time_ms = started.elapsed().as_millis();
+    let status = buffer
+        .lines()
+        .next()
+        .unwrap_or("HTTP/1.1 000 No response")
+        .to_string();
+    let content_type =
+        header_value(&buffer, "content-type").unwrap_or_else(|| "unknown".to_string());
+    let redirected_to = header_value(&buffer, "location");
+    Ok(SitePreview {
+        url,
+        status: status.clone(),
+        response_time_ms,
+        content_type,
+        redirected_to,
+        message: if status.contains(" 200 ") || status.contains(" 30") {
+            "Site responded.".to_string()
+        } else {
+            "Site responded with a non-success status.".to_string()
+        },
+    })
+}
+
+pub fn export_portable_host(host_id: String, target: String) -> AppResult<String> {
+    let store = Store::new()?;
+    let snapshot = store.load_static()?;
+    let host = snapshot
+        .hosts
+        .iter()
+        .find(|item| item.id == host_id || item.domain == host_id)
+        .ok_or_else(|| "Host not found.".to_string())?;
+    let target = if target.trim().ends_with(".zip") {
+        PathBuf::from(target.trim())
+    } else {
+        PathBuf::from(&snapshot.settings.backups_folder).join(format!(
+            "{}-portable-{}.zip",
+            host.domain,
+            Utc::now().format("%Y%m%d-%H%M%S")
+        ))
+    };
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("Cannot create export folder: {err}"))?;
+    }
+    let temp = store
+        .dir
+        .join("temp")
+        .join(format!("portable-{}", Utc::now().format("%Y%m%d%H%M%S")));
+    let _ = fs::remove_dir_all(&temp);
+    fs::create_dir_all(&temp).map_err(|err| format!("Cannot create portable temp: {err}"))?;
+    fs::write(
+        temp.join("host.json"),
+        serde_json::to_string_pretty(host)
+            .map_err(|err| format!("Cannot serialize host: {err}"))?,
+    )
+    .map_err(|err| format!("Cannot write host manifest: {err}"))?;
+    let root = PathBuf::from(&host.root_folder);
+    if root.exists() {
+        copy_dir(&root, &temp.join("project"))?;
+    }
+    compress_folder(&temp, &target)?;
+    let _ = fs::remove_dir_all(&temp);
+    Ok(target.display().to_string())
+}
+
+pub fn check_latest_release() -> AppResult<ReleaseInfo> {
+    let script = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; (Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/bftehno-prog/localstack-pro/releases/latest').tag_name + '|' + (Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/bftehno-prog/localstack-pro/releases/latest').html_url";
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot check GitHub releases: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Cannot check updates. {detail}"));
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let mut parts = text.split('|');
+    let latest = parts
+        .next()
+        .unwrap_or(env!("CARGO_PKG_VERSION"))
+        .trim()
+        .trim_start_matches('v')
+        .to_string();
+    let url = parts
+        .next()
+        .unwrap_or("https://github.com/bftehno-prog/localstack-pro/releases")
+        .trim()
+        .to_string();
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    Ok(ReleaseInfo {
+        current_version: current.clone(),
+        latest_version: latest.clone(),
+        update_available: latest != current,
+        url,
+    })
+}
+
 pub fn clone_project_repository(url: String, folder: String) -> AppResult<String> {
     let url = url.trim();
     if !(url.starts_with("https://") || url.starts_with("git@")) || !url.ends_with(".git") {
@@ -158,6 +470,116 @@ pub fn clone_project_repository(url: String, folder: String) -> AppResult<String
         return Err(format!("Cannot clone repository. {detail}"));
     }
     Ok(format!("Repository cloned to {}", target.display()))
+}
+
+fn push_project_check(
+    checks: &mut Vec<ProjectCheck>,
+    title: &str,
+    severity: &str,
+    message: impl Into<String>,
+) {
+    checks.push(ProjectCheck {
+        title: title.to_string(),
+        severity: severity.to_string(),
+        message: message.into(),
+    });
+}
+
+fn project_commands(kind: &str) -> Vec<String> {
+    match kind {
+        "Next.js" | "Vite" | "NestJS" | "Express" | "Node.js" => vec!["npm-install", "npm-dev"],
+        "Laravel" => vec!["composer-install", "artisan-migrate"],
+        "WordPress" => vec!["wp-info"],
+        "PHP Composer" => vec!["composer-install"],
+        _ => vec![],
+    }
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+fn env_template(kind: &str, database: &str, user: &str, password: &str, domain: &str) -> String {
+    if kind == "WordPress" {
+        format!("DB_NAME={database}\nDB_USER={user}\nDB_PASSWORD={password}\nDB_HOST=127.0.0.1\nWP_HOME=http://{domain}\nWP_SITEURL=http://{domain}\n")
+    } else if kind == "Next.js"
+        || kind == "Vite"
+        || kind == "Node.js"
+        || kind == "Express"
+        || kind == "NestJS"
+    {
+        format!("APP_URL=http://{domain}\nDATABASE_URL=mysql://{user}:{password}@127.0.0.1:3306/{database}\nDB_HOST=127.0.0.1\nDB_DATABASE={database}\nDB_USERNAME={user}\nDB_PASSWORD={password}\n")
+    } else {
+        format!("APP_NAME=LocalStack\nAPP_ENV=local\nAPP_DEBUG=true\nAPP_URL=http://{domain}\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE={database}\nDB_USERNAME={user}\nDB_PASSWORD={password}\n")
+    }
+}
+
+fn header_value(response: &str, name: &str) -> Option<String> {
+    let prefix = format!("{name}:");
+    response.lines().find_map(|line| {
+        if line.to_lowercase().starts_with(&prefix) {
+            Some(line[prefix.len()..].trim().to_string())
+        } else {
+            None
+        }
+    })
+}
+
+fn copy_dir(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
+    fs::create_dir_all(target)
+        .map_err(|err| format!("Cannot create {}: {err}", target.display()))?;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("Cannot read {}: {err}", source.display()))?
+    {
+        let entry = entry.map_err(|err| format!("Cannot read project entry: {err}"))?;
+        let path = entry.path();
+        let destination = target.join(entry.file_name());
+        if path.is_dir() {
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            if matches!(name, "node_modules" | ".next" | "vendor" | ".git") {
+                continue;
+            }
+            copy_dir(&path, &destination)?;
+        } else {
+            fs::copy(&path, &destination)
+                .map_err(|err| format!("Cannot copy {}: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn compress_folder(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
+    let script = format!(
+        "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Compress-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+        source.display().to_string().replace('\'', "''"),
+        target.display().to_string().replace('\'', "''")
+    );
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot start portable export: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Cannot create portable archive. {detail}"));
+    }
+    Ok(())
 }
 
 fn ensure_project_path(path: String) -> AppResult<PathBuf> {

@@ -24,6 +24,7 @@ export default function App() {
   const [selectedHost, setSelectedHost] = useState<HostInfo | undefined>();
   const [editingHost, setEditingHost] = useState<HostInfo | undefined>();
   const [selectedService, setSelectedService] = useState<ServiceInfo | undefined>();
+  const [showFirstRun, setShowFirstRun] = useState(() => localStorage.getItem("localstack.firstRunDone") !== "true");
 
   useEffect(() => {
     const handleHash = () => setPageState(pageFromHash());
@@ -82,6 +83,11 @@ export default function App() {
         selectedService={selectedService}
         setSelectedService={setSelectedService}
         editHost={editHost}
+        showFirstRun={showFirstRun}
+        finishFirstRun={() => {
+          localStorage.setItem("localstack.firstRunDone", "true");
+          setShowFirstRun(false);
+        }}
       />
     </I18nProvider>
   );
@@ -109,7 +115,9 @@ function AppContent({
   editingHost,
   selectedService,
   setSelectedService,
-  editHost
+  editHost,
+  showFirstRun,
+  finishFirstRun
 }: {
   page: PageKey;
   setPage: (page: PageKey) => void;
@@ -126,6 +134,8 @@ function AppContent({
   selectedService?: ServiceInfo;
   setSelectedService: (service: ServiceInfo) => void;
   editHost: (host?: HostInfo) => void;
+  showFirstRun: boolean;
+  finishFirstRun: () => void;
 }) {
   const t = useT();
   useNativeTooltips(t, page);
@@ -140,6 +150,7 @@ function AppContent({
       {notice && <div className="success-banner">{t(notice)}</div>}
       {error && <SmartError message={error} run={run} />}
       {operations.length > 0 && <OperationCenter operations={operations} />}
+      {showFirstRun && <FirstRunWizard setPage={setPage} run={run} finish={finishFirstRun} />}
       {page === "overview" && <OverviewPage state={state} run={run} selectedHost={selectedHost} selectHost={setSelectedHost} editHost={editHost} />}
       {page === "hosts" && <HostsPage state={state} run={run} selected={selectedHost} setSelected={setSelectedHost} editHost={editHost} />}
       {page === "host-editor" && <HostEditorPage state={state} initial={editingHost} run={run} back={() => setPage("hosts")} />}
@@ -151,6 +162,21 @@ function AppContent({
       {page === "logs" && <LogsPage state={state} run={run} />}
       {page === "settings" && <SettingsPage state={state} run={run} />}
     </Shell>
+  );
+}
+
+function FirstRunWizard({ setPage, run, finish }: { setPage: (page: PageKey) => void; run: ReturnType<typeof useAppState>["run"]; finish: () => void }) {
+  const t = useT();
+  return (
+    <div className="first-run">
+      <div>
+        <strong>{t("First Run Wizard")}</strong>
+        <span>{t("Choose project folders, check ports, trust SSL, and start base services.")}</span>
+      </div>
+      <Button onClick={() => { setPage("settings"); }}>{t("Open Settings")}</Button>
+      <Button onClick={() => void run(() => api.repairEnvironment(), { label: "Repairing environment..." })}>{t("Prepare Environment")}</Button>
+      <Button variant="primary" onClick={finish}>{t("Done")}</Button>
+    </div>
   );
 }
 

@@ -13,7 +13,10 @@ import type {
   LogFileTail,
   PhpVersion,
   PortInspection,
-  ServiceInfo
+  ProjectInspection,
+  ReleaseInfo,
+  ServiceInfo,
+  SitePreview
 } from "./types";
 
 const now = new Date().toISOString();
@@ -289,6 +292,11 @@ export const api = {
   scanPorts: () => call<PortInspection[]>("scan_ports"),
   runProjectCommand: (path: string, commandKey: string) => call<string>("run_project_command", { path, commandKey }),
   cloneProjectRepository: (url: string, folder: string) => call<string>("clone_project_repository", { url, folder }),
+  inspectProject: (path: string) => call<ProjectInspection>("inspect_project", { path }),
+  generateEnvTemplate: (path: string, kind: string, database: string, user: string, password: string, domain: string) => call<string>("generate_env_template", { path, kind, database, user, password, domain }),
+  previewHost: (hostId: string) => call<SitePreview>("preview_host", { hostId }),
+  exportPortableHost: (hostId: string, target: string) => call<string>("export_portable_host", { hostId, target }),
+  checkLatestRelease: () => call<ReleaseInfo>("check_latest_release"),
   hideTrayPanel: () => call<void>("hide_tray_panel"),
   openMainPage: (page?: string) => call<void>("open_main_page", { page }),
   quit: () => call<void>("quit_app")

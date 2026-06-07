@@ -471,6 +471,33 @@ fn clone_project_repository(url: String, folder: String) -> AppResult<String> {
     tools::clone_project_repository(url, folder)
 }
 #[tauri::command]
+fn inspect_project(path: String) -> AppResult<tools::ProjectInspection> {
+    tools::inspect_project(path)
+}
+#[tauri::command]
+fn generate_env_template(
+    path: String,
+    kind: String,
+    database: String,
+    user: String,
+    password: String,
+    domain: String,
+) -> AppResult<String> {
+    tools::generate_env_template(path, kind, database, user, password, domain)
+}
+#[tauri::command]
+fn preview_host(host_id: String) -> AppResult<tools::SitePreview> {
+    tools::preview_host(host_id)
+}
+#[tauri::command]
+fn export_portable_host(host_id: String, target: String) -> AppResult<String> {
+    tools::export_portable_host(host_id, target)
+}
+#[tauri::command]
+fn check_latest_release() -> AppResult<tools::ReleaseInfo> {
+    tools::check_latest_release()
+}
+#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -631,6 +658,11 @@ pub fn run() {
             scan_ports,
             run_project_command,
             clone_project_repository,
+            inspect_project,
+            generate_env_template,
+            preview_host,
+            export_portable_host,
+            check_latest_release,
             quit_app,
             hide_tray_panel,
             open_main_page,
