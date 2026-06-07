@@ -123,6 +123,29 @@ export function CmsPage({
       {formError && <div className="error-banner">{formError}</div>}
       <div className="cms-grid">
         <section className="stack-left">
+          <Panel title="Preset Marketplace">
+            <div className="preset-grid">
+              {["WordPress", "Laravel", "Symfony", "Next.js", "Nuxt", "Astro", "Vite", "Express", "NestJS", "Custom PHP"].map((preset) => (
+                <button key={preset} onClick={() => {
+                  const template = templates.find((item) => item.name.toLowerCase().includes(preset.toLowerCase()) || item.id.toLowerCase().includes(preset.toLowerCase().replace(".", "")));
+                  if (template) {
+                    selectTemplate(template);
+                  } else {
+                    const slug = preset.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+                    setDomain(`${slug}.test`);
+                    setRootFolder(`${state.settings.projectsFolder}\\${slug}`);
+                    setDatabaseName(sanitizeDatabaseName(slug));
+                    setDatabaseUser(`${sanitizeDatabaseName(slug)}_user`);
+                    setCreateDatabase(!["next-js", "nuxt", "astro", "vite", "express", "nestjs"].includes(slug));
+                  }
+                }}>
+                  <PackagePlus size={16} />
+                  <strong>{preset}</strong>
+                  <small>{preset.includes("js") || ["Nuxt", "Astro", "Vite", "Express", "NestJS"].includes(preset) ? "Node.js" : "PHP"}</small>
+                </button>
+              ))}
+            </div>
+          </Panel>
           <Panel title="Popular CMS">
             <div className="cms-template-grid">
               {templates.map((template) => (

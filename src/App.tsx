@@ -14,6 +14,7 @@ import { DatabasePage } from "./pages/Database";
 import { CmsPage } from "./pages/Cms";
 import { SslPage } from "./pages/Ssl";
 import { LogsPage } from "./pages/Logs";
+import { FilesPage } from "./pages/Files";
 import { SettingsPage } from "./pages/Settings";
 import { I18nProvider, useT } from "./ui/i18n";
 import { api } from "./ui/api";
@@ -93,7 +94,7 @@ export default function App() {
   );
 }
 
-const pageKeys: PageKey[] = ["overview", "hosts", "host-editor", "services", "php", "database", "cms", "ssl", "logs", "settings"];
+const pageKeys: PageKey[] = ["overview", "hosts", "host-editor", "services", "php", "database", "cms", "ssl", "logs", "files", "settings"];
 
 function pageFromHash(): PageKey {
   const key = window.location.hash.replace(/^#/, "") as PageKey;
@@ -160,6 +161,7 @@ function AppContent({
       {page === "cms" && <CmsPage state={state} run={run} />}
       {page === "ssl" && <SslPage state={state} run={run} />}
       {page === "logs" && <LogsPage state={state} run={run} />}
+      {page === "files" && <FilesPage state={state} run={run} />}
       {page === "settings" && <SettingsPage state={state} run={run} />}
     </Shell>
   );
@@ -214,6 +216,7 @@ function SmartError({ message, run }: { message: string; run: ReturnType<typeof 
       {help.action === "sync-hosts" && <Button onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>{t("Fix")}</Button>}
       {help.action === "repair" && <Button onClick={() => void run(() => api.repairEnvironment(), { label: "Repairing environment..." })}>{t("Fix")}</Button>}
       {help.action === "install" && <Button onClick={() => void run(() => api.installAllMissingDependencies(), { label: "Installing missing service dependencies..." })}>{t("Install Missing")}</Button>}
+      {help.action === "ssl" && <Button onClick={() => void run(() => api.openMainPage("ssl"), { label: "Opening SSL..." })}>{t("Fix")}</Button>}
     </div>
   );
 }
@@ -223,10 +226,13 @@ function errorHelp(message: string) {
   if (text.includes("hosts file") || text.includes("not mapped")) {
     return { title: "Hosts file issue", hint: "Sync the Windows hosts file and approve administrator access.", action: "sync-hosts" };
   }
+  if (text.includes("cert") || text.includes("ssl") || text.includes("authority_invalid")) {
+    return { title: "SSL trust issue", hint: "Open SSL and run SSL Auto Repair.", action: "ssl" };
+  }
   if (text.includes("executable was not found") || text.includes("not found or installed")) {
     return { title: "Missing dependency", hint: "Install missing service files or detect installed tools.", action: "install" };
   }
-  if (text.includes("cannot start") || text.includes("did not start") || text.includes("port")) {
+  if (text.includes("503") || text.includes("gateway") || text.includes("cannot start") || text.includes("did not start") || text.includes("port")) {
     return { title: "Service startup issue", hint: "Run automatic repair to refresh configs, ports and service state.", action: "repair" };
   }
   return { title: "Action failed", hint: "Check the details, then retry the action or open Logs.", action: undefined };

@@ -534,6 +534,54 @@ fn inspect_installed_tools() -> AppResult<Vec<tools::InstalledTool>> {
     tools::inspect_installed_tools()
 }
 #[tauri::command]
+fn list_files(path: String) -> AppResult<Vec<tools::FileEntry>> {
+    tools::list_files(path)
+}
+#[tauri::command]
+fn read_file(path: String) -> AppResult<tools::ConfigFile> {
+    tools::read_file(path)
+}
+#[tauri::command]
+fn write_file(path: String, content: String) -> AppResult<String> {
+    tools::write_file(path, content)
+}
+#[tauri::command]
+fn create_folder(path: String) -> AppResult<String> {
+    tools::create_folder(path)
+}
+#[tauri::command]
+fn delete_path(path: String) -> AppResult<String> {
+    tools::delete_path(path)
+}
+#[tauri::command]
+fn rename_path(path: String, new_name: String) -> AppResult<String> {
+    tools::rename_path(path, new_name)
+}
+#[tauri::command]
+fn list_environment_snapshots() -> AppResult<Vec<tools::EnvironmentSnapshotInfo>> {
+    tools::list_environment_snapshots()
+}
+#[tauri::command]
+fn create_environment_snapshot(name: String) -> AppResult<tools::EnvironmentSnapshotInfo> {
+    tools::create_environment_snapshot(name)
+}
+#[tauri::command]
+fn restore_environment_snapshot(id: String) -> AppResult<AppSnapshot> {
+    tools::restore_environment_snapshot(id).map(cache_snapshot)
+}
+#[tauri::command]
+fn list_node_scripts(path: String) -> AppResult<Vec<tools::NodeScript>> {
+    tools::list_node_scripts(path)
+}
+#[tauri::command]
+fn run_node_script(path: String, script: String) -> AppResult<String> {
+    tools::run_node_script(path, script)
+}
+#[tauri::command]
+fn resource_monitor() -> AppResult<Vec<tools::ResourceProcess>> {
+    tools::resource_monitor()
+}
+#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -708,6 +756,18 @@ pub fn run() {
             create_diagnostic_bundle,
             diagnose_ssl,
             inspect_installed_tools,
+            list_files,
+            read_file,
+            write_file,
+            create_folder,
+            delete_path,
+            rename_path,
+            list_environment_snapshots,
+            create_environment_snapshot,
+            restore_environment_snapshot,
+            list_node_scripts,
+            run_node_script,
+            resource_monitor,
             quit_app,
             hide_tray_panel,
             open_main_page,

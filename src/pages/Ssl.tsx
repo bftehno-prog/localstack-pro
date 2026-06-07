@@ -25,12 +25,18 @@ export function SslPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const result = await run(() => api.diagnoseSsl(certificate.domain), { label: `Diagnosing SSL for ${certificate.domain}...` });
     if (result && typeof result === "object" && "summary" in result) setDiagnostic(result as SslDiagnostic);
   };
+  const autoRepair = async (domain: string) => {
+    await run(() => api.generateCertificate(domain, [domain, `www.${domain}`]), { label: `Generating certificate for ${domain}...` });
+    await run(() => api.trustCertificate(domain), { label: `Trusting certificate for ${domain}...` });
+    const host = state.hosts.find((item) => item.domain === domain);
+    if (host) await run(() => api.repairHost(host.id), { label: `Repairing SSL host ${domain}...` });
+  };
   return (
     <>
       <TopServices state={state} onStartAll={() => void run(api.startAll, { label: "Starting all services..." })} onStopAll={() => void run(api.stopAll, { label: "Stopping all services..." })} onRestartAll={() => void run(api.restartAll, { label: "Restarting all services..." })} onOpenSite={() => state.hosts[0] && void run(() => api.openHost(state.hosts[0].id), { label: `Opening ${state.hosts[0].domain}...` })} onToggleService={(serviceId, running) => void run(() => running ? api.stopService(serviceId) : api.startService(serviceId), { label: `${running ? "Stopping" : "Starting"} ${serviceId}...` })} />
       <div className="page-grid">
         <section>
-          <Panel title="SSL Certificates" action={<><Button variant="primary" icon={<Shield size={16} />} onClick={() => void run(() => api.generateCertificate(firstDomain, [firstDomain, `www.${firstDomain}`]), { label: `Generating certificate for ${firstDomain}...` })}>Generate Certificate</Button><Button icon={<Upload size={16} />} disabled={!cert} onClick={() => cert && void run(() => api.trustCertificate(cert.id), { label: `Trusting certificate for ${cert.domain}...` })}>Trust Certificate</Button><Button icon={<RefreshCw size={16} />} disabled={!cert} onClick={() => cert && void diagnose(cert)}>Diagnose SSL</Button><Button variant="danger" disabled={!cert} onClick={() => cert && void run(() => api.revokeCertificate(cert.id), { label: `Revoking certificate for ${cert.domain}...` })}>Revoke</Button><Button icon={<Download size={16} />} disabled={!cert} onClick={() => cert && void exportCert(cert)}>Export</Button></>}>
+          <Panel title="SSL Certificates" action={<><Button variant="primary" icon={<Shield size={16} />} onClick={() => void run(() => api.generateCertificate(firstDomain, [firstDomain, `www.${firstDomain}`]), { label: `Generating certificate for ${firstDomain}...` })}>Generate Certificate</Button><Button icon={<Upload size={16} />} disabled={!cert} onClick={() => cert && void run(() => api.trustCertificate(cert.id), { label: `Trusting certificate for ${cert.domain}...` })}>Trust Certificate</Button><Button icon={<RefreshCw size={16} />} disabled={!cert} onClick={() => cert && void autoRepair(cert.domain)}>SSL Auto Repair</Button><Button icon={<RefreshCw size={16} />} disabled={!cert} onClick={() => cert && void diagnose(cert)}>Diagnose SSL</Button><Button variant="danger" disabled={!cert} onClick={() => cert && void run(() => api.revokeCertificate(cert.id), { label: `Revoking certificate for ${cert.domain}...` })}>Revoke</Button><Button icon={<Download size={16} />} disabled={!cert} onClick={() => cert && void exportCert(cert)}>Export</Button></>}>
             <table className="data-table">
               <thead><tr><th>Domain</th><th>Status</th><th>Trust</th><th>Expires</th><th>Issuer</th><th>SAN Domains</th><th>Auto-Renew</th><th>Actions</th></tr></thead>
               <tbody>
@@ -62,7 +68,7 @@ export function SslPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
           </Panel>
           <Panel title="Troubleshooting Tips">
             <p className="muted">If the site shows a certificate warning, click Repair Trust.</p>
-            <Button icon={<RefreshCw size={16} />} onClick={() => void run(() => api.trustCertificate(cert.id), { label: `Repairing trust for ${cert.domain}...` })}>Repair Trust</Button>
+            <Button icon={<RefreshCw size={16} />} onClick={() => void autoRepair(cert.domain)}>SSL Auto Repair</Button>
           </Panel>
         </aside>}
       </div>

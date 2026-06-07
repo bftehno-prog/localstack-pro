@@ -1,8 +1,8 @@
-import { Copy, Download, ExternalLink, Filter, Folder, MoreVertical, Play, Plus, Search, ShieldCheck, Star, Trash2, Upload, Wrench } from "lucide-react";
+import { Copy, Database, Download, ExternalLink, Filter, Folder, MoreVertical, Play, Plus, Search, ShieldCheck, Star, Terminal, Trash2, Upload, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
-import type { AppRun, AppSnapshot, HostDiagnosticReport, HostInfo } from "../ui/types";
+import type { AppRun, AppSnapshot, DatabaseDiagnosticReport, DatabaseInfo, HostDiagnosticReport, HostInfo, LogFileTail, NodeScript } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
@@ -34,6 +34,14 @@ export function HostsPage({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [tab, setTab] = useState("General");
   const [diagnostics, setDiagnostics] = useState<HostDiagnosticReport | null>(null);
+  const [dbDiagnostics, setDbDiagnostics] = useState<DatabaseDiagnosticReport | null>(null);
+  const [hostLogs, setHostLogs] = useState<LogFileTail | null>(null);
+  const [nodeScripts, setNodeScripts] = useState<NodeScript[]>([]);
+  const [wizardType, setWizardType] = useState("WordPress");
+  const [wizardDomain, setWizardDomain] = useState("new.test");
+  const [wizardFolder, setWizardFolder] = useState(`${state.settings.projectsFolder}\\new`);
+  const [wizardDatabase, setWizardDatabase] = useState("new_db");
+  const [wizardSsl, setWizardSsl] = useState(false);
   const favorites = useStoredList("localstack.favoriteHosts");
   const [compactRows, setCompactRows] = useStoredBoolean("localstack.hosts.compactRows", false);
   useEffect(() => {
@@ -73,6 +81,20 @@ export function HostsPage({
       setDiagnostics(report);
     }
   };
+  const testHostDatabase = async (target: HostInfo) => {
+    const database = state.databases.find((item) => item.id === target.database || item.name === target.database);
+    if (!database) return;
+    const report = await run(() => api.testDatabaseConnection(database.id), { label: `Testing ${target.domain} database...` });
+    if (report && typeof report === "object" && "databaseId" in report) setDbDiagnostics(report as DatabaseDiagnosticReport);
+  };
+  const loadHostLogs = async (target: HostInfo) => {
+    const result = await run(() => api.tailLogFile(`host:${target.domain}`, 120), { label: `Reading logs for ${target.domain}...` });
+    if (result && typeof result === "object" && "lines" in result) setHostLogs(result as LogFileTail);
+  };
+  const loadNodeScripts = async (target: HostInfo) => {
+    const result = await run(() => api.listNodeScripts(target.rootFolder), { label: `Reading package.json for ${target.domain}...` });
+    if (Array.isArray(result)) setNodeScripts(result as NodeScript[]);
+  };
   const deleteSelected = async (target: HostInfo) => {
     const next = state.hosts.find((item) => item.id !== target.id);
     await run(() => api.deleteHost(target.id), { label: `Deleting ${target.domain}...` });
@@ -87,6 +109,59 @@ export function HostsPage({
     setSsl("SSL: All");
     setReadinessFilter("All Readiness");
     setFilterMenuOpen(false);
+  };
+  const createWizardHost = async () => {
+    const slug = wizardDomain.split(".")[0].replace(/[^a-z0-9_-]+/gi, "").toLowerCase() || "site";
+    const now = new Date().toISOString();
+    const next: HostInfo = {
+      id: wizardDomain.trim().toLowerCase(),
+      domain: wizardDomain.trim().toLowerCase(),
+      rootFolder: wizardFolder.trim(),
+      documentRoot: wizardType.includes("Node") || wizardType === "Static" ? "." : "public",
+      phpVersion: state.phpVersions.find((php) => php.default)?.version ?? state.phpVersions[0]?.version ?? "8.3",
+      webServer: wizardType.includes("Node") ? "Apache" : "Apache",
+      ssl: wizardSsl,
+      environment: "Development",
+      httpPort: 80,
+      httpsPort: 443,
+      database: wizardDatabase.trim(),
+      mailService: "Mailpit",
+      envVariables: {
+        APP_ENV: "local",
+        APP_DEBUG: "true",
+        APP_URL: `${wizardSsl ? "https" : "http"}://${wizardDomain.trim().toLowerCase()}`,
+        DB_DATABASE: wizardDatabase.trim(),
+        DB_USERNAME: `${slug}_user`,
+        DB_PASSWORD: "localstack"
+      },
+      rewriteRules: "",
+      notes: `${wizardType} host created by Host Wizard.`,
+      status: "stopped",
+      tags: [wizardType.toLowerCase().replace(/[^a-z0-9]+/g, "-")],
+      createdAt: now,
+      updatedAt: now
+    };
+    if (wizardDatabase.trim()) {
+      const database: DatabaseInfo = {
+        id: wizardDatabase.trim(),
+        name: wizardDatabase.trim(),
+        description: `${next.domain} database`,
+        engine: "MySQL",
+        version: "8.0.36",
+        schemas: 1,
+        user: `${slug}_user`,
+        password: "localstack",
+        port: 3306,
+        status: "stopped",
+        sizeMb: 0,
+        createdAt: now
+      };
+      if (!state.databases.some((item) => item.id === database.id || item.name === database.name)) {
+        await run(() => api.createDatabase(database), { label: `Creating database ${database.name}...` }).catch(() => undefined);
+      }
+    }
+    await run(() => api.saveHost(next), { label: `Creating host ${next.domain}...` });
+    setSelected(next);
   };
   const filteredHosts = useMemo(() => state.hosts.filter((item) => {
     const matchesQuery = !query.trim() || `${item.domain} ${item.rootFolder} ${item.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase());
@@ -139,6 +214,22 @@ export function HostsPage({
             </Button>
           </div>
         </div>
+        <Panel title="Host Wizard">
+          <div className="wizard-inline">
+            <select value={wizardType} onChange={(event) => setWizardType(event.target.value)}>{["WordPress", "Laravel", "Symfony", "Custom PHP", "Static", "Node.js", "Next.js"].map((item) => <option key={item}>{item}</option>)}</select>
+            <input value={wizardDomain} onChange={(event) => {
+              const value = event.target.value;
+              setWizardDomain(value);
+              const slug = value.split(".")[0].replace(/[^a-z0-9_-]+/gi, "").toLowerCase();
+              setWizardFolder(`${state.settings.projectsFolder}\\${slug || "new"}`);
+              setWizardDatabase(`${slug || "new"}_db`);
+            }} />
+            <input value={wizardFolder} onChange={(event) => setWizardFolder(event.target.value)} />
+            <input value={wizardDatabase} onChange={(event) => setWizardDatabase(event.target.value)} />
+            <label className="inline-toggle"><span className={`toggle ${wizardSsl ? "on" : ""}`} onClick={() => setWizardSsl((value) => !value)} />SSL</label>
+            <Button variant="primary" icon={<Plus size={16} />} onClick={() => void createWizardHost()}>Create Host</Button>
+          </div>
+        </Panel>
         <Panel>
           <div className="filters">
             <label className="search">
@@ -242,6 +333,9 @@ export function HostsPage({
               <Button icon={<Trash2 size={17} />} onClick={() => void run(() => api.openPath(`${host.rootFolder}\\logs`), { label: `Opening logs for ${host.domain}...` })}>View Logs</Button>
               <Button icon={<ShieldCheck size={17} />} onClick={() => void diagnose(host)}>Diagnose</Button>
               <Button icon={<Wrench size={17} />} onClick={() => void repair(host)}>Repair Host</Button>
+              <Button icon={<Database size={17} />} onClick={() => void testHostDatabase(host)}>Test Database</Button>
+              <Button icon={<Terminal size={17} />} onClick={() => void loadNodeScripts(host)}>Node Scripts</Button>
+              <Button icon={<Folder size={17} />} onClick={() => void loadHostLogs(host)}>Host Logs</Button>
               <Button icon={<Upload size={17} />} onClick={() => void backupHost(host)}>Backup Host</Button>
               <Button icon={<Download size={17} />} onClick={() => void restoreHost()}>Restore Host</Button>
               <Button icon={<ShieldCheck size={17} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>Sync Hosts File</Button>
@@ -267,6 +361,29 @@ export function HostsPage({
                   ))}
                 </tbody>
               </table>
+            </Panel>
+          )}
+          {dbDiagnostics && (
+            <Panel title="Database Connection" action={<StatusDot status={dbDiagnostics.errors > 0 ? "error" : dbDiagnostics.warnings > 0 ? "warning" : "valid"} />}>
+              <div className="kv detail-kv"><span>Database</span><strong>{dbDiagnostics.database}</strong><span>Summary</span><strong>{dbDiagnostics.summary}</strong></div>
+            </Panel>
+          )}
+          {nodeScripts.length > 0 && (
+            <Panel title="Node App Manager">
+              <div className="script-list">
+                {nodeScripts.map((script) => (
+                  <button key={script.name} onClick={() => void run(() => api.runNodeScript(host.rootFolder, script.name), { label: `Running npm run ${script.name}...` })}>
+                    <Terminal size={15} />
+                    <strong>{script.name}</strong>
+                    <small>{script.command}</small>
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          )}
+          {hostLogs && (
+            <Panel title="Host Logs">
+              <div className="log-box compact-log">{hostLogs.lines.slice(-20).map((line, index) => <pre key={index}>{line}</pre>)}</div>
             </Panel>
           )}
           <Panel title="Notes" action={<Button onClick={() => editHost(host)}>Edit</Button>}>

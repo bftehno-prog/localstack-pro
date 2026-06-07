@@ -3,6 +3,7 @@ import {
   CircleHelp,
   Database,
   FileText,
+  Folder,
   Gauge,
   Home,
   Layers,
@@ -30,6 +31,7 @@ const nav: Array<{ key: PageKey; label: string; icon: ReactNode }> = [
   { key: "cms", label: "CMS", icon: <Box size={20} /> },
   { key: "ssl", label: "SSL", icon: <Shield size={20} /> },
   { key: "logs", label: "Logs", icon: <FileText size={20} /> },
+  { key: "files", label: "Files", icon: <Folder size={20} /> },
   { key: "settings", label: "Settings", icon: <Settings size={20} /> }
 ];
 

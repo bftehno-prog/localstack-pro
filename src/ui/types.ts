@@ -1,6 +1,6 @@
 export type ServiceStatus = "running" | "stopped" | "starting" | "error";
 export type LogLevel = "INFO" | "WARNING" | "ERROR" | "DEBUG";
-export type PageKey = "overview" | "hosts" | "host-editor" | "services" | "php" | "database" | "cms" | "ssl" | "logs" | "settings";
+export type PageKey = "overview" | "hosts" | "host-editor" | "services" | "php" | "database" | "cms" | "ssl" | "logs" | "files" | "settings";
 export type MainPageKey = Exclude<PageKey, "host-editor">;
 
 export interface AppError {
@@ -297,6 +297,37 @@ export interface InstalledTool {
   status: string;
 }
 
+export interface FileEntry {
+  name: string;
+  path: string;
+  kind: "file" | "folder";
+  size: number;
+  modified?: string;
+}
+
+export interface EnvironmentSnapshotInfo {
+  id: string;
+  name: string;
+  path: string;
+  createdAt: string;
+  hosts: number;
+  services: number;
+  databases: number;
+}
+
+export interface ResourceProcess {
+  pid: number;
+  name: string;
+  cpu: number;
+  memoryMb: number;
+  command: string;
+}
+
+export interface NodeScript {
+  name: string;
+  command: string;
+}
+
 export interface LogFileTail {
   source: string;
   path: string;
@@ -304,7 +335,7 @@ export interface LogFileTail {
   lines: string[];
 }
 
-export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | InstalledTool[] | string | void;
+export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | InstalledTool[] | FileEntry[] | EnvironmentSnapshotInfo[] | EnvironmentSnapshotInfo | ResourceProcess[] | NodeScript[] | string | void;
 
 export type AppRun = (
   action: () => Promise<AppRunResult>,

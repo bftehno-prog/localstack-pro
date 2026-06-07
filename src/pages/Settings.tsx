@@ -2,7 +2,7 @@ import { Bell, Database, Download, Folder, Globe2, Link, RefreshCw, Save, Settin
 import { useEffect, useRef, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
-import type { AppRun, AppSettings, AppSnapshot, HealthReport, PortInspection, ReleaseInfo } from "../ui/types";
+import type { AppRun, AppSettings, AppSnapshot, EnvironmentSnapshotInfo, HealthReport, PortInspection, ReleaseInfo, ResourceProcess } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { useT } from "../ui/i18n";
@@ -25,6 +25,8 @@ export function SettingsPage({
   const [healthError, setHealthError] = useState("");
   const [ports, setPorts] = useState<PortInspection[]>([]);
   const [release, setRelease] = useState<ReleaseInfo>();
+  const [snapshots, setSnapshots] = useState<EnvironmentSnapshotInfo[]>([]);
+  const [processes, setProcesses] = useState<ResourceProcess[]>([]);
   const [downloadedInstaller, setDownloadedInstaller] = useState("");
   const [notificationLevel, setNotificationLevel] = useState(localStorage.getItem("localstack.notificationLevel") ?? "Errors only");
   const [scheduledBackups, setScheduledBackups] = useStoredBoolean("localstack.scheduledBackups", false);
@@ -135,6 +137,20 @@ export function SettingsPage({
       await run(() => api.restoreAppBackup(path), { label: "Restoring application backup..." });
     }
   };
+  const loadSnapshots = async () => {
+    const result = await run(api.listEnvironmentSnapshots, { label: "Loading environment snapshots..." });
+    if (Array.isArray(result)) setSnapshots(result as EnvironmentSnapshotInfo[]);
+  };
+  const createSnapshot = async () => {
+    const name = window.prompt("Snapshot name", "working");
+    if (!name) return;
+    const result = await run(() => api.createEnvironmentSnapshot(name), { label: "Creating environment snapshot..." });
+    if (result && typeof result === "object" && "id" in result) await loadSnapshots();
+  };
+  const loadProcesses = async () => {
+    const result = await run(api.resourceMonitor, { label: "Reading resource monitor..." });
+    if (Array.isArray(result)) setProcesses(result as ResourceProcess[]);
+  };
   return (
     <div className="settings-page">
       <h1>{t("Settings")}</h1>
@@ -202,6 +218,13 @@ export function SettingsPage({
             </div>
             <p className="muted">{scheduledBackups ? t("Scheduled backups are enabled for the local reminder panel.") : t("Scheduled backups are paused.")}</p>
           </Panel>}
+          {activeTab === "Backups" && <Panel title="Environment Snapshots" action={<><Button icon={<RefreshCw size={16} />} onClick={() => void loadSnapshots()}>Refresh</Button><Button variant="primary" icon={<Save size={16} />} onClick={() => void createSnapshot()}>Create Snapshot</Button></>}>
+            <table className="data-table compact-table">
+              <thead><tr><th>Name</th><th>Created</th><th>Hosts</th><th>Services</th><th>Databases</th><th>Action</th></tr></thead>
+              <tbody>{snapshots.map((item) => <tr key={item.id}><td><strong>{item.name}</strong></td><td>{new Date(item.createdAt).toLocaleString()}</td><td>{item.hosts}</td><td>{item.services}</td><td>{item.databases}</td><td><Button onClick={() => void run(() => api.restoreEnvironmentSnapshot(item.id), { label: `Restoring ${item.name}...` })}>Restore</Button></td></tr>)}</tbody>
+            </table>
+            {snapshots.length === 0 && <p className="muted">No environment snapshots yet.</p>}
+          </Panel>}
           {activeTab === "Advanced" && <><Panel title="Logging">
               <SettingSelect label="Log Level" value={settings.logLevel} onChange={(value) => update("logLevel", value)} options={["Information", "Warning", "Error", "Debug"]} />
               <SettingSelect label="Max Log File Size" value={settings.maxLogFileSize} onChange={(value) => update("maxLogFileSize", value)} options={["10 MB", "50 MB", "100 MB"]} />
@@ -238,6 +261,13 @@ export function SettingsPage({
           </Panel>
           <Panel title="Performance">
             <PerformanceCenter state={state} />
+          </Panel>
+          <Panel title="Resource Monitor" action={<Button icon={<RefreshCw size={16} />} onClick={() => void loadProcesses()}>Refresh</Button>}>
+            <table className="data-table compact-table">
+              <thead><tr><th>Process</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead>
+              <tbody>{processes.slice(0, 8).map((item) => <tr key={item.pid}><td><strong>{item.name}</strong><small>{item.command}</small></td><td>{item.pid}</td><td>{item.cpu.toFixed(1)}</td><td>{item.memoryMb} MB</td></tr>)}</tbody>
+            </table>
+            {processes.length === 0 && <p className="muted">Click Refresh to inspect running processes.</p>}
           </Panel>
         </aside>
       </div>

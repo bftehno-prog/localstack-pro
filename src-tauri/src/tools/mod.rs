@@ -96,6 +96,45 @@ pub struct InstalledTool {
     pub status: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub size: u64,
+    pub modified: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentSnapshotInfo {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub created_at: String,
+    pub hosts: usize,
+    pub services: usize,
+    pub databases: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceProcess {
+    pub pid: u32,
+    pub name: String,
+    pub cpu: f32,
+    pub memory_mb: u64,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeScript {
+    pub name: String,
+    pub command: String,
+}
+
 pub fn scan_ports() -> AppResult<Vec<PortInspection>> {
     let store = Store::new()?;
     let snapshot = store.load_static()?;
@@ -502,6 +541,272 @@ pub fn inspect_installed_tools() -> AppResult<Vec<InstalledTool>> {
                 }
                 .to_string(),
             }
+        })
+        .collect())
+}
+
+pub fn list_files(path: String) -> AppResult<Vec<FileEntry>> {
+    let root = allowed_workspace_path(path)?;
+    if !root.is_dir() {
+        return Err(format!("Folder does not exist: {}", root.display()));
+    }
+    let mut entries = fs::read_dir(&root)
+        .map_err(|err| format!("Cannot read folder {}: {err}", root.display()))?
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            let metadata = entry.metadata().ok();
+            let modified = metadata
+                .as_ref()
+                .and_then(|item| item.modified().ok())
+                .map(|time| chrono::DateTime::<Utc>::from(time).to_rfc3339());
+            FileEntry {
+                name: entry.file_name().to_string_lossy().to_string(),
+                path: path.display().to_string(),
+                kind: if path.is_dir() { "folder" } else { "file" }.to_string(),
+                size: metadata.as_ref().map(|item| item.len()).unwrap_or(0),
+                modified,
+            }
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| {
+        b.kind
+            .cmp(&a.kind)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(entries)
+}
+
+pub fn read_file(path: String) -> AppResult<ConfigFile> {
+    let target = allowed_workspace_path(path)?;
+    if !target.is_file() {
+        return Err(format!("File does not exist: {}", target.display()));
+    }
+    if target.metadata().map(|item| item.len()).unwrap_or(0) > 2_000_000 {
+        return Err("File is too large for the built-in editor.".to_string());
+    }
+    let content = fs::read_to_string(&target)
+        .map_err(|err| format!("Cannot read file {}: {err}", target.display()))?;
+    Ok(ConfigFile {
+        path: target.display().to_string(),
+        content,
+    })
+}
+
+pub fn write_file(path: String, content: String) -> AppResult<String> {
+    let target = allowed_workspace_path(path)?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("Cannot create parent folder: {err}"))?;
+    }
+    if target.exists() {
+        let backup = target.with_extension(format!(
+            "{}.backup-{}",
+            target
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("txt"),
+            Utc::now().format("%Y%m%d%H%M%S")
+        ));
+        let _ = fs::copy(&target, backup);
+    }
+    fs::write(&target, content)
+        .map_err(|err| format!("Cannot write file {}: {err}", target.display()))?;
+    Ok(target.display().to_string())
+}
+
+pub fn create_folder(path: String) -> AppResult<String> {
+    let target = allowed_workspace_path(path)?;
+    fs::create_dir_all(&target)
+        .map_err(|err| format!("Cannot create folder {}: {err}", target.display()))?;
+    Ok(target.display().to_string())
+}
+
+pub fn delete_path(path: String) -> AppResult<String> {
+    let target = allowed_workspace_path(path)?;
+    if target.is_dir() {
+        fs::remove_dir_all(&target)
+            .map_err(|err| format!("Cannot delete folder {}: {err}", target.display()))?;
+    } else if target.is_file() {
+        fs::remove_file(&target)
+            .map_err(|err| format!("Cannot delete file {}: {err}", target.display()))?;
+    } else {
+        return Err(format!("Path does not exist: {}", target.display()));
+    }
+    Ok(target.display().to_string())
+}
+
+pub fn rename_path(path: String, new_name: String) -> AppResult<String> {
+    let source = allowed_workspace_path(path)?;
+    let clean = new_name.trim();
+    if clean.is_empty() || clean.contains('\\') || clean.contains('/') {
+        return Err("Enter a valid file or folder name.".to_string());
+    }
+    let target = source
+        .parent()
+        .ok_or_else(|| "Cannot rename this path.".to_string())?
+        .join(clean);
+    let target = allowed_workspace_path(target.display().to_string())?;
+    fs::rename(&source, &target).map_err(|err| format!("Cannot rename path: {err}"))?;
+    Ok(target.display().to_string())
+}
+
+pub fn list_environment_snapshots() -> AppResult<Vec<EnvironmentSnapshotInfo>> {
+    let store = Store::new()?;
+    let dir = store.dir.join("snapshots");
+    fs::create_dir_all(&dir).map_err(|err| format!("Cannot create snapshots folder: {err}"))?;
+    let mut items = fs::read_dir(&dir)
+        .map_err(|err| format!("Cannot read snapshots folder: {err}"))?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("json"))
+        .filter_map(|entry| snapshot_info(entry.path()).ok())
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(items)
+}
+
+pub fn create_environment_snapshot(name: String) -> AppResult<EnvironmentSnapshotInfo> {
+    let store = Store::new()?;
+    let snapshot = store.load_static()?;
+    let dir = store.dir.join("snapshots");
+    fs::create_dir_all(&dir).map_err(|err| format!("Cannot create snapshots folder: {err}"))?;
+    let safe_name = sanitize_name(if name.trim().is_empty() {
+        "environment"
+    } else {
+        name.trim()
+    });
+    let id = format!("{}-{}", Utc::now().format("%Y%m%d%H%M%S"), safe_name);
+    let path = dir.join(format!("{id}.json"));
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&snapshot)
+            .map_err(|err| format!("Cannot serialize environment snapshot: {err}"))?,
+    )
+    .map_err(|err| format!("Cannot write environment snapshot: {err}"))?;
+    snapshot_info(path)
+}
+
+pub fn restore_environment_snapshot(id: String) -> AppResult<crate::state::AppSnapshot> {
+    let store = Store::new()?;
+    let path = store
+        .dir
+        .join("snapshots")
+        .join(format!("{}.json", sanitize_name(&id)));
+    if !path.is_file() {
+        return Err(format!("Snapshot not found: {}", path.display()));
+    }
+    let text = fs::read_to_string(&path).map_err(|err| format!("Cannot read snapshot: {err}"))?;
+    let mut snapshot: crate::state::AppSnapshot =
+        serde_json::from_str(&text).map_err(|err| format!("Cannot parse snapshot: {err}"))?;
+    snapshot.app_data_dir = store.dir.display().to_string();
+    let backup = store.dir.join("backups").join(format!(
+        "pre-snapshot-restore-{}.zip",
+        Utc::now().format("%Y%m%d%H%M%S")
+    ));
+    let _ = crate::settings::create_app_backup(backup.display().to_string());
+    store.save(&snapshot)?;
+    Ok(store.refresh_runtime(snapshot))
+}
+
+pub fn list_node_scripts(path: String) -> AppResult<Vec<NodeScript>> {
+    let root = ensure_project_path(path)?;
+    let package = root.join("package.json");
+    if !package.is_file() {
+        return Ok(Vec::new());
+    }
+    let text =
+        fs::read_to_string(&package).map_err(|err| format!("Cannot read package.json: {err}"))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&text).map_err(|err| format!("Cannot parse package.json: {err}"))?;
+    let scripts = json
+        .get("scripts")
+        .and_then(|value| value.as_object())
+        .map(|map| {
+            map.iter()
+                .filter_map(|(name, value)| {
+                    value.as_str().map(|command| NodeScript {
+                        name: name.clone(),
+                        command: command.to_string(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(scripts)
+}
+
+pub fn run_node_script(path: String, script: String) -> AppResult<String> {
+    let allowed = list_node_scripts(path.clone())?;
+    if !allowed.iter().any(|item| item.name == script) {
+        return Err("Script was not found in package.json.".to_string());
+    }
+    let root = ensure_project_path(path)?;
+    let mut command = Command::new("cmd.exe");
+    command
+        .args(["/C", &format!("npm run {script}")])
+        .current_dir(&root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags_hidden();
+    command
+        .spawn()
+        .map_err(|err| format!("Cannot start npm script: {err}"))?;
+    Ok(format!("Started npm run {script} in {}", root.display()))
+}
+
+pub fn resource_monitor() -> AppResult<Vec<ResourceProcess>> {
+    let script = "$ErrorActionPreference='SilentlyContinue'; Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 40 Id,ProcessName,CPU,WorkingSet64,Path | ConvertTo-Json -Compress";
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags_hidden();
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot inspect processes: {err}"))?;
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|err| format!("Cannot parse process list: {err}"))?;
+    let rows = if let Some(items) = value.as_array() {
+        items.clone()
+    } else {
+        vec![value]
+    };
+    Ok(rows
+        .into_iter()
+        .filter_map(|item| {
+            Some(ResourceProcess {
+                pid: item.get("Id")?.as_u64()? as u32,
+                name: item.get("ProcessName")?.as_str()?.to_string(),
+                cpu: item
+                    .get("CPU")
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or(0.0) as f32,
+                memory_mb: item
+                    .get("WorkingSet64")
+                    .and_then(|value| value.as_u64())
+                    .unwrap_or(0)
+                    / 1024
+                    / 1024,
+                command: item
+                    .get("Path")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            })
         })
         .collect())
 }
@@ -977,6 +1282,85 @@ fn allowed_text_path(path: String) -> AppResult<PathBuf> {
         return Err("Unsupported config file type.".to_string());
     }
     Ok(canonical)
+}
+
+fn allowed_workspace_path(path: String) -> AppResult<PathBuf> {
+    let store = Store::new()?;
+    let snapshot = store.load_static()?;
+    let target = PathBuf::from(path.trim());
+    if !target.is_absolute() {
+        return Err("Path must be absolute.".to_string());
+    }
+    let canonical = target.canonicalize().unwrap_or(target.clone());
+    let mut roots = vec![
+        store.dir.clone(),
+        PathBuf::from(&snapshot.settings.projects_folder),
+        PathBuf::from(&snapshot.settings.backups_folder),
+        PathBuf::from(&snapshot.settings.services_folder),
+    ];
+    roots.extend(
+        snapshot
+            .hosts
+            .iter()
+            .map(|host| PathBuf::from(&host.root_folder)),
+    );
+    let allowed = roots.into_iter().any(|root| {
+        let root = root.canonicalize().unwrap_or(root);
+        canonical.starts_with(root)
+    });
+    if !allowed {
+        return Err("File manager can only access LocalStack Pro project, service, backup and data folders.".to_string());
+    }
+    Ok(canonical)
+}
+
+fn snapshot_info(path: PathBuf) -> AppResult<EnvironmentSnapshotInfo> {
+    let text = fs::read_to_string(&path).map_err(|err| format!("Cannot read snapshot: {err}"))?;
+    let snapshot: crate::state::AppSnapshot =
+        serde_json::from_str(&text).map_err(|err| format!("Cannot parse snapshot: {err}"))?;
+    let id = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("snapshot")
+        .to_string();
+    let created_at = path
+        .metadata()
+        .ok()
+        .and_then(|item| item.modified().ok())
+        .map(|time| chrono::DateTime::<Utc>::from(time).to_rfc3339())
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    Ok(EnvironmentSnapshotInfo {
+        name: id
+            .split_once('-')
+            .map(|(_, name)| name.replace('-', " "))
+            .unwrap_or_else(|| id.clone()),
+        id,
+        path: path.display().to_string(),
+        created_at,
+        hosts: snapshot.hosts.len(),
+        services: snapshot.services.len(),
+        databases: snapshot.databases.len(),
+    })
+}
+
+fn sanitize_name(value: &str) -> String {
+    let cleaned = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if cleaned.is_empty() {
+        "snapshot".to_string()
+    } else {
+        cleaned
+    }
 }
 
 fn ensure_project_path(path: String) -> AppResult<PathBuf> {

@@ -62,8 +62,8 @@ export function useAppState() {
       setError(null);
       setNotice(null);
       const result = await action();
-      if (result && typeof result === "object" && "services" in result) {
-        startTransition(() => setState(result));
+      if (result && typeof result === "object" && "services" in result && Array.isArray(result.services)) {
+        startTransition(() => setState(result as AppSnapshot));
       }
       if (!silent) {
         const finishedAt = Date.now();
