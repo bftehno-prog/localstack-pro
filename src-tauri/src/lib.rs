@@ -582,6 +582,10 @@ fn resource_monitor() -> AppResult<Vec<tools::ResourceProcess>> {
     tools::resource_monitor()
 }
 #[tauri::command]
+fn kill_process(pid: u32) -> AppResult<String> {
+    tools::kill_process(pid)
+}
+#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -768,6 +772,7 @@ pub fn run() {
             list_node_scripts,
             run_node_script,
             resource_monitor,
+            kill_process,
             quit_app,
             hide_tray_panel,
             open_main_page,

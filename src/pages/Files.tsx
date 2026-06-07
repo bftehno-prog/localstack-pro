@@ -18,6 +18,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [selected, setSelected] = useState<FileEntry | null>(null);
   const [editorPath, setEditorPath] = useState("");
   const [content, setContent] = useState("");
+  const [nameInput, setNameInput] = useState("");
 
   const refresh = async (target = folder) => {
     const result = await run(() => api.listFiles(target), { label: `Reading ${target}...` });
@@ -41,27 +42,27 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     }
   };
   const createFolder = async () => {
-    const name = window.prompt("Folder name");
-    if (!name?.trim()) return;
-    await run(() => api.createFolder(`${folder}\\${name.trim()}`), { label: `Creating ${name}...` });
+    if (!nameInput.trim()) return;
+    await run(() => api.createFolder(`${folder}\\${nameInput.trim()}`), { label: `Creating ${nameInput}...` });
+    setNameInput("");
     await refresh();
   };
   const createFile = async () => {
-    const name = window.prompt("File name");
-    if (!name?.trim()) return;
-    await run(() => api.writeFile(`${folder}\\${name.trim()}`, ""), { label: `Creating ${name}...` });
+    if (!nameInput.trim()) return;
+    await run(() => api.writeFile(`${folder}\\${nameInput.trim()}`, ""), { label: `Creating ${nameInput}...` });
+    setNameInput("");
     await refresh();
   };
   const renameSelected = async () => {
     if (!selected) return;
-    const name = window.prompt("New name", selected.name);
-    if (!name?.trim()) return;
-    await run(() => api.renamePath(selected.path, name.trim()), { label: `Renaming ${selected.name}...` });
+    if (!nameInput.trim()) return;
+    await run(() => api.renamePath(selected.path, nameInput.trim()), { label: `Renaming ${selected.name}...` });
     setSelected(null);
+    setNameInput("");
     await refresh();
   };
   const deleteSelected = async () => {
-    if (!selected || !window.confirm(`Delete ${selected.name}?`)) return;
+    if (!selected) return;
     await run(() => api.deletePath(selected.path), { label: `Deleting ${selected.name}...` });
     setSelected(null);
     setEditorPath("");
@@ -83,9 +84,10 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
         <div className="page-title">
           <div><h1>File Manager</h1><p>Project files, configs, logs and backups</p></div>
           <div className="toolbar">
+            <input className="toolbar-input" value={nameInput} onChange={(event) => setNameInput(event.target.value)} placeholder="Name" />
             <Button icon={<RefreshCw size={16} />} onClick={() => void refresh()}>Refresh</Button>
-            <Button icon={<FolderPlus size={16} />} onClick={() => void createFolder()}>New Folder</Button>
-            <Button icon={<FileText size={16} />} onClick={() => void createFile()}>New File</Button>
+            <Button icon={<FolderPlus size={16} />} disabled={!nameInput.trim()} onClick={() => void createFolder()}>New Folder</Button>
+            <Button icon={<FileText size={16} />} disabled={!nameInput.trim()} onClick={() => void createFile()}>New File</Button>
           </div>
         </div>
         <Panel title="Files" action={<Button icon={<Folder size={16} />} onClick={() => void run(() => api.openPath(folder), { label: `Opening ${folder}...` })}>Open Folder</Button>}>
@@ -120,7 +122,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
             <span>Path</span><code>{selected?.path ?? (editorPath || "-")}</code>
           </div>
           <div className="quick-grid">
-            <Button disabled={!selected} onClick={() => void renameSelected()}>Rename</Button>
+            <Button disabled={!selected || !nameInput.trim()} onClick={() => void renameSelected()}>Rename</Button>
             <Button disabled={!selected} icon={<Trash2 size={16} />} variant="danger" onClick={() => void deleteSelected()}>Delete</Button>
           </div>
         </Panel>

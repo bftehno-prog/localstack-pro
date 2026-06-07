@@ -48,6 +48,8 @@ export function HostEditorPage({
   const [gitUrl, setGitUrl] = useState("");
   const [projectInfo, setProjectInfo] = useState<ProjectInspection>();
   const [vaultName, setVaultName] = useState("");
+  const [envKey, setEnvKey] = useState("APP_KEY");
+  const [envValue, setEnvValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [configOk, setConfigOk] = useState<string | null>(null);
   const forceHttps = host.rewriteRules.includes("FORCE_HTTPS=1");
@@ -86,10 +88,11 @@ export function HostEditorPage({
     });
   };
   const addVariable = () => {
-    const name = window.prompt("Environment variable name", "APP_KEY");
+    const name = envKey.trim();
     if (!name) return;
-    const value = window.prompt("Environment variable value", "");
-    update("envVariables", { ...host.envVariables, [name]: value ?? "" });
+    update("envVariables", { ...host.envVariables, [name]: envValue });
+    setEnvKey("");
+    setEnvValue("");
   };
   const removeVariable = (name: string) => {
     const next = { ...host.envVariables };
@@ -265,7 +268,11 @@ export function HostEditorPage({
               <label>Vault Tool<button className="input-button" type="button" onClick={saveVault}>Save credentials <KeyRound size={15} /></button></label>
             </div>
           </Panel>
-          <Panel title="Environment Variables" action={<Button icon={<Plus size={15} />} onClick={addVariable}>Add Variable</Button>}>
+          <Panel title="Environment Variables" action={<Button icon={<Plus size={15} />} disabled={!envKey.trim()} onClick={addVariable}>Add Variable</Button>}>
+            <div className="env-inline">
+              <input value={envKey} onChange={(event) => setEnvKey(event.target.value)} placeholder="KEY" />
+              <input value={envValue} onChange={(event) => setEnvValue(event.target.value)} placeholder="Value" />
+            </div>
             <table className="mini-table"><tbody>{Object.entries(host.envVariables).map(([key, value]) => <tr key={key}><td>{key}</td><td>{value}</td><td><Button variant="icon" icon={<Trash2 size={15} />} onClick={() => removeVariable(key)} /></td></tr>)}</tbody></table>
           </Panel>
           <Panel title="Mail Testing">

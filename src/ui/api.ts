@@ -325,6 +325,7 @@ export const api = {
   listNodeScripts: (path: string) => call<NodeScript[]>("list_node_scripts", { path }),
   runNodeScript: (path: string, script: string) => call<string>("run_node_script", { path, script }),
   resourceMonitor: () => call<ResourceProcess[]>("resource_monitor"),
+  killProcess: (pid: number) => call<string>("kill_process", { pid }),
   hideTrayPanel: () => call<void>("hide_tray_panel"),
   openMainPage: (page?: string) => call<void>("open_main_page", { page }),
   quit: () => call<void>("quit_app")

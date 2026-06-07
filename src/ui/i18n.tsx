@@ -225,6 +225,9 @@ const dictionary: Record<string, string> = {
   "Resource Monitor": "Монитор ресурсов",
   "Environment Snapshots": "Снапшоты окружения",
   "Create Snapshot": "Создать снапшот",
+  "Loading environment snapshots...": "Загрузка снапшотов окружения...",
+  "Reading resource monitor...": "Чтение монитора ресурсов...",
+  "Stopping process": "Остановка процесса",
   "Save Config": "Сохранить конфиг",
   "HTTP Monitor": "HTTP-монитор",
   "Run Monitor": "Запустить монитор",
@@ -423,6 +426,7 @@ const dictionary: Record<string, string> = {
   Rename: "Переименовать",
   "New Folder": "Новая папка",
   "New File": "Новый файл",
+  Action: "Действие",
   "View Full Logs": "Открыть все логи",
   Site: "Сайт"
 };

@@ -27,6 +27,7 @@ export function SettingsPage({
   const [release, setRelease] = useState<ReleaseInfo>();
   const [snapshots, setSnapshots] = useState<EnvironmentSnapshotInfo[]>([]);
   const [processes, setProcesses] = useState<ResourceProcess[]>([]);
+  const [snapshotName, setSnapshotName] = useState("working");
   const [downloadedInstaller, setDownloadedInstaller] = useState("");
   const [notificationLevel, setNotificationLevel] = useState(localStorage.getItem("localstack.notificationLevel") ?? "Errors only");
   const [scheduledBackups, setScheduledBackups] = useStoredBoolean("localstack.scheduledBackups", false);
@@ -142,9 +143,8 @@ export function SettingsPage({
     if (Array.isArray(result)) setSnapshots(result as EnvironmentSnapshotInfo[]);
   };
   const createSnapshot = async () => {
-    const name = window.prompt("Snapshot name", "working");
-    if (!name) return;
-    const result = await run(() => api.createEnvironmentSnapshot(name), { label: "Creating environment snapshot..." });
+    if (!snapshotName.trim()) return;
+    const result = await run(() => api.createEnvironmentSnapshot(snapshotName), { label: "Creating environment snapshot..." });
     if (result && typeof result === "object" && "id" in result) await loadSnapshots();
   };
   const loadProcesses = async () => {
@@ -218,7 +218,7 @@ export function SettingsPage({
             </div>
             <p className="muted">{scheduledBackups ? t("Scheduled backups are enabled for the local reminder panel.") : t("Scheduled backups are paused.")}</p>
           </Panel>}
-          {activeTab === "Backups" && <Panel title="Environment Snapshots" action={<><Button icon={<RefreshCw size={16} />} onClick={() => void loadSnapshots()}>Refresh</Button><Button variant="primary" icon={<Save size={16} />} onClick={() => void createSnapshot()}>Create Snapshot</Button></>}>
+          {activeTab === "Backups" && <Panel title="Environment Snapshots" action={<><input className="toolbar-input" value={snapshotName} onChange={(event) => setSnapshotName(event.target.value)} /><Button icon={<RefreshCw size={16} />} onClick={() => void loadSnapshots()}>Refresh</Button><Button variant="primary" icon={<Save size={16} />} disabled={!snapshotName.trim()} onClick={() => void createSnapshot()}>Create Snapshot</Button></>}>
             <table className="data-table compact-table">
               <thead><tr><th>Name</th><th>Created</th><th>Hosts</th><th>Services</th><th>Databases</th><th>Action</th></tr></thead>
               <tbody>{snapshots.map((item) => <tr key={item.id}><td><strong>{item.name}</strong></td><td>{new Date(item.createdAt).toLocaleString()}</td><td>{item.hosts}</td><td>{item.services}</td><td>{item.databases}</td><td><Button onClick={() => void run(() => api.restoreEnvironmentSnapshot(item.id), { label: `Restoring ${item.name}...` })}>Restore</Button></td></tr>)}</tbody>
@@ -264,8 +264,8 @@ export function SettingsPage({
           </Panel>
           <Panel title="Resource Monitor" action={<Button icon={<RefreshCw size={16} />} onClick={() => void loadProcesses()}>Refresh</Button>}>
             <table className="data-table compact-table">
-              <thead><tr><th>Process</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead>
-              <tbody>{processes.slice(0, 8).map((item) => <tr key={item.pid}><td><strong>{item.name}</strong><small>{item.command}</small></td><td>{item.pid}</td><td>{item.cpu.toFixed(1)}</td><td>{item.memoryMb} MB</td></tr>)}</tbody>
+              <thead><tr><th>Process</th><th>PID</th><th>CPU</th><th>RAM</th><th>Action</th></tr></thead>
+              <tbody>{processes.slice(0, 8).map((item) => <tr key={item.pid}><td><strong>{item.name}</strong><small>{item.command}</small></td><td>{item.pid}</td><td>{item.cpu.toFixed(1)}</td><td>{item.memoryMb} MB</td><td><Button variant="danger" onClick={() => void run(() => api.killProcess(item.pid), { label: `Stopping process ${item.pid}...` }).then(() => loadProcesses())}>Stop</Button></td></tr>)}</tbody>
             </table>
             {processes.length === 0 && <p className="muted">Click Refresh to inspect running processes.</p>}
           </Panel>

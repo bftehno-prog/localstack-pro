@@ -29,6 +29,8 @@ export function OverviewPage({
   const [preview, setPreview] = useState<SitePreview>();
   const [monitorResults, setMonitorResults] = useState<Record<string, SitePreview>>({});
   const [linksVersion, setLinksVersion] = useState(0);
+  const [linkLabel, setLinkLabel] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const favorites = useStoredList("localstack.favoriteHosts");
   const visibleHosts = useMemo(() => state.hosts
     .filter((host) => `${host.domain} ${host.rootFolder}`.toLowerCase().includes(query.toLowerCase()))
@@ -103,10 +105,10 @@ export function OverviewPage({
   }, [linksVersion, selected, storageKey]);
   const addAccessLink = () => {
     if (!selected || typeof window === "undefined") return;
-    const label = window.prompt("Link name");
-    const url = window.prompt("URL");
-    if (!label?.trim() || !url?.trim()) return;
-    window.localStorage.setItem(storageKey, JSON.stringify([...accessLinks, { label: label.trim(), url: url.trim() }]));
+    if (!linkLabel.trim() || !linkUrl.trim()) return;
+    window.localStorage.setItem(storageKey, JSON.stringify([...accessLinks, { label: linkLabel.trim(), url: linkUrl.trim() }]));
+    setLinkLabel("");
+    setLinkUrl("");
     setLinksVersion((value) => value + 1);
   };
   const removeAccessLink = (index: number) => {
@@ -310,7 +312,11 @@ export function OverviewPage({
               </div>
               {preview && <div className="preview-result"><strong>{preview.status}</strong><span>{preview.responseTimeMs}ms · {preview.contentType}</span><small>{preview.redirectedTo ?? preview.message}</small></div>}
             </Panel>
-            <Panel title="Access Links" action={<Button icon={<Plus size={15} />} onClick={addAccessLink}>Add Link</Button>}>
+            <Panel title="Access Links" action={<Button icon={<Plus size={15} />} disabled={!linkLabel.trim() || !linkUrl.trim()} onClick={addAccessLink}>Add Link</Button>}>
+              <div className="access-link-form">
+                <input value={linkLabel} onChange={(event) => setLinkLabel(event.target.value)} placeholder="Name" />
+                <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="URL" />
+              </div>
               <div className="access-link-list">
                 <button onClick={() => void run(() => api.openHost(selected.id), { label: `Opening ${selected.domain}...` })}><Globe2 size={16} />{hostUrl(selected)}</button>
                 <button onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." })}><Database size={16} />phpMyAdmin</button>

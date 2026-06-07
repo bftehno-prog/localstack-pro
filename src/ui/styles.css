@@ -621,6 +621,15 @@ p { color: var(--muted); }
 .toolbar, .filters, .rail-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .toolbar, .filters, .rail-actions { min-width: 0; }
 .filters input, .filters select, .toolbar select { max-width: 100%; }
+.toolbar-input {
+  width: 170px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  padding: 0 10px;
+}
 .menu-anchor {
   position: relative;
   display: inline-flex;
@@ -1032,6 +1041,25 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   gap: 8px;
   padding: 0 10px;
   text-align: left;
+}
+
+.access-link-form,
+.env-inline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.access-link-form input,
+.env-inline input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  padding: 0 9px;
 }
 
 .access-link-item {

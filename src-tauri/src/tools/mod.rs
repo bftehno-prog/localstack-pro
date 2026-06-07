@@ -528,18 +528,14 @@ pub fn inspect_installed_tools() -> AppResult<Vec<InstalledTool>> {
             let version = path
                 .as_ref()
                 .and_then(|_| command_version(command, version_arg).ok());
+            let installed = path.is_some();
             InstalledTool {
                 id: (*id).to_string(),
                 name: (*name).to_string(),
                 command: (*command).to_string(),
                 path,
                 version,
-                status: if find_command_path(command).is_some() {
-                    "installed"
-                } else {
-                    "missing"
-                }
-                .to_string(),
+                status: if installed { "installed" } else { "missing" }.to_string(),
             }
         })
         .collect())
@@ -547,8 +543,12 @@ pub fn inspect_installed_tools() -> AppResult<Vec<InstalledTool>> {
 
 pub fn list_files(path: String) -> AppResult<Vec<FileEntry>> {
     let root = allowed_workspace_path(path)?;
+    if !root.exists() {
+        fs::create_dir_all(&root)
+            .map_err(|err| format!("Cannot create folder {}: {err}", root.display()))?;
+    }
     if !root.is_dir() {
-        return Err(format!("Folder does not exist: {}", root.display()));
+        return Err(format!("Path is not a folder: {}", root.display()));
     }
     let mut entries = fs::read_dir(&root)
         .map_err(|err| format!("Cannot read folder {}: {err}", root.display()))?
@@ -809,6 +809,27 @@ pub fn resource_monitor() -> AppResult<Vec<ResourceProcess>> {
             })
         })
         .collect())
+}
+
+pub fn kill_process(pid: u32) -> AppResult<String> {
+    if pid == std::process::id() {
+        return Err("Cannot stop the LocalStack Pro process from Resource Monitor.".to_string());
+    }
+    let mut command = Command::new("taskkill.exe");
+    command
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags_hidden();
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot stop process {pid}: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Cannot stop process {pid}. {detail}"));
+    }
+    Ok(format!("Process {pid} stopped."))
 }
 
 pub fn check_latest_release() -> AppResult<ReleaseInfo> {
