@@ -546,6 +546,10 @@ fn write_file(path: String, content: String) -> AppResult<String> {
     tools::write_file(path, content)
 }
 #[tauri::command]
+fn create_file(path: String) -> AppResult<String> {
+    tools::create_file(path)
+}
+#[tauri::command]
 fn create_folder(path: String) -> AppResult<String> {
     tools::create_folder(path)
 }
@@ -556,6 +560,10 @@ fn delete_path(path: String) -> AppResult<String> {
 #[tauri::command]
 fn rename_path(path: String, new_name: String) -> AppResult<String> {
     tools::rename_path(path, new_name)
+}
+#[tauri::command]
+fn duplicate_path(path: String) -> AppResult<String> {
+    tools::duplicate_path(path)
 }
 #[tauri::command]
 fn list_environment_snapshots() -> AppResult<Vec<tools::EnvironmentSnapshotInfo>> {
@@ -763,9 +771,11 @@ pub fn run() {
             list_files,
             read_file,
             write_file,
+            create_file,
             create_folder,
             delete_path,
             rename_path,
+            duplicate_path,
             list_environment_snapshots,
             create_environment_snapshot,
             restore_environment_snapshot,

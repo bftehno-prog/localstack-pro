@@ -5,7 +5,7 @@ use std::{
     fs,
     io::{Read, Write},
     net::TcpStream,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
@@ -71,6 +71,10 @@ pub struct ReleaseInfo {
 pub struct ConfigFile {
     pub path: String,
     pub content: String,
+    pub size: u64,
+    pub modified: Option<String>,
+    pub language: String,
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -582,14 +586,32 @@ pub fn read_file(path: String) -> AppResult<ConfigFile> {
     if !target.is_file() {
         return Err(format!("File does not exist: {}", target.display()));
     }
-    if target.metadata().map(|item| item.len()).unwrap_or(0) > 2_000_000 {
+    let metadata = target
+        .metadata()
+        .map_err(|err| format!("Cannot inspect file {}: {err}", target.display()))?;
+    if metadata.len() > 5_000_000 {
         return Err("File is too large for the built-in editor.".to_string());
     }
-    let content = fs::read_to_string(&target)
+    let bytes = fs::read(&target)
         .map_err(|err| format!("Cannot read file {}: {err}", target.display()))?;
+    if bytes.contains(&0) {
+        return Err("Binary files cannot be opened in the built-in editor.".to_string());
+    }
+    let content = String::from_utf8(bytes)
+        .map_err(|_| "This file is not valid UTF-8 text.".to_string())?
+        .trim_start_matches('\u{feff}')
+        .to_string();
+    let modified = metadata
+        .modified()
+        .ok()
+        .map(|time| chrono::DateTime::<Utc>::from(time).to_rfc3339());
     Ok(ConfigFile {
         path: target.display().to_string(),
         content,
+        size: metadata.len(),
+        modified,
+        language: file_language(&target),
+        read_only: metadata.permissions().readonly(),
     })
 }
 
@@ -611,6 +633,19 @@ pub fn write_file(path: String, content: String) -> AppResult<String> {
     }
     fs::write(&target, content)
         .map_err(|err| format!("Cannot write file {}: {err}", target.display()))?;
+    Ok(target.display().to_string())
+}
+
+pub fn create_file(path: String) -> AppResult<String> {
+    let target = allowed_workspace_path(path)?;
+    if target.exists() {
+        return Err(format!("File already exists: {}", target.display()));
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("Cannot create parent folder: {err}"))?;
+    }
+    fs::write(&target, "")
+        .map_err(|err| format!("Cannot create file {}: {err}", target.display()))?;
     Ok(target.display().to_string())
 }
 
@@ -647,6 +682,22 @@ pub fn rename_path(path: String, new_name: String) -> AppResult<String> {
         .join(clean);
     let target = allowed_workspace_path(target.display().to_string())?;
     fs::rename(&source, &target).map_err(|err| format!("Cannot rename path: {err}"))?;
+    Ok(target.display().to_string())
+}
+
+pub fn duplicate_path(path: String) -> AppResult<String> {
+    let source = allowed_workspace_path(path)?;
+    if !source.exists() {
+        return Err(format!("Path does not exist: {}", source.display()));
+    }
+    let target = next_duplicate_path(&source)?;
+    let target = allowed_workspace_path(target.display().to_string())?;
+    if source.is_dir() {
+        copy_dir(&source, &target)?;
+    } else {
+        fs::copy(&source, &target)
+            .map_err(|err| format!("Cannot duplicate file {}: {err}", source.display()))?;
+    }
     Ok(target.display().to_string())
 }
 
@@ -944,6 +995,17 @@ pub fn read_config_file(path: String) -> AppResult<ConfigFile> {
     Ok(ConfigFile {
         path: target.display().to_string(),
         content,
+        size: target.metadata().map(|item| item.len()).unwrap_or(0),
+        modified: target
+            .metadata()
+            .ok()
+            .and_then(|item| item.modified().ok())
+            .map(|time| chrono::DateTime::<Utc>::from(time).to_rfc3339()),
+        language: file_language(&target),
+        read_only: target
+            .metadata()
+            .map(|item| item.permissions().readonly())
+            .unwrap_or(false),
     })
 }
 
@@ -1333,6 +1395,66 @@ fn allowed_workspace_path(path: String) -> AppResult<PathBuf> {
         return Err("File manager can only access LocalStack Pro project, service, backup and data folders.".to_string());
     }
     Ok(canonical)
+}
+
+fn next_duplicate_path(source: &Path) -> AppResult<PathBuf> {
+    let parent = source
+        .parent()
+        .ok_or_else(|| "Cannot duplicate this path.".to_string())?;
+    let stem = source
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .or_else(|| source.file_name().and_then(|value| value.to_str()))
+        .unwrap_or("copy");
+    let extension = source.extension().and_then(|value| value.to_str());
+    for index in 1..1000 {
+        let suffix = if index == 1 {
+            " copy".to_string()
+        } else {
+            format!(" copy {index}")
+        };
+        let file_name = match extension {
+            Some(ext) if source.is_file() => format!("{stem}{suffix}.{ext}"),
+            _ => format!("{stem}{suffix}"),
+        };
+        let candidate = parent.join(file_name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err("Cannot find a free duplicate name.".to_string())
+}
+
+fn file_language(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
+        "php" | "phtml" => "PHP",
+        "js" | "mjs" | "cjs" => "JavaScript",
+        "ts" => "TypeScript",
+        "tsx" | "jsx" => "React",
+        "json" => "JSON",
+        "html" | "htm" => "HTML",
+        "css" => "CSS",
+        "scss" | "sass" => "SCSS",
+        "md" | "markdown" => "Markdown",
+        "xml" => "XML",
+        "yml" | "yaml" => "YAML",
+        "toml" => "TOML",
+        "ini" | "conf" | "cnf" => "Config",
+        "env" => "Environment",
+        "sql" => "SQL",
+        "log" => "Log",
+        "rs" => "Rust",
+        "py" => "Python",
+        "sh" | "bat" | "cmd" | "ps1" => "Script",
+        _ => "Text",
+    }
+    .to_string()
 }
 
 fn snapshot_info(path: PathBuf) -> AppResult<EnvironmentSnapshotInfo> {

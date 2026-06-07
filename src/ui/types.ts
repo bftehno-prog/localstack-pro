@@ -276,6 +276,10 @@ export interface ReleaseInfo {
 export interface ConfigFile {
   path: string;
   content: string;
+  size?: number;
+  modified?: string;
+  language?: string;
+  readOnly?: boolean;
 }
 
 export interface SslDiagnostic {
