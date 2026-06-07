@@ -10,6 +10,7 @@ import type {
   DatabaseDiagnosticReport,
   EnvironmentSnapshotInfo,
   FileEntry,
+  FileSearchResult,
   HealthReport,
   HostDiagnosticReport,
   HostInfo,
@@ -191,6 +192,28 @@ function log(level: "INFO" | "WARNING" | "ERROR" | "DEBUG", service: string, mes
   return { id: crypto.randomUUID(), timestamp: now, level, service, host: "shop.test", processId: 1234, source: `${service.toLowerCase()}.log`, line: 88, message };
 }
 
+function mockFiles(path: string): FileEntry[] {
+  const base = path.replace(/[\\/]+$/, "");
+  return [
+    { name: "public", path: `${base}\\public`, kind: "folder", size: 0, modified: now },
+    { name: "index.php", path: `${base}\\index.php`, kind: "file", size: 68, modified: now },
+    { name: ".env", path: `${base}\\.env`, kind: "file", size: 86, modified: now },
+    { name: "package.json", path: `${base}\\package.json`, kind: "file", size: 128, modified: now }
+  ];
+}
+
+function mockConfigFile(path: string): ConfigFile {
+  return {
+    path,
+    content: "<?php\n// LocalStack Pro preview file\necho 'LocalStack Pro';\n",
+    size: 58,
+    modified: now,
+    language: path.endsWith(".json") ? "JSON" : path.endsWith(".env") ? "Environment" : "PHP",
+    readOnly: false,
+    encoding: "utf-8"
+  };
+}
+
 async function call<T>(command: string, args?: Record<string, unknown>, fallback?: T): Promise<T> {
   try {
     return await invoke<T>(command, args);
@@ -313,14 +336,23 @@ export const api = {
   createDiagnosticBundle: (target: string) => call<string>("create_diagnostic_bundle", { target }),
   diagnoseSsl: (domain: string) => call<SslDiagnostic>("diagnose_ssl", { domain }),
   inspectInstalledTools: () => call<InstalledTool[]>("inspect_installed_tools"),
-  listFiles: (path: string) => call<FileEntry[]>("list_files", { path }),
-  readFile: (path: string) => call<ConfigFile>("read_file", { path }),
-  writeFile: (path: string, content: string) => call<string>("write_file", { path, content }),
-  createFile: (path: string) => call<string>("create_file", { path }),
-  createFolder: (path: string) => call<string>("create_folder", { path }),
-  deletePath: (path: string) => call<string>("delete_path", { path }),
-  renamePath: (path: string, newName: string) => call<string>("rename_path", { path, newName }),
-  duplicatePath: (path: string) => call<string>("duplicate_path", { path }),
+  listFiles: (path: string) => call<FileEntry[]>("list_files", { path }, mockFiles(path)),
+  readFile: (path: string) => call<ConfigFile>("read_file", { path }, mockConfigFile(path)),
+  readFileWithEncoding: (path: string, encoding: string) => call<ConfigFile>("read_file_with_encoding", { path, encoding }, { ...mockConfigFile(path), encoding }),
+  writeFile: (path: string, content: string) => call<string>("write_file", { path, content }, path),
+  writeFileWithEncoding: (path: string, content: string, encoding: string) => call<string>("write_file_with_encoding", { path, content, encoding }, path),
+  createFile: (path: string) => call<string>("create_file", { path }, path),
+  createFolder: (path: string) => call<string>("create_folder", { path }, path),
+  deletePath: (path: string) => call<string>("delete_path", { path }, path),
+  renamePath: (path: string, newName: string) => call<string>("rename_path", { path, newName }, path.replace(/[^\\/]+$/, newName)),
+  duplicatePath: (path: string) => call<string>("duplicate_path", { path }, `${path}.copy`),
+  copyPath: (source: string, target: string, overwrite: boolean) => call<string>("copy_path", { source, target, overwrite }, target),
+  movePath: (source: string, target: string, overwrite: boolean) => call<string>("move_path", { source, target, overwrite }, target),
+  chmodPath: (path: string, mode: string, readOnly: boolean) => call<string>("chmod_path", { path, mode, readOnly }, path),
+  uploadFiles: (sources: string[], destination: string, overwrite: boolean) => call<string[]>("upload_files", { sources, destination, overwrite }, sources.map((source) => `${destination}\\${source.split(/[\\/]/).pop() ?? "file"}`)),
+  extractArchiveTo: (path: string, destination: string) => call<string>("extract_archive_to", { path, destination }, destination),
+  createArchive: (paths: string[], target: string) => call<string>("create_archive", { paths, target }, target),
+  searchFileContents: (root: string, query: string, regexp: boolean, caseSensitive: boolean) => call<FileSearchResult[]>("search_file_contents", { root, query, regexp, caseSensitive }, []),
   listEnvironmentSnapshots: () => call<EnvironmentSnapshotInfo[]>("list_environment_snapshots"),
   createEnvironmentSnapshot: (name: string) => call<EnvironmentSnapshotInfo>("create_environment_snapshot", { name }),
   restoreEnvironmentSnapshot: (id: string) => call<AppSnapshot>("restore_environment_snapshot", { id }),

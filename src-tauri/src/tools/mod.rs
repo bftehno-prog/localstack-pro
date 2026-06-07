@@ -1,5 +1,6 @@
 use crate::state::{AppResult, Store};
 use chrono::Utc;
+use regex::RegexBuilder;
 use serde::Serialize;
 use std::{
     fs,
@@ -75,6 +76,7 @@ pub struct ConfigFile {
     pub modified: Option<String>,
     pub language: String,
     pub read_only: bool,
+    pub encoding: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -108,6 +110,15 @@ pub struct FileEntry {
     pub kind: String,
     pub size: u64,
     pub modified: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSearchResult {
+    pub path: String,
+    pub line: usize,
+    pub column: usize,
+    pub preview: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -582,6 +593,10 @@ pub fn list_files(path: String) -> AppResult<Vec<FileEntry>> {
 }
 
 pub fn read_file(path: String) -> AppResult<ConfigFile> {
+    read_file_with_encoding(path, "auto".to_string())
+}
+
+pub fn read_file_with_encoding(path: String, encoding: String) -> AppResult<ConfigFile> {
     let target = allowed_workspace_path(path)?;
     if !target.is_file() {
         return Err(format!("File does not exist: {}", target.display()));
@@ -597,10 +612,7 @@ pub fn read_file(path: String) -> AppResult<ConfigFile> {
     if bytes.contains(&0) {
         return Err("Binary files cannot be opened in the built-in editor.".to_string());
     }
-    let content = String::from_utf8(bytes)
-        .map_err(|_| "This file is not valid UTF-8 text.".to_string())?
-        .trim_start_matches('\u{feff}')
-        .to_string();
+    let (content, encoding) = decode_text(bytes, &encoding)?;
     let modified = metadata
         .modified()
         .ok()
@@ -612,10 +624,15 @@ pub fn read_file(path: String) -> AppResult<ConfigFile> {
         modified,
         language: file_language(&target),
         read_only: metadata.permissions().readonly(),
+        encoding,
     })
 }
 
 pub fn write_file(path: String, content: String) -> AppResult<String> {
+    write_file_with_encoding(path, content, "utf-8".to_string())
+}
+
+pub fn write_file_with_encoding(path: String, content: String, encoding: String) -> AppResult<String> {
     let target = allowed_workspace_path(path)?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("Cannot create parent folder: {err}"))?;
@@ -631,7 +648,7 @@ pub fn write_file(path: String, content: String) -> AppResult<String> {
         ));
         let _ = fs::copy(&target, backup);
     }
-    fs::write(&target, content)
+    fs::write(&target, encode_text(&content, &encoding)?)
         .map_err(|err| format!("Cannot write file {}: {err}", target.display()))?;
     Ok(target.display().to_string())
 }
@@ -693,12 +710,252 @@ pub fn duplicate_path(path: String) -> AppResult<String> {
     let target = next_duplicate_path(&source)?;
     let target = allowed_workspace_path(target.display().to_string())?;
     if source.is_dir() {
-        copy_dir(&source, &target)?;
+        copy_dir_all(&source, &target)?;
     } else {
         fs::copy(&source, &target)
             .map_err(|err| format!("Cannot duplicate file {}: {err}", source.display()))?;
     }
     Ok(target.display().to_string())
+}
+
+pub fn copy_path(source: String, target: String, overwrite: bool) -> AppResult<String> {
+    let source = allowed_workspace_path(source)?;
+    let target = normalize_operation_target(&source, target)?;
+    if target.exists() && !overwrite {
+        return Err(format!("Target already exists: {}", target.display()));
+    }
+    if source.is_dir() {
+        if target.exists() && overwrite {
+            fs::remove_dir_all(&target)
+                .map_err(|err| format!("Cannot replace target folder {}: {err}", target.display()))?;
+        }
+        copy_dir_all(&source, &target)?;
+    } else if source.is_file() {
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|err| format!("Cannot create target folder: {err}"))?;
+        }
+        fs::copy(&source, &target)
+            .map_err(|err| format!("Cannot copy {}: {err}", source.display()))?;
+    } else {
+        return Err(format!("Source does not exist: {}", source.display()));
+    }
+    Ok(target.display().to_string())
+}
+
+pub fn move_path(source: String, target: String, overwrite: bool) -> AppResult<String> {
+    let source = allowed_workspace_path(source)?;
+    let target = normalize_operation_target(&source, target)?;
+    if target.exists() {
+        if !overwrite {
+            return Err(format!("Target already exists: {}", target.display()));
+        }
+        if target.is_dir() {
+            fs::remove_dir_all(&target)
+                .map_err(|err| format!("Cannot replace target folder {}: {err}", target.display()))?;
+        } else {
+            fs::remove_file(&target)
+                .map_err(|err| format!("Cannot replace target file {}: {err}", target.display()))?;
+        }
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("Cannot create target folder: {err}"))?;
+    }
+    match fs::rename(&source, &target) {
+        Ok(_) => Ok(target.display().to_string()),
+        Err(_) => {
+            copy_path(source.display().to_string(), target.display().to_string(), true)?;
+            delete_path(source.display().to_string())?;
+            Ok(target.display().to_string())
+        }
+    }
+}
+
+pub fn chmod_path(path: String, mode: String, read_only: bool) -> AppResult<String> {
+    let target = allowed_workspace_path(path)?;
+    let mut permissions = target
+        .metadata()
+        .map_err(|err| format!("Cannot inspect permissions: {err}"))?
+        .permissions();
+    let readonly = read_only || matches!(mode.trim(), "400" | "440" | "444" | "500" | "550" | "555");
+    permissions.set_readonly(readonly);
+    fs::set_permissions(&target, permissions)
+        .map_err(|err| format!("Cannot change permissions for {}: {err}", target.display()))?;
+    Ok(if readonly {
+        format!("{} set to read-only", target.display())
+    } else {
+        format!("{} set to writable", target.display())
+    })
+}
+
+pub fn upload_files(sources: Vec<String>, destination: String, overwrite: bool) -> AppResult<Vec<String>> {
+    let destination = allowed_workspace_path(destination)?;
+    fs::create_dir_all(&destination)
+        .map_err(|err| format!("Cannot create upload folder {}: {err}", destination.display()))?;
+    let mut uploaded = Vec::new();
+    for source in sources {
+        let source_path = PathBuf::from(source.trim());
+        if !source_path.exists() {
+            return Err(format!("Upload source does not exist: {}", source_path.display()));
+        }
+        let name = source_path
+            .file_name()
+            .ok_or_else(|| "Cannot detect uploaded file name.".to_string())?;
+        let target = destination.join(name);
+        if target.exists() && !overwrite {
+            return Err(format!("Target already exists: {}", target.display()));
+        }
+        if source_path.is_dir() {
+            if target.exists() && overwrite {
+                fs::remove_dir_all(&target)
+                    .map_err(|err| format!("Cannot replace folder {}: {err}", target.display()))?;
+            }
+            copy_dir_all(&source_path, &target)?;
+        } else {
+            fs::copy(&source_path, &target)
+                .map_err(|err| format!("Cannot upload {}: {err}", source_path.display()))?;
+        }
+        uploaded.push(target.display().to_string());
+    }
+    Ok(uploaded)
+}
+
+pub fn extract_archive_to(path: String, destination: String) -> AppResult<String> {
+    let archive = allowed_workspace_path(path)?;
+    if !archive.is_file() {
+        return Err(format!("Archive does not exist: {}", archive.display()));
+    }
+    let destination = allowed_workspace_path(destination)?;
+    fs::create_dir_all(&destination)
+        .map_err(|err| format!("Cannot create extract folder {}: {err}", destination.display()))?;
+    let lower = archive
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if lower.ends_with(".zip") {
+        extract_archive(&archive, &destination)?;
+    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz") {
+        let mut command = Command::new("tar.exe");
+        command
+            .args(["-xf", &archive.display().to_string(), "-C", &destination.display().to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .creation_flags_hidden();
+        let output = command
+            .output()
+            .map_err(|err| format!("Cannot start archive extractor: {err}"))?;
+        if !output.status.success() {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!("Cannot extract archive. {detail}"));
+        }
+    } else {
+        return Err("Supported archives: zip, tar, tar.gz, tgz, gz.".to_string());
+    }
+    Ok(destination.display().to_string())
+}
+
+pub fn create_archive(paths: Vec<String>, target: String) -> AppResult<String> {
+    if paths.is_empty() {
+        return Err("Select files or folders to archive.".to_string());
+    }
+    let target = allowed_workspace_path(target)?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("Cannot create archive folder: {err}"))?;
+    }
+    let sources = paths
+        .into_iter()
+        .map(allowed_workspace_path)
+        .collect::<AppResult<Vec<_>>>()?;
+    let lower = target
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if lower.ends_with(".zip") {
+        let literal_paths = sources
+            .iter()
+            .map(|path| format!("'{}'", path.display().to_string().replace('\'', "''")))
+            .collect::<Vec<_>>()
+            .join(",");
+        let script = format!(
+            "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Compress-Archive -LiteralPath @({}) -DestinationPath '{}' -Force",
+            literal_paths,
+            target.display().to_string().replace('\'', "''")
+        );
+        let mut command = Command::new("powershell.exe");
+        command
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .creation_flags_hidden();
+        let output = command
+            .output()
+            .map_err(|err| format!("Cannot start archive creation: {err}"))?;
+        if !output.status.success() {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!("Cannot create archive. {detail}"));
+        }
+    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        let parent = sources[0]
+            .parent()
+            .ok_or_else(|| "Cannot detect archive source folder.".to_string())?
+            .to_path_buf();
+        let names = sources
+            .iter()
+            .map(|path| {
+                path.file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        let mut command = Command::new("tar.exe");
+        command
+            .arg("-czf")
+            .arg(&target)
+            .args(names)
+            .current_dir(parent)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .creation_flags_hidden();
+        let output = command
+            .output()
+            .map_err(|err| format!("Cannot start tar archive creation: {err}"))?;
+        if !output.status.success() {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!("Cannot create archive. {detail}"));
+        }
+    } else {
+        return Err("Archive target must end with .zip, .tar, .tar.gz or .tgz.".to_string());
+    }
+    Ok(target.display().to_string())
+}
+
+pub fn search_file_contents(root: String, query: String, regexp: bool, case_sensitive: bool) -> AppResult<Vec<FileSearchResult>> {
+    let root = allowed_workspace_path(root)?;
+    if !root.is_dir() {
+        return Err("Search root must be a folder.".to_string());
+    }
+    let query = query.trim().to_string();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let regex = if regexp {
+        Some(
+            RegexBuilder::new(&query)
+                .case_insensitive(!case_sensitive)
+                .build()
+                .map_err(|err| format!("Invalid RegExp: {err}"))?,
+        )
+    } else {
+        None
+    };
+    let mut results = Vec::new();
+    search_folder(&root, &query, regex.as_ref(), case_sensitive, &mut results)?;
+    Ok(results)
 }
 
 pub fn list_environment_snapshots() -> AppResult<Vec<EnvironmentSnapshotInfo>> {
@@ -1006,6 +1263,7 @@ pub fn read_config_file(path: String) -> AppResult<ConfigFile> {
             .metadata()
             .map(|item| item.permissions().readonly())
             .unwrap_or(false),
+        encoding: "utf-8".to_string(),
     })
 }
 
@@ -1221,6 +1479,100 @@ fn copy_dir(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
     Ok(())
 }
 
+fn copy_dir_all(source: &Path, target: &Path) -> AppResult<()> {
+    fs::create_dir_all(target)
+        .map_err(|err| format!("Cannot create {}: {err}", target.display()))?;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("Cannot read {}: {err}", source.display()))?
+    {
+        let entry = entry.map_err(|err| format!("Cannot read folder entry: {err}"))?;
+        let path = entry.path();
+        let destination = target.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_all(&path, &destination)?;
+        } else {
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|err| format!("Cannot create {}: {err}", parent.display()))?;
+            }
+            fs::copy(&path, &destination)
+                .map_err(|err| format!("Cannot copy {}: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn search_folder(
+    folder: &Path,
+    query: &str,
+    regex: Option<&regex::Regex>,
+    case_sensitive: bool,
+    results: &mut Vec<FileSearchResult>,
+) -> AppResult<()> {
+    if results.len() >= 500 {
+        return Ok(());
+    }
+    for entry in fs::read_dir(folder).map_err(|err| format!("Cannot search {}: {err}", folder.display()))? {
+        let entry = entry.map_err(|err| format!("Cannot read search entry: {err}"))?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if path.is_dir() {
+            if matches!(name.as_str(), "node_modules" | ".git" | ".next" | "vendor" | "target") {
+                continue;
+            }
+            search_folder(&path, query, regex, case_sensitive, results)?;
+            if results.len() >= 500 {
+                return Ok(());
+            }
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+        let metadata = match path.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if metadata.len() > 2_000_000 {
+            continue;
+        }
+        let bytes = match fs::read(&path) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if bytes.contains(&0) {
+            continue;
+        }
+        let (content, _) = match decode_text(bytes, "auto") {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        for (index, line) in content.lines().enumerate() {
+            let matched = if let Some(regex) = regex {
+                regex.find(line).map(|hit| hit.start() + 1)
+            } else if case_sensitive {
+                line.find(query).map(|column| column + 1)
+            } else {
+                line.to_lowercase()
+                    .find(&query.to_lowercase())
+                    .map(|column| column + 1)
+            };
+            if let Some(column) = matched {
+                results.push(FileSearchResult {
+                    path: path.display().to_string(),
+                    line: index + 1,
+                    column,
+                    preview: line.trim().chars().take(240).collect(),
+                });
+                if results.len() >= 500 {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn compress_folder(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
     let script = format!(
         "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Compress-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
@@ -1395,6 +1747,113 @@ fn allowed_workspace_path(path: String) -> AppResult<PathBuf> {
         return Err("File manager can only access LocalStack Pro project, service, backup and data folders.".to_string());
     }
     Ok(canonical)
+}
+
+fn normalize_operation_target(source: &Path, target: String) -> AppResult<PathBuf> {
+    let mut target = PathBuf::from(target.trim());
+    if target.as_os_str().is_empty() || !target.is_absolute() {
+        return Err("Target path must be absolute.".to_string());
+    }
+    if target.exists() && target.is_dir() {
+        let name = source
+            .file_name()
+            .ok_or_else(|| "Cannot detect source name.".to_string())?;
+        target = target.join(name);
+    }
+    allowed_workspace_path(target.display().to_string())
+}
+
+fn decode_text(bytes: Vec<u8>, encoding: &str) -> AppResult<(String, String)> {
+    let normalized = normalize_encoding(encoding);
+    if normalized == "auto" {
+        if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            return Ok((
+                String::from_utf8(bytes[3..].to_vec())
+                    .map_err(|_| "This file is not valid UTF-8 text.".to_string())?,
+                "utf-8-bom".to_string(),
+            ));
+        }
+        if bytes.starts_with(&[0xFF, 0xFE]) {
+            return decode_utf16(&bytes[2..], true).map(|content| (content, "utf-16le".to_string()));
+        }
+        if bytes.starts_with(&[0xFE, 0xFF]) {
+            return decode_utf16(&bytes[2..], false).map(|content| (content, "utf-16be".to_string()));
+        }
+        return Ok((
+            String::from_utf8(bytes)
+                .map_err(|_| "This file is not valid UTF-8 text. Try another encoding.".to_string())?,
+            "utf-8".to_string(),
+        ));
+    }
+    match normalized.as_str() {
+        "utf-8" => Ok((
+            String::from_utf8(bytes)
+                .map_err(|_| "This file is not valid UTF-8 text.".to_string())?,
+            "utf-8".to_string(),
+        )),
+        "utf-8-bom" => {
+            let slice = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+                bytes[3..].to_vec()
+            } else {
+                bytes
+            };
+            Ok((
+                String::from_utf8(slice)
+                    .map_err(|_| "This file is not valid UTF-8 text.".to_string())?,
+                "utf-8-bom".to_string(),
+            ))
+        }
+        "utf-16le" => decode_utf16(&bytes, true).map(|content| (content, "utf-16le".to_string())),
+        "utf-16be" => decode_utf16(&bytes, false).map(|content| (content, "utf-16be".to_string())),
+        _ => Err("Supported encodings: auto, utf-8, utf-8-bom, utf-16le, utf-16be.".to_string()),
+    }
+}
+
+fn encode_text(content: &str, encoding: &str) -> AppResult<Vec<u8>> {
+    match normalize_encoding(encoding).as_str() {
+        "auto" | "utf-8" => Ok(content.as_bytes().to_vec()),
+        "utf-8-bom" => {
+            let mut bytes = vec![0xEF, 0xBB, 0xBF];
+            bytes.extend_from_slice(content.as_bytes());
+            Ok(bytes)
+        }
+        "utf-16le" => {
+            let mut bytes = vec![0xFF, 0xFE];
+            for code in content.encode_utf16() {
+                bytes.extend_from_slice(&code.to_le_bytes());
+            }
+            Ok(bytes)
+        }
+        "utf-16be" => {
+            let mut bytes = vec![0xFE, 0xFF];
+            for code in content.encode_utf16() {
+                bytes.extend_from_slice(&code.to_be_bytes());
+            }
+            Ok(bytes)
+        }
+        _ => Err("Supported encodings: utf-8, utf-8-bom, utf-16le, utf-16be.".to_string()),
+    }
+}
+
+fn decode_utf16(bytes: &[u8], little_endian: bool) -> AppResult<String> {
+    if bytes.len() % 2 != 0 {
+        return Err("Invalid UTF-16 byte length.".to_string());
+    }
+    let values = bytes
+        .chunks_exact(2)
+        .map(|chunk| {
+            if little_endian {
+                u16::from_le_bytes([chunk[0], chunk[1]])
+            } else {
+                u16::from_be_bytes([chunk[0], chunk[1]])
+            }
+        })
+        .collect::<Vec<_>>();
+    String::from_utf16(&values).map_err(|_| "This file is not valid UTF-16 text.".to_string())
+}
+
+fn normalize_encoding(encoding: &str) -> String {
+    encoding.trim().to_lowercase().replace('_', "-")
 }
 
 fn next_duplicate_path(source: &Path) -> AppResult<PathBuf> {

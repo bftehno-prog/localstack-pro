@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Shell } from "./components/Shell";
 import { TrayPanel } from "./components/TrayPanel";
@@ -14,10 +14,11 @@ import { DatabasePage } from "./pages/Database";
 import { CmsPage } from "./pages/Cms";
 import { SslPage } from "./pages/Ssl";
 import { LogsPage } from "./pages/Logs";
-import { FilesPage } from "./pages/Files";
 import { SettingsPage } from "./pages/Settings";
 import { I18nProvider, useT } from "./ui/i18n";
 import { api } from "./ui/api";
+
+const FilesPage = lazy(() => import("./pages/Files").then((module) => ({ default: module.FilesPage })));
 
 export default function App() {
   const { state, loading, error, notice, busy, actionLabel, operations, run, refresh } = useAppState();
@@ -161,7 +162,7 @@ function AppContent({
       {page === "cms" && <CmsPage state={state} run={run} />}
       {page === "ssl" && <SslPage state={state} run={run} />}
       {page === "logs" && <LogsPage state={state} run={run} />}
-      {page === "files" && <FilesPage state={state} run={run} />}
+      {page === "files" && <Suspense fallback={<div className="boot-screen">File Manager</div>}><FilesPage state={state} run={run} /></Suspense>}
       {page === "settings" && <SettingsPage state={state} run={run} />}
     </Shell>
   );

@@ -542,8 +542,16 @@ fn read_file(path: String) -> AppResult<tools::ConfigFile> {
     tools::read_file(path)
 }
 #[tauri::command]
+fn read_file_with_encoding(path: String, encoding: String) -> AppResult<tools::ConfigFile> {
+    tools::read_file_with_encoding(path, encoding)
+}
+#[tauri::command]
 fn write_file(path: String, content: String) -> AppResult<String> {
     tools::write_file(path, content)
+}
+#[tauri::command]
+fn write_file_with_encoding(path: String, content: String, encoding: String) -> AppResult<String> {
+    tools::write_file_with_encoding(path, content, encoding)
 }
 #[tauri::command]
 fn create_file(path: String) -> AppResult<String> {
@@ -564,6 +572,34 @@ fn rename_path(path: String, new_name: String) -> AppResult<String> {
 #[tauri::command]
 fn duplicate_path(path: String) -> AppResult<String> {
     tools::duplicate_path(path)
+}
+#[tauri::command]
+fn copy_path(source: String, target: String, overwrite: bool) -> AppResult<String> {
+    tools::copy_path(source, target, overwrite)
+}
+#[tauri::command]
+fn move_path(source: String, target: String, overwrite: bool) -> AppResult<String> {
+    tools::move_path(source, target, overwrite)
+}
+#[tauri::command]
+fn chmod_path(path: String, mode: String, read_only: bool) -> AppResult<String> {
+    tools::chmod_path(path, mode, read_only)
+}
+#[tauri::command]
+fn upload_files(sources: Vec<String>, destination: String, overwrite: bool) -> AppResult<Vec<String>> {
+    tools::upload_files(sources, destination, overwrite)
+}
+#[tauri::command]
+fn extract_archive_to(path: String, destination: String) -> AppResult<String> {
+    tools::extract_archive_to(path, destination)
+}
+#[tauri::command]
+fn create_archive(paths: Vec<String>, target: String) -> AppResult<String> {
+    tools::create_archive(paths, target)
+}
+#[tauri::command]
+fn search_file_contents(root: String, query: String, regexp: bool, case_sensitive: bool) -> AppResult<Vec<tools::FileSearchResult>> {
+    tools::search_file_contents(root, query, regexp, case_sensitive)
 }
 #[tauri::command]
 fn list_environment_snapshots() -> AppResult<Vec<tools::EnvironmentSnapshotInfo>> {
@@ -770,12 +806,21 @@ pub fn run() {
             inspect_installed_tools,
             list_files,
             read_file,
+            read_file_with_encoding,
             write_file,
+            write_file_with_encoding,
             create_file,
             create_folder,
             delete_path,
             rename_path,
             duplicate_path,
+            copy_path,
+            move_path,
+            chmod_path,
+            upload_files,
+            extract_archive_to,
+            create_archive,
+            search_file_contents,
             list_environment_snapshots,
             create_environment_snapshot,
             restore_environment_snapshot,

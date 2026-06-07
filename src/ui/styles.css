@@ -1187,6 +1187,149 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   min-width: 0;
 }
 
+.files-workspace,
+.dual-file-manager,
+.file-tools-grid,
+.files-editor-grid {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dual-file-manager {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.file-tools-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.files-editor-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
+}
+
+.files-main-toolbar {
+  align-items: stretch;
+}
+
+.file-pane {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.file-pane.active {
+  border-color: var(--blue);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 50%, transparent);
+}
+
+.file-pane-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-pane-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-roots {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-height: 84px;
+  overflow: auto;
+}
+
+.compact-roots button {
+  min-height: 30px;
+  padding: 0 8px;
+}
+
+.pane-list {
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.file-ops-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto repeat(2, minmax(120px, auto));
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.file-ops-grid.compact {
+  grid-template-columns: 90px auto minmax(220px, 1fr) repeat(3, auto);
+}
+
+.check-line {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.compact-select {
+  max-width: 120px;
+}
+
+.code-editor-shell,
+.content-search-box,
+.content-results {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.editor-findbar {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(130px, 1fr) auto auto auto auto auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.content-results {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.content-results button {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  padding: 8px 10px;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.content-results strong,
+.content-results span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-results span {
+  color: var(--muted);
+}
+
 .file-pathbar,
 .file-filter,
 .file-editor-toolbar,
@@ -2381,6 +2524,10 @@ textarea:hover,
   .service-row .service-metrics, .service-row .service-actions { grid-column: 1 / -1; }
   .dependency-graph, .tools-grid, .preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wizard-inline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .files-editor-grid { grid-template-columns: 1fr; }
+  .file-ops-grid,
+  .file-ops-grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .file-ops-grid .toolbar-input { grid-column: 1 / -1; }
 }
 
 @media (max-width: 1380px) {
@@ -2402,6 +2549,10 @@ textarea:hover,
   .action-progress { margin-left: -10px; margin-right: -10px; }
   .hosts-table th:nth-child(6), .hosts-table td:nth-child(6) { display: none; }
   .operation-list { grid-template-columns: 1fr; }
+  .dual-file-manager,
+  .file-tools-grid { grid-template-columns: 1fr; }
+  .editor-findbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compact-roots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
@@ -2433,6 +2584,9 @@ textarea:hover,
   .monitor-row { grid-template-columns: 14px minmax(0, 1fr) auto; }
   .monitor-row small { grid-column: 2 / -1; }
   .dependency-graph, .tools-grid, .preset-grid, .file-manager, .wizard-inline { grid-template-columns: 1fr; }
+  .file-ops-grid,
+  .file-ops-grid.compact,
+  .editor-findbar { grid-template-columns: 1fr; }
   .file-row { grid-template-columns: 18px minmax(0, 1fr) 70px; }
   .file-row span { display: none; }
   .tabs { gap: 8px 12px; }

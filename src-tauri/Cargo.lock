@@ -1817,6 +1817,7 @@ dependencies = [
  "directories",
  "open",
  "rcgen",
+ "regex",
  "serde",
  "serde_json",
  "sysinfo",
