@@ -25,7 +25,8 @@ import type {
   ResourceProcess,
   ServiceInfo,
   SitePreview,
-  SslDiagnostic
+  SslDiagnostic,
+  TrashRecord
 } from "./types";
 
 const now = new Date().toISOString();
@@ -129,7 +130,7 @@ const mockState: AppSnapshot = {
     checkUpdatesOnStartup: true,
     telemetry: false,
     uiDensity: "Comfortable",
-    theme: "Light",
+    theme: "Wet Asphalt",
     logLevel: "Information",
     maxLogFileSize: "50 MB",
     retainLogsDays: 30,
@@ -345,6 +346,8 @@ export const api = {
   createFile: (path: string) => call<string>("create_file", { path }, path),
   createFolder: (path: string) => call<string>("create_folder", { path }, path),
   deletePath: (path: string) => call<string>("delete_path", { path }, path),
+  trashPath: (path: string) => call<TrashRecord>("trash_path", { path }, { originalPath: path, trashPath: path, name: path.split(/[\\/]/).pop() ?? path, kind: "file" }),
+  restoreTrashPath: (originalPath: string, trashPath: string, overwrite: boolean) => call<string>("restore_trash_path", { originalPath, trashPath, overwrite }, originalPath),
   renamePath: (path: string, newName: string) => call<string>("rename_path", { path, newName }, path.replace(/[^\\/]+$/, newName)),
   duplicatePath: (path: string) => call<string>("duplicate_path", { path }, `${path}.copy`),
   copyPath: (source: string, target: string, overwrite: boolean) => call<string>("copy_path", { source, target, overwrite }, target),

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Shell } from "./components/Shell";
 import { TrayPanel } from "./components/TrayPanel";
@@ -140,7 +140,37 @@ function AppContent({
   finishFirstRun: () => void;
 }) {
   const t = useT();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
   useNativeTooltips(t, page);
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "k" || key === "p") {
+        event.preventDefault();
+        setPaletteOpen((value) => !value);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
+  const commands = useMemo(() => [
+    ...pageKeys.filter((key) => key !== "host-editor").map((key) => ({
+      label: key === "php" ? "PHP" : key.charAt(0).toUpperCase() + key.slice(1),
+      hint: "Open page",
+      action: () => setPage(key)
+    })),
+    { label: "Start All", hint: "Services", action: () => void run(() => api.startAll(), { label: "Starting all services..." }) },
+    { label: "Stop All", hint: "Services", action: () => void run(() => api.stopAll(), { label: "Stopping all services..." }) },
+    { label: "Restart All", hint: "Services", action: () => void run(() => api.restartAll(), { label: "Restarting all services..." }) },
+    { label: "Open Documentation", hint: "Help", action: () => void run(() => api.openDocumentation(), { label: "Opening documentation..." }) },
+    { label: "Health Check", hint: "Diagnostics", action: () => void run(() => api.runHealthCheck(), { label: "Running health check..." }) }
+  ], [run, setPage]);
+  const visibleCommands = useMemo(() => {
+    const query = paletteQuery.trim().toLowerCase();
+    return query ? commands.filter((command) => `${command.label} ${command.hint}`.toLowerCase().includes(query)).slice(0, 12) : commands.slice(0, 12);
+  }, [commands, paletteQuery]);
   return (
     <Shell page={page} setPage={setPage} state={state}>
       {busy && (
@@ -152,6 +182,14 @@ function AppContent({
       {notice && <div className="success-banner">{t(notice)}</div>}
       {error && <SmartError message={error} run={run} />}
       {operations.length > 0 && <OperationCenter operations={operations} />}
+      {paletteOpen && (
+        <CommandPalette
+          query={paletteQuery}
+          setQuery={setPaletteQuery}
+          commands={visibleCommands}
+          close={() => setPaletteOpen(false)}
+        />
+      )}
       {showFirstRun && <FirstRunWizard setPage={setPage} run={run} finish={finishFirstRun} />}
       {page === "overview" && <OverviewPage state={state} run={run} selectedHost={selectedHost} selectHost={setSelectedHost} editHost={editHost} />}
       {page === "hosts" && <HostsPage state={state} run={run} selected={selectedHost} setSelected={setSelectedHost} editHost={editHost} />}
@@ -165,6 +203,50 @@ function AppContent({
       {page === "files" && <Suspense fallback={<div className="boot-screen">File Manager</div>}><FilesPage state={state} run={run} /></Suspense>}
       {page === "settings" && <SettingsPage state={state} run={run} />}
     </Shell>
+  );
+}
+
+function CommandPalette({
+  query,
+  setQuery,
+  commands,
+  close
+}: {
+  query: string;
+  setQuery: (value: string) => void;
+  commands: Array<{ label: string; hint: string; action: () => void }>;
+  close: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="command-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) close();
+    }}>
+      <div className="command-palette">
+        <input
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") close();
+            if (event.key === "Enter" && commands[0]) {
+              commands[0].action();
+              close();
+            }
+          }}
+          placeholder={String(t("Search commands..."))}
+        />
+        <div>
+          {commands.map((command) => (
+            <button key={`${command.hint}-${command.label}`} onClick={() => { command.action(); close(); }}>
+              <strong>{t(command.label)}</strong>
+              <span>{t(command.hint)}</span>
+            </button>
+          ))}
+          {!commands.length && <small>{t("No matches found.")}</small>}
+        </div>
+      </div>
+    </div>
   );
 }
 

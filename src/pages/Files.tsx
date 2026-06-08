@@ -10,6 +10,8 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import CodeMirror from "@uiw/react-codemirror";
 import {
   Archive,
+  ArrowLeft,
+  ArrowRight,
   CheckSquare,
   Copy,
   Edit,
@@ -19,6 +21,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  GitCompare,
   MoveRight,
   RefreshCw,
   Replace,
@@ -27,6 +30,7 @@ import {
   Search,
   Shield,
   Trash2,
+  Undo2,
   Upload
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -34,7 +38,7 @@ import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { api } from "../ui/api";
 import { useT } from "../ui/i18n";
-import type { AppRun, AppSnapshot, ArchiveEntry, ConfigFile, FileEntry, FileSearchResult } from "../ui/types";
+import type { AppRun, AppSnapshot, ArchiveEntry, ConfigFile, FileEntry, FileSearchResult, TrashRecord } from "../ui/types";
 
 type PaneKey = "left" | "right";
 type PaneState = {
@@ -62,6 +66,29 @@ type FileContextMenu = {
   entry: FileEntry;
 };
 
+type EditorTab = ConfigFile & {
+  draftContent: string;
+  savedContent: string;
+};
+
+type UndoAction = {
+  label: string;
+  restoreItems?: TrashRecord[];
+  moveBack?: Array<{ from: string; to: string }>;
+  removeCreated?: string[];
+};
+
+type PaneHistory = Record<PaneKey, { back: string[]; forward: string[] }>;
+
+type SavedSearch = {
+  name: string;
+  query: string;
+  regexp: boolean;
+  caseSensitive: boolean;
+  includeExtensions: string;
+  excludeFolders: string;
+};
+
 const encodings = ["auto", "utf-8", "utf-8-bom", "utf-16le", "utf-16be"];
 
 export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
@@ -78,6 +105,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [leftPane, setLeftPane] = useState<PaneState>(() => paneState(roots[0]?.path ?? state.appDataDir));
   const [rightPane, setRightPane] = useState<PaneState>(() => paneState(state.appDataDir));
   const [openedFile, setOpenedFile] = useState<ConfigFile | null>(null);
+  const [editorTabs, setEditorTabs] = useState<EditorTab[]>([]);
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [nameInput, setNameInput] = useState("");
@@ -101,12 +129,16 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [favorites, setFavorites] = useState<string[]>(() => loadStringList("localstack.fileFavorites"));
   const [recentFiles, setRecentFiles] = useState<string[]>(() => loadStringList("localstack.recentFiles"));
   const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([]);
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => loadJsonList<SavedSearch>("localstack.fileSearches"));
   const [includeExtensions, setIncludeExtensions] = useState("");
   const [excludeFolders, setExcludeFolders] = useState("node_modules,.git,.next,vendor,target");
   const [aclIdentity, setAclIdentity] = useState("Users");
   const [aclRights, setAclRights] = useState("M");
   const [aclInherit, setAclInherit] = useState(true);
   const [showReplace, setShowReplace] = useState(false);
+  const [paneHistory, setPaneHistory] = useState<PaneHistory>({ left: { back: [], forward: [] }, right: { back: [], forward: [] } });
+  const [lastUndo, setLastUndo] = useState<UndoAction | null>(null);
+  const [diffText, setDiffText] = useState("");
   const cancelledOperations = useRef(new Set<string>());
 
   const dirty = openedFile ? content !== savedContent : false;
@@ -125,6 +157,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   ], [favorites, roots]);
   const selectedFilesLabel = selectedEntries.length > 1 ? `${selectedEntries.length} files` : selectedEntries[0]?.name ?? "";
   const editorMatches = useMemo(() => countMatches(content, editorSearch, editorRegexp, caseSensitive), [caseSensitive, content, editorRegexp, editorSearch]);
+  const jsonError = useMemo(() => validateJson(content, openedFile?.language ?? openedFile?.path ?? ""), [content, openedFile]);
 
   const setPane = (key: PaneKey, next: PaneState | ((current: PaneState) => PaneState)) => {
     if (key === "left") setLeftPane(next);
@@ -157,14 +190,40 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, status: "cancelled" } : item));
   };
 
-  const refresh = async (key: PaneKey = activePane, target?: string) => {
+  const syncCurrentTab = (nextContent = content, nextSavedContent = savedContent, file = openedFile) => {
+    if (!file) return;
+    setEditorTabs((current) => current.map((tab) => tab.path === file.path ? { ...tab, ...file, draftContent: nextContent, savedContent: nextSavedContent, encoding } : tab));
+  };
+
+  const refresh = async (key: PaneKey = activePane, target?: string, pushHistory = true) => {
     const current = key === "left" ? leftPane : rightPane;
     const folder = target ?? current.folder;
     const result = await run(() => api.listFiles(folder), { label: `Reading ${folder}...` });
     if (Array.isArray(result)) {
+      if (pushHistory && folder !== current.folder) {
+        setPaneHistory((history) => ({
+          ...history,
+          [key]: { back: [...history[key].back, current.folder].slice(-40), forward: [] }
+        }));
+      }
       setPane(key, { ...current, folder, entries: result as FileEntry[], selected: null });
       setPaneSelectedPaths(key, []);
     }
+  };
+
+  const navigateHistory = async (key: PaneKey, direction: "back" | "forward") => {
+    const current = key === "left" ? leftPane : rightPane;
+    const history = paneHistory[key];
+    const stack = direction === "back" ? history.back : history.forward;
+    const target = stack[stack.length - 1];
+    if (!target) return;
+    setPaneHistory((value) => ({
+      ...value,
+      [key]: direction === "back"
+        ? { back: value[key].back.slice(0, -1), forward: [current.folder, ...value[key].forward].slice(0, 40) }
+        : { back: [...value[key].back, current.folder].slice(-40), forward: value[key].forward.slice(1) }
+    }));
+    await refresh(key, target, false);
   };
 
   const selectEntry = (key: PaneKey, entry: FileEntry, event?: MouseEvent) => {
@@ -192,21 +251,24 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     selectEntry(key, entry);
     setEditorMessage("");
     if (entry.kind === "folder") {
-      if (dirty) {
-        setEditorMessage("Save or reload the current file before opening another file.");
-        return;
-      }
       await refresh(key, entry.path);
-      return;
-    }
-    if (dirty && entry.path !== openedFile?.path) {
-      setEditorMessage("Save or reload the current file before opening another file.");
       return;
     }
     await openFile(entry.path, encoding, true);
   };
 
   const openFile = async (path: string, fileEncoding = encoding, showModal = false) => {
+    syncCurrentTab();
+    const existing = editorTabs.find((tab) => tab.path === path && tab.encoding === fileEncoding);
+    if (existing) {
+      setOpenedFile(existing);
+      setContent(existing.draftContent);
+      setSavedContent(existing.savedContent);
+      setEncoding(existing.encoding ?? fileEncoding);
+      rememberRecentFile(path);
+      if (showModal) setEditorOpen(true);
+      return;
+    }
     const result = await run(() => api.readFileWithEncoding(path, fileEncoding), { label: `Opening ${fileName(path)}...` });
     if (result && typeof result === "object" && "content" in result) {
       const file = result as ConfigFile;
@@ -214,8 +276,35 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       setContent(file.content);
       setSavedContent(file.content);
       setEncoding(file.encoding ?? fileEncoding);
+      setEditorTabs((current) => [{ ...file, draftContent: file.content, savedContent: file.content }, ...current.filter((tab) => tab.path !== file.path)].slice(0, 8));
       rememberRecentFile(path);
       if (showModal) setEditorOpen(true);
+    }
+  };
+
+  const activateEditorTab = (path: string) => {
+    syncCurrentTab();
+    const tab = editorTabs.find((item) => item.path === path);
+    if (!tab) return;
+    setOpenedFile(tab);
+    setContent(tab.draftContent);
+    setSavedContent(tab.savedContent);
+    setEncoding(tab.encoding ?? encoding);
+    setDiffText("");
+  };
+
+  const closeEditorTab = (path: string) => {
+    const nextTabs = editorTabs.filter((tab) => tab.path !== path);
+    setEditorTabs(nextTabs);
+    if (openedFile?.path !== path) return;
+    const next = nextTabs[0];
+    if (next) {
+      setOpenedFile(next);
+      setContent(next.draftContent);
+      setSavedContent(next.savedContent);
+      setEncoding(next.encoding ?? encoding);
+    } else {
+      closeEditor();
     }
   };
 
@@ -251,12 +340,15 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const copySelected = async (toOtherPane = false) => {
     if (!selectedEntries.length) return;
     const target = targetPath.trim() || (toOtherPane ? otherPane.folder : pane.folder);
+    const created: string[] = [];
     await runFileOperation(`Copy ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
-        await run(() => api.copyPath(item.path, target, overwrite), { label: `Copying ${item.name}...`, silent: selectedEntries.length > 1 });
+        const result = await run(() => api.copyPath(item.path, target, overwrite), { label: `Copying ${item.name}...`, silent: selectedEntries.length > 1 });
+        if (typeof result === "string") created.push(result);
         progress(index + 1);
       }
+      if (created.length) setLastUndo({ label: `Undo copy ${selectedFilesLabel}`, removeCreated: created });
       await refresh(activePane);
       await refresh(activePane === "left" ? "right" : "left");
     });
@@ -265,12 +357,15 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const moveSelected = async (toOtherPane = false) => {
     if (!selectedEntries.length) return;
     const target = targetPath.trim() || (toOtherPane ? otherPane.folder : pane.folder);
+    const moved: Array<{ from: string; to: string }> = [];
     await runFileOperation(`Move ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
-        await run(() => api.movePath(item.path, target, overwrite), { label: `Moving ${item.name}...`, silent: selectedEntries.length > 1 });
+        const result = await run(() => api.movePath(item.path, target, overwrite), { label: `Moving ${item.name}...`, silent: selectedEntries.length > 1 });
+        if (typeof result === "string") moved.push({ from: result, to: item.path });
         progress(index + 1);
       }
+      if (moved.length) setLastUndo({ label: `Undo move ${selectedFilesLabel}`, moveBack: moved.reverse() });
       if (openedFile && selectedEntries.some((item) => item.path === openedFile.path)) setOpenedFile(null);
       await refresh(activePane);
       await refresh(activePane === "left" ? "right" : "left");
@@ -279,14 +374,57 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
 
   const deleteSelected = async () => {
     if (!selectedEntries.length) return;
+    const trashed: TrashRecord[] = [];
     await runFileOperation(`Delete ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
-        await run(() => api.deletePath(item.path), { label: `Deleting ${item.name}...`, silent: selectedEntries.length > 1 });
+        const result = await run(() => api.trashPath(item.path), { label: `Moving ${item.name} to trash...`, silent: selectedEntries.length > 1 });
+        if (result && typeof result === "object" && "trashPath" in result) trashed.push(result as TrashRecord);
         progress(index + 1);
       }
+      if (trashed.length) setLastUndo({ label: `Undo delete ${selectedFilesLabel}`, restoreItems: trashed.reverse() });
       if (openedFile && selectedEntries.some((item) => item.path === openedFile.path || item.kind === "folder")) closeEditor();
       await refresh(activePane);
+    });
+  };
+
+  const undoLastOperation = async () => {
+    if (!lastUndo) return;
+    const action = lastUndo;
+    setLastUndo(null);
+    const total = (action.restoreItems?.length ?? 0) + (action.moveBack?.length ?? 0) + (action.removeCreated?.length ?? 0);
+    await runFileOperation(action.label, Math.max(1, total), async ({ progress }) => {
+      let completed = 0;
+      for (const item of action.restoreItems ?? []) {
+        await run(() => api.restoreTrashPath(item.originalPath, item.trashPath, overwrite), { label: `Restoring ${item.name}...`, silent: true });
+        progress(++completed);
+      }
+      for (const item of action.moveBack ?? []) {
+        await run(() => api.movePath(item.from, item.to, true), { label: `Restoring ${fileName(item.to)}...`, silent: true });
+        progress(++completed);
+      }
+      for (const path of action.removeCreated ?? []) {
+        await run(() => api.trashPath(path), { label: `Removing ${fileName(path)}...`, silent: true });
+        progress(++completed);
+      }
+      await refresh("left");
+      await refresh("right");
+    });
+  };
+
+  const moveDroppedPaths = async (key: PaneKey, paths: string[], mode: "copy" | "move") => {
+    if (!paths.length) return;
+    const destination = key === "left" ? leftPane.folder : rightPane.folder;
+    const sourceEntries = paths.map((path) => ({ path, name: fileName(path) }));
+    await runFileOperation(`${mode === "copy" ? "Copy" : "Move"} ${paths.length} item(s)`, paths.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of sourceEntries.entries()) {
+        if (isCancelled()) break;
+        if (mode === "copy") await run(() => api.copyPath(item.path, destination, overwrite), { label: `Copying ${item.name}...`, silent: true });
+        else await run(() => api.movePath(item.path, destination, overwrite), { label: `Moving ${item.name}...`, silent: true });
+        progress(index + 1);
+      }
+      await refresh("left");
+      await refresh("right");
     });
   };
 
@@ -361,6 +499,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     if (!openedFile || openedFile.readOnly) return;
     await run(() => api.writeFileWithEncoding(openedFile.path, content, encoding), { label: `Saving ${openedFile.path}...` });
     setSavedContent(content);
+    setEditorTabs((current) => current.map((tab) => tab.path === openedFile.path ? { ...tab, draftContent: content, savedContent: content, encoding } : tab));
     setEditorMessage("Saved.");
     await refresh("left");
     await refresh("right");
@@ -385,11 +524,28 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const replaceNext = () => {
     const next = replaceInText(content, editorSearch, editorReplace, editorRegexp, caseSensitive, false);
     setContent(next);
+    syncCurrentTab(next);
   };
 
   const replaceAll = () => {
     const next = replaceInText(content, editorSearch, editorReplace, editorRegexp, caseSensitive, true);
     setContent(next);
+    syncCurrentTab(next);
+  };
+
+  const formatCurrentFile = () => {
+    const next = formatEditorContent(content, openedFile?.language ?? openedFile?.path ?? "");
+    setContent(next);
+    syncCurrentTab(next);
+    setEditorMessage(next === content ? "Nothing to format." : "Formatted.");
+  };
+
+  const compareTabs = () => {
+    if (!openedFile || editorTabs.length < 2) return;
+    syncCurrentTab();
+    const other = editorTabs.find((tab) => tab.path !== openedFile.path);
+    if (!other) return;
+    setDiffText(buildLineDiff(fileName(openedFile.path), content, fileName(other.path), other.draftContent));
   };
 
   const searchContents = async () => {
@@ -399,6 +555,23 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     }
     const result = await run(() => api.searchFileContentsAdvanced(pane.folder, contentSearch, editorRegexp, caseSensitive, includeExtensions, excludeFolders, 1000), { label: `Searching ${pane.folder}...` });
     if (Array.isArray(result)) setContentResults(result as FileSearchResult[]);
+  };
+
+  const saveSearchFilter = () => {
+    const name = contentSearch.trim() || `Search ${savedSearches.length + 1}`;
+    const next = [{ name, query: contentSearch, regexp: editorRegexp, caseSensitive, includeExtensions, excludeFolders }, ...savedSearches.filter((item) => item.name !== name)].slice(0, 8);
+    setSavedSearches(next);
+    localStorage.setItem("localstack.fileSearches", JSON.stringify(next));
+  };
+
+  const applySearchFilter = (name: string) => {
+    const preset = savedSearches.find((item) => item.name === name);
+    if (!preset) return;
+    setContentSearch(preset.query);
+    setEditorRegexp(preset.regexp);
+    setCaseSensitive(preset.caseSensitive);
+    setIncludeExtensions(preset.includeExtensions);
+    setExcludeFolders(preset.excludeFolders);
   };
 
   const copyPath = (value: string) => {
@@ -469,9 +642,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   };
 
   const closeEditor = () => {
+    syncCurrentTab();
     setOpenedFile(null);
     setContent("");
     setSavedContent("");
+    setEditorTabs([]);
     setEditorOpen(false);
   };
 
@@ -479,6 +654,31 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     void refresh("left", roots[0]?.path ?? state.appDataDir);
     void refresh("right", state.appDataDir);
   }, [state.appDataDir]);
+
+  useEffect(() => {
+    try {
+      const session = JSON.parse(localStorage.getItem("localstack.unsavedEditor") ?? "null") as { file: ConfigFile; content: string; savedContent: string; encoding: string } | null;
+      if (!session?.file?.path || session.content === session.savedContent) return;
+      const tab = { ...session.file, draftContent: session.content, savedContent: session.savedContent, encoding: session.encoding };
+      setOpenedFile(session.file);
+      setEditorTabs([tab]);
+      setContent(session.content);
+      setSavedContent(session.savedContent);
+      setEncoding(session.encoding);
+      setEditorOpen(true);
+      setEditorMessage("Unsaved session restored.");
+    } catch {
+      localStorage.removeItem("localstack.unsavedEditor");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!openedFile || content === savedContent) {
+      localStorage.removeItem("localstack.unsavedEditor");
+      return;
+    }
+    localStorage.setItem("localstack.unsavedEditor", JSON.stringify({ file: openedFile, content, savedContent, encoding }));
+  }, [content, encoding, openedFile, savedContent]);
 
   useEffect(() => {
     if (!editorOpen) return;
@@ -533,8 +733,8 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
 
       <Panel title="Files">
         <div className="dual-file-manager">
-          <FilePane paneKey="left" pane={leftPane} active={activePane === "left"} selectedPaths={selectedPaths.left} roots={paneRoots} onActivate={() => setActivePane("left")} onRefresh={(path) => void refresh("left", path)} onFilter={(filter) => setLeftPane((current) => ({ ...current, filter }))} onSort={changePaneSort} onSelectAll={selectAllInPane} onInvertSelection={invertSelectionInPane} onSelect={selectEntry} onOpen={(entry) => void openEntry("left", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onCopyPath={copyPath} />
-          <FilePane paneKey="right" pane={rightPane} active={activePane === "right"} selectedPaths={selectedPaths.right} roots={paneRoots} onActivate={() => setActivePane("right")} onRefresh={(path) => void refresh("right", path)} onFilter={(filter) => setRightPane((current) => ({ ...current, filter }))} onSort={changePaneSort} onSelectAll={selectAllInPane} onInvertSelection={invertSelectionInPane} onSelect={selectEntry} onOpen={(entry) => void openEntry("right", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onCopyPath={copyPath} />
+          <FilePane paneKey="left" pane={leftPane} active={activePane === "left"} selectedPaths={selectedPaths.left} roots={paneRoots} history={paneHistory.left} onActivate={() => setActivePane("left")} onRefresh={(path) => void refresh("left", path)} onHistory={(direction) => void navigateHistory("left", direction)} onFilter={(filter) => setLeftPane((current) => ({ ...current, filter }))} onSort={changePaneSort} onSelectAll={selectAllInPane} onInvertSelection={invertSelectionInPane} onSelect={selectEntry} onOpen={(entry) => void openEntry("left", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onDropPaths={moveDroppedPaths} onCopyPath={copyPath} />
+          <FilePane paneKey="right" pane={rightPane} active={activePane === "right"} selectedPaths={selectedPaths.right} roots={paneRoots} history={paneHistory.right} onActivate={() => setActivePane("right")} onRefresh={(path) => void refresh("right", path)} onHistory={(direction) => void navigateHistory("right", direction)} onFilter={(filter) => setRightPane((current) => ({ ...current, filter }))} onSort={changePaneSort} onSelectAll={selectAllInPane} onInvertSelection={invertSelectionInPane} onSelect={selectEntry} onOpen={(entry) => void openEntry("right", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onDropPaths={moveDroppedPaths} onCopyPath={copyPath} />
         </div>
       </Panel>
 
@@ -543,6 +743,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
           <div className="file-ops-grid">
             <input className="toolbar-input" value={targetPath} onChange={(event) => setTargetPath(event.target.value)} placeholder={String(t("Absolute target path"))} />
             <label className="check-line"><input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} /> {t("Overwrite")}</label>
+            <Button disabled={!lastUndo} icon={<Undo2 size={16} />} onClick={() => void undoLastOperation()}>Undo</Button>
             <Button disabled={!selectedEntries.length} icon={<Copy size={16} />} onClick={() => void copySelected(false)}>Copy</Button>
             <Button disabled={!selectedEntries.length} icon={<MoveRight size={16} />} onClick={() => void moveSelected(false)}>Move</Button>
             <Button disabled={!selectedEntries.length} icon={<Copy size={16} />} onClick={() => void copySelected(true)}>Copy to Other Pane</Button>
@@ -606,6 +807,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <label className="check-line"><input type="checkbox" checked={caseSensitive} onChange={(event) => setCaseSensitive(event.target.checked)} /> Aa</label>
               <input className="toolbar-input" value={includeExtensions} onChange={(event) => setIncludeExtensions(event.target.value)} placeholder=".php,.ts,.json" />
               <input className="toolbar-input" value={excludeFolders} onChange={(event) => setExcludeFolders(event.target.value)} placeholder="node_modules,.git" />
+              <select className="toolbar-input compact-select" defaultValue="" onChange={(event) => applySearchFilter(event.target.value)}>
+                <option value="">Saved</option>
+                {savedSearches.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
+              </select>
+              <Button onClick={saveSearchFilter}>Save Filter</Button>
               <Button icon={<Search size={16} />} onClick={() => void searchContents()}>Search</Button>
             </div>
             <div className="content-results">
@@ -671,6 +877,20 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
                 <Button onClick={() => setEditorOpen(false)}>Close</Button>
               </div>
             </div>
+            {editorTabs.length > 0 && (
+              <div className="editor-tabs">
+                {editorTabs.map((tab) => {
+                  const tabDirty = tab.path === openedFile.path ? dirty : tab.draftContent !== tab.savedContent;
+                  return (
+                    <button key={tab.path} className={tab.path === openedFile.path ? "active" : ""} onClick={() => activateEditorTab(tab.path)} title={tab.path}>
+                      <FileText size={14} />
+                      <span>{fileName(tab.path)}{tabDirty ? " *" : ""}</span>
+                      <i onClick={(event) => { event.stopPropagation(); closeEditorTab(tab.path); }}>x</i>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="editor-findbar">
               <input data-editor-find className="toolbar-input" value={editorSearch} onChange={(event) => setEditorSearch(event.target.value)} placeholder={String(t("Find"))} />
               {showReplace && <input data-editor-replace className="toolbar-input" value={editorReplace} onChange={(event) => setEditorReplace(event.target.value)} placeholder={String(t("Replace"))} />}
@@ -680,6 +900,8 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <Button onClick={() => setShowReplace((value) => !value)}>{showReplace ? "Hide Replace" : "Show Replace"}</Button>
               <Button icon={<Replace size={16} />} disabled={!editorSearch} onClick={replaceNext}>Replace</Button>
               <Button icon={<Replace size={16} />} disabled={!editorSearch} onClick={replaceAll}>Replace All</Button>
+              <Button icon={<GitCompare size={16} />} disabled={editorTabs.length < 2} onClick={compareTabs}>Diff</Button>
+              <Button onClick={formatCurrentFile}>Format</Button>
             </div>
             <CodeMirror
               value={content}
@@ -689,11 +911,15 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               editable={!openedFile.readOnly}
               onChange={(value) => {
                 setContent(value);
+                syncCurrentTab(value);
                 setEditorMessage("");
+                setDiffText("");
               }}
             />
+            {diffText && <pre className="diff-panel">{diffText}</pre>}
             <div className="file-editor-status">
               <span>{dirty ? t("Unsaved changes") : t("No unsaved changes")} · {openedFile.language ?? "Text"} · {openedFile.encoding ?? encoding} · {formatSize(openedFile.size ?? content.length)} · {editorMatches} {t("matches")}</span>
+              {jsonError && <strong className="danger-text">{jsonError}</strong>}
               {editorMessage && <strong>{t(editorMessage)}</strong>}
             </div>
           </div>
@@ -709,8 +935,10 @@ function FilePane({
   active,
   selectedPaths,
   roots,
+  history,
   onActivate,
   onRefresh,
+  onHistory,
   onFilter,
   onSort,
   onSelectAll,
@@ -719,6 +947,7 @@ function FilePane({
   onOpen,
   onContextMenu,
   onDropFiles,
+  onDropPaths,
   onCopyPath
 }: {
   paneKey: PaneKey;
@@ -726,8 +955,10 @@ function FilePane({
   active: boolean;
   selectedPaths: string[];
   roots: Array<{ label: string; path: string }>;
+  history: { back: string[]; forward: string[] };
   onActivate: () => void;
   onRefresh: (path?: string) => void;
+  onHistory: (direction: "back" | "forward") => void;
   onFilter: (filter: string) => void;
   onSort: (pane: PaneKey, sortKey: PaneState["sortKey"]) => void;
   onSelectAll: (pane: PaneKey) => void;
@@ -736,6 +967,7 @@ function FilePane({
   onOpen: (entry: FileEntry) => void;
   onContextMenu: (pane: PaneKey, entry: FileEntry, event: MouseEvent) => void;
   onDropFiles: (pane: PaneKey, files: FileList) => void;
+  onDropPaths: (pane: PaneKey, paths: string[], mode: "copy" | "move") => void;
   onCopyPath: (path: string) => void;
 }) {
   const t = useT();
@@ -751,6 +983,8 @@ function FilePane({
     });
   }, [pane.entries, pane.filter, pane.sortDir, pane.sortKey]);
 
+  const visibleEntries = filteredEntries.slice(0, 500);
+
   return (
     <div
       className={`file-pane ${active ? "active" : ""}`}
@@ -760,12 +994,24 @@ function FilePane({
       onDrop={(event) => {
         event.preventDefault();
         onActivate();
+        const rawPaths = event.dataTransfer.getData("application/localstack-paths");
+        if (rawPaths) {
+          try {
+            const paths = JSON.parse(rawPaths);
+            if (Array.isArray(paths)) onDropPaths(paneKey, paths.filter((path) => typeof path === "string"), event.ctrlKey ? "copy" : "move");
+          } catch {
+            // Ignore malformed drag data.
+          }
+          return;
+        }
         if (event.dataTransfer.files.length) onDropFiles(paneKey, event.dataTransfer.files);
       }}
     >
       <div className="file-pane-head">
         <strong>{paneKey === "left" ? t("Left Pane") : t("Right Pane")}</strong>
         <div className="toolbar">
+          <Button variant="icon" icon={<ArrowLeft size={16} />} disabled={!history.back.length} onClick={() => onHistory("back")} aria-label="Back" />
+          <Button variant="icon" icon={<ArrowRight size={16} />} disabled={!history.forward.length} onClick={() => onHistory("forward")} aria-label="Forward" />
           <Button variant="icon" icon={<CheckSquare size={16} />} onClick={() => onSelectAll(paneKey)} aria-label="Select all" />
           <Button variant="icon" icon={<Replace size={16} />} onClick={() => onInvertSelection(paneKey)} aria-label="Invert selection" />
           <Button variant="icon" icon={<RefreshCw size={16} />} onClick={() => onRefresh()} aria-label="Refresh" />
@@ -792,7 +1038,7 @@ function FilePane({
       <div className="file-filter">
         <Search size={16} />
         <input value={pane.filter} onChange={(event) => onFilter(event.target.value)} placeholder={String(t("Search files..."))} />
-        <span>{filteredEntries.length} / {pane.entries.length}</span>
+        <span>{visibleEntries.length}/{filteredEntries.length} / {pane.entries.length}</span>
       </div>
       <div className="file-sortbar">
         <button onClick={() => onSort(paneKey, "name")}>{t("Name")} {pane.sortKey === "name" ? pane.sortDir : ""}</button>
@@ -800,10 +1046,16 @@ function FilePane({
         <button onClick={() => onSort(paneKey, "modified")}>{t("Modified")} {pane.sortKey === "modified" ? pane.sortDir : ""}</button>
       </div>
       <div className="file-list pane-list">
-        {filteredEntries.map((entry) => (
+        {visibleEntries.map((entry) => (
           <button
             key={entry.path}
             className={`file-row ${selectedPaths.includes(entry.path) ? "selected" : ""}`}
+            draggable
+            onDragStart={(event) => {
+              const paths = selectedPaths.includes(entry.path) ? selectedPaths : [entry.path];
+              event.dataTransfer.setData("application/localstack-paths", JSON.stringify(paths));
+              event.dataTransfer.effectAllowed = "copyMove";
+            }}
             onClick={(event) => onSelect(paneKey, entry, event)}
             onDoubleClick={() => onOpen(entry)}
             onContextMenu={(event) => onContextMenu(paneKey, entry, event)}
@@ -815,6 +1067,7 @@ function FilePane({
             <span>{entry.modified ? new Date(entry.modified).toLocaleString() : "-"}</span>
           </button>
         ))}
+        {filteredEntries.length > visibleEntries.length && <div className="empty-row">{filteredEntries.length - visibleEntries.length} more item(s). Narrow the file-name search.</div>}
         {!filteredEntries.length && <div className="empty-row">{t("No files found.")}</div>}
       </div>
     </div>
@@ -870,6 +1123,15 @@ function loadStringList(key: string) {
   }
 }
 
+function loadJsonList<T>(key: string) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(value) ? value as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
 function countMatches(content: string, query: string, regexp: boolean, caseSensitive: boolean) {
   if (!query) return 0;
   try {
@@ -898,6 +1160,82 @@ function replaceInText(content: string, find: string, replacement: string, regex
   } catch {
     return content;
   }
+}
+
+function validateJson(content: string, languageOrPath: string) {
+  const value = languageOrPath.toLowerCase();
+  if (!value.includes("json") && !value.endsWith(".json")) return "";
+  try {
+    JSON.parse(content);
+    return "";
+  } catch (error) {
+    return error instanceof Error ? error.message : "Invalid JSON";
+  }
+}
+
+function formatEditorContent(content: string, languageOrPath: string) {
+  const value = languageOrPath.toLowerCase();
+  try {
+    if (value.includes("json") || value.endsWith(".json")) return `${JSON.stringify(JSON.parse(content), null, 2)}\n`;
+    if (value.includes("css") || value.endsWith(".css") || value.endsWith(".scss")) return formatBracedText(content);
+    if (value.includes("html") || value.endsWith(".html") || value.endsWith(".htm")) return formatHtml(content);
+  } catch {
+    return content;
+  }
+  return content;
+}
+
+function formatBracedText(content: string) {
+  let level = 0;
+  return content
+    .replace(/\s*([{};])\s*/g, "$1\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (line.startsWith("}")) level = Math.max(0, level - 1);
+      const output = `${"  ".repeat(level)}${line}`;
+      if (line.endsWith("{")) level += 1;
+      return output;
+    })
+    .join("\n")
+    .concat("\n");
+}
+
+function formatHtml(content: string) {
+  let level = 0;
+  return content
+    .replace(/>\s*</g, ">\n<")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (/^<\//.test(line)) level = Math.max(0, level - 1);
+      const output = `${"  ".repeat(level)}${line}`;
+      if (/^<[^/!][^>]*[^/]>\s*$/.test(line) && !/^<(input|img|br|hr|meta|link)\b/i.test(line)) level += 1;
+      return output;
+    })
+    .join("\n")
+    .concat("\n");
+}
+
+function buildLineDiff(leftName: string, left: string, rightName: string, right: string) {
+  const leftLines = left.split(/\r?\n/);
+  const rightLines = right.split(/\r?\n/);
+  const max = Math.max(leftLines.length, rightLines.length);
+  const output = [`--- ${leftName}`, `+++ ${rightName}`];
+  for (let index = 0; index < max; index += 1) {
+    const a = leftLines[index] ?? "";
+    const b = rightLines[index] ?? "";
+    if (a === b) continue;
+    output.push(`-${index + 1}: ${a}`);
+    output.push(`+${index + 1}: ${b}`);
+    if (output.length > 260) {
+      output.push("Diff truncated.");
+      break;
+    }
+  }
+  return output.length > 2 ? output.join("\n") : "No differences.";
 }
 
 function languageExtension(languageOrPath: string) {

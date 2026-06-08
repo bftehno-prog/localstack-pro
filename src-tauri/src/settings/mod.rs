@@ -116,7 +116,7 @@ pub fn reset_settings() -> AppResult<crate::state::AppSnapshot> {
     snapshot.settings.check_updates_on_startup = true;
     snapshot.settings.telemetry = false;
     snapshot.settings.ui_density = "Comfortable".to_string();
-    snapshot.settings.theme = "Light".to_string();
+    snapshot.settings.theme = "Wet Asphalt".to_string();
     snapshot.settings.log_level = "Information".to_string();
     snapshot.settings.max_log_file_size = "50 MB".to_string();
     snapshot.settings.retain_logs_days = 30;

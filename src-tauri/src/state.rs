@@ -404,7 +404,7 @@ impl Store {
             snapshot.settings.backups_folder = format!("{base}\\backups");
         }
         if snapshot.settings.theme.trim().is_empty() {
-            snapshot.settings.theme = "Light".to_string();
+            snapshot.settings.theme = default_theme();
         }
         if let Some(dns_helper) = snapshot
             .services
@@ -1139,7 +1139,7 @@ impl Store {
                 check_updates_on_startup: true,
                 telemetry: false,
                 ui_density: "Comfortable".to_string(),
-                theme: "Light".to_string(),
+                theme: default_theme(),
                 log_level: "Information".to_string(),
                 max_log_file_size: "50 MB".to_string(),
                 retain_logs_days: 30,
@@ -1195,7 +1195,7 @@ fn default_ini_pairs() -> [(&'static str, &'static str); 15] {
 }
 
 fn default_theme() -> String {
-    "Light".to_string()
+    "Wet Asphalt".to_string()
 }
 
 fn certificate_for(base: &str, domain: &str) -> CertificateInfo {

@@ -118,6 +118,15 @@ pub struct FileEntry {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TrashRecord {
+    pub original_path: String,
+    pub trash_path: String,
+    pub name: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileSearchResult {
     pub path: String,
     pub line: usize,
@@ -697,6 +706,84 @@ pub fn delete_path(path: String) -> AppResult<String> {
         return Err(format!("Path does not exist: {}", target.display()));
     }
     Ok(target.display().to_string())
+}
+
+pub fn trash_path(path: String) -> AppResult<TrashRecord> {
+    let source = allowed_workspace_path(path)?;
+    if !source.exists() {
+        return Err(format!("Path does not exist: {}", source.display()));
+    }
+    let store = Store::new()?;
+    let trash_root = store.dir.join("trash");
+    fs::create_dir_all(&trash_root)
+        .map_err(|err| format!("Cannot create trash folder {}: {err}", trash_root.display()))?;
+    let name = source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Cannot detect source name.".to_string())?
+        .to_string();
+    let kind = if source.is_dir() { "folder" } else { "file" }.to_string();
+    let target = unique_trash_path(&trash_root, &name);
+    match fs::rename(&source, &target) {
+        Ok(_) => {}
+        Err(_) => {
+            if source.is_dir() {
+                copy_dir_all(&source, &target)?;
+                fs::remove_dir_all(&source)
+                    .map_err(|err| format!("Cannot remove original folder {}: {err}", source.display()))?;
+            } else {
+                fs::copy(&source, &target)
+                    .map_err(|err| format!("Cannot move file to trash {}: {err}", source.display()))?;
+                fs::remove_file(&source)
+                    .map_err(|err| format!("Cannot remove original file {}: {err}", source.display()))?;
+            }
+        }
+    }
+    Ok(TrashRecord {
+        original_path: source.display().to_string(),
+        trash_path: target.display().to_string(),
+        name,
+        kind,
+    })
+}
+
+pub fn restore_trash_path(original_path: String, trash_path: String, overwrite: bool) -> AppResult<String> {
+    let source = allowed_workspace_path(trash_path)?;
+    let target = allowed_workspace_path(original_path)?;
+    if !source.exists() {
+        return Err(format!("Trash item does not exist: {}", source.display()));
+    }
+    if target.exists() {
+        if !overwrite {
+            return Err(format!("Original path already exists: {}", target.display()));
+        }
+        if target.is_dir() {
+            fs::remove_dir_all(&target)
+                .map_err(|err| format!("Cannot replace folder {}: {err}", target.display()))?;
+        } else {
+            fs::remove_file(&target)
+                .map_err(|err| format!("Cannot replace file {}: {err}", target.display()))?;
+        }
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("Cannot create parent folder: {err}"))?;
+    }
+    match fs::rename(&source, &target) {
+        Ok(_) => Ok(target.display().to_string()),
+        Err(_) => {
+            if source.is_dir() {
+                copy_dir_all(&source, &target)?;
+                fs::remove_dir_all(&source)
+                    .map_err(|err| format!("Cannot remove trash folder {}: {err}", source.display()))?;
+            } else {
+                fs::copy(&source, &target)
+                    .map_err(|err| format!("Cannot restore file {}: {err}", source.display()))?;
+                fs::remove_file(&source)
+                    .map_err(|err| format!("Cannot remove trash file {}: {err}", source.display()))?;
+            }
+            Ok(target.display().to_string())
+        }
+    }
 }
 
 pub fn rename_path(path: String, new_name: String) -> AppResult<String> {
@@ -1543,6 +1630,21 @@ fn copy_dir_all(source: &Path, target: &Path) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+fn unique_trash_path(root: &Path, name: &str) -> PathBuf {
+    let stamp = Utc::now().format("%Y%m%d%H%M%S%3f");
+    let clean = name
+        .chars()
+        .map(|ch| if matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { '_' } else { ch })
+        .collect::<String>();
+    let mut target = root.join(format!("{stamp}-{clean}"));
+    let mut counter = 1;
+    while target.exists() {
+        target = root.join(format!("{stamp}-{counter}-{clean}"));
+        counter += 1;
+    }
+    target
 }
 
 fn extract_zip_safe(source: &Path, target: &Path) -> AppResult<()> {

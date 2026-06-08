@@ -566,6 +566,14 @@ fn delete_path(path: String) -> AppResult<String> {
     tools::delete_path(path)
 }
 #[tauri::command]
+fn trash_path(path: String) -> AppResult<tools::TrashRecord> {
+    tools::trash_path(path)
+}
+#[tauri::command]
+fn restore_trash_path(original_path: String, trash_path: String, overwrite: bool) -> AppResult<String> {
+    tools::restore_trash_path(original_path, trash_path, overwrite)
+}
+#[tauri::command]
 fn rename_path(path: String, new_name: String) -> AppResult<String> {
     tools::rename_path(path, new_name)
 }
@@ -824,6 +832,8 @@ pub fn run() {
             create_file,
             create_folder,
             delete_path,
+            trash_path,
+            restore_trash_path,
             rename_path,
             duplicate_path,
             copy_path,
