@@ -21,7 +21,7 @@ import { api } from "./ui/api";
 const FilesPage = lazy(() => import("./pages/Files").then((module) => ({ default: module.FilesPage })));
 
 export default function App() {
-  const { state, loading, error, notice, busy, actionLabel, operations, run, refresh } = useAppState();
+  const { state, loading, error, notice, busy, actionLabel, operations, run, retryLast, refresh } = useAppState();
   const [page, setPageState] = useState<PageKey>(() => pageFromHash());
   const [selectedHost, setSelectedHost] = useState<HostInfo | undefined>();
   const [editingHost, setEditingHost] = useState<HostInfo | undefined>();
@@ -78,6 +78,7 @@ export default function App() {
         busy={busy}
         actionLabel={actionLabel}
         operations={operations}
+        retryLast={retryLast}
         run={run}
         selectedHost={selectedHost}
         setSelectedHost={setSelectedHost}
@@ -111,6 +112,7 @@ function AppContent({
   busy,
   actionLabel,
   operations,
+  retryLast,
   run,
   selectedHost,
   setSelectedHost,
@@ -129,6 +131,7 @@ function AppContent({
   busy: boolean;
   actionLabel: string | null;
   operations: ReturnType<typeof useAppState>["operations"];
+  retryLast: ReturnType<typeof useAppState>["retryLast"];
   run: ReturnType<typeof useAppState>["run"];
   selectedHost?: HostInfo;
   setSelectedHost: (host?: HostInfo) => void;
@@ -181,7 +184,7 @@ function AppContent({
       )}
       {notice && <div className="success-banner">{t(notice)}</div>}
       {error && <SmartError message={error} run={run} />}
-      {operations.length > 0 && <OperationCenter operations={operations} />}
+      {operations.length > 0 && <OperationCenter operations={operations} retryLast={retryLast} />}
       {paletteOpen && (
         <CommandPalette
           query={paletteQuery}
@@ -265,12 +268,13 @@ function FirstRunWizard({ setPage, run, finish }: { setPage: (page: PageKey) => 
   );
 }
 
-function OperationCenter({ operations }: { operations: ReturnType<typeof useAppState>["operations"] }) {
+function OperationCenter({ operations, retryLast }: { operations: ReturnType<typeof useAppState>["operations"]; retryLast: ReturnType<typeof useAppState>["retryLast"] }) {
   const t = useT();
   return (
     <div className="operation-center" title={String(t("Recent actions"))}>
       <div className="operation-title">
         <strong>{t("Action Center")}</strong>
+        <button onClick={() => void retryLast()}>{t("Retry")}</button>
         <span>{operations.filter((item) => item.status === "running").length} {t("active")}</span>
       </div>
       <div className="operation-list">

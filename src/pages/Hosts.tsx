@@ -10,6 +10,13 @@ import { hostUrl } from "./Overview";
 import { hostReadinessScore, readinessClass, readinessLabel } from "../ui/readiness";
 import { useStoredBoolean, useStoredList } from "../ui/preferences";
 
+type HostHistoryEntry = {
+  id: string;
+  host: HostInfo;
+  changedAt: string;
+  summary: string;
+};
+
 export function HostsPage({
   state,
   run,
@@ -38,6 +45,14 @@ export function HostsPage({
   const [hostLogs, setHostLogs] = useState<LogFileTail | null>(null);
   const [nodeScripts, setNodeScripts] = useState<NodeScript[]>([]);
   const [sitePreviews, setSitePreviews] = useState<Record<string, SitePreview>>({});
+  const [hostHistory, setHostHistory] = useState<HostHistoryEntry[]>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem("localstack.hostHistory") ?? "[]");
+      return Array.isArray(value) ? value : [];
+    } catch {
+      return [];
+    }
+  });
   const [wizardType, setWizardType] = useState("WordPress");
   const [wizardDomain, setWizardDomain] = useState("new.test");
   const [wizardFolder, setWizardFolder] = useState(`${state.settings.projectsFolder}\\new`);
@@ -125,7 +140,28 @@ export function HostsPage({
   };
   const quickUpdateHost = async (patch: Partial<HostInfo>) => {
     if (!host) return;
+    const entry = { id: crypto.randomUUID(), host, changedAt: new Date().toISOString(), summary: Object.keys(patch).join(", ") };
+    const nextHistory = [entry, ...hostHistory].slice(0, 40);
+    setHostHistory(nextHistory);
+    localStorage.setItem("localstack.hostHistory", JSON.stringify(nextHistory));
     await run(() => api.saveHost({ ...host, ...patch, updatedAt: new Date().toISOString() }), { label: `Saving ${host.domain}...` });
+  };
+  const rollbackHost = async () => {
+    if (!host) return;
+    const entry = hostHistory.find((item) => item.host.id === host.id);
+    if (!entry) return;
+    await run(() => api.saveHost({ ...entry.host, updatedAt: new Date().toISOString() }), { label: `Rolling back ${host.domain}...` });
+    const next = hostHistory.filter((item) => item.id !== entry.id);
+    setHostHistory(next);
+    localStorage.setItem("localstack.hostHistory", JSON.stringify(next));
+  };
+  const startRequiredForHost = async (target: HostInfo) => {
+    const ids = new Set<string>();
+    ids.add(target.webServer.toLowerCase().includes("nginx") ? "nginx" : "apache");
+    if (target.database) ids.add("mysql");
+    if (target.mailService) ids.add("mailpit");
+    if (target.tags.some((tag) => tag.toLowerCase().includes("redis"))) ids.add("redis");
+    await run(() => api.startServiceProfile(Array.from(ids)), { label: `Starting required services for ${target.domain}...` });
   };
   const resetFilters = () => {
     setQuery("");
@@ -377,6 +413,8 @@ export function HostsPage({
               <Button icon={<Wrench size={17} />} onClick={() => void repair(host)}>Repair Host</Button>
               <Button icon={<Database size={17} />} onClick={() => void testHostDatabase(host)}>Test Database</Button>
               <Button icon={<Terminal size={17} />} onClick={() => void loadNodeScripts(host)}>Node Scripts</Button>
+              <Button icon={<Play size={17} />} onClick={() => void startRequiredForHost(host)}>Start Required</Button>
+              <Button icon={<Wrench size={17} />} disabled={!hostHistory.some((item) => item.host.id === host.id)} onClick={() => void rollbackHost()}>Rollback Change</Button>
               <Button icon={<Folder size={17} />} onClick={() => void loadHostLogs(host)}>Host Logs</Button>
               <Button icon={<Upload size={17} />} onClick={() => void backupHost(host)}>Backup Host</Button>
               <Button icon={<Download size={17} />} onClick={() => void restoreHost()}>Restore Host</Button>
@@ -385,6 +423,26 @@ export function HostsPage({
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "npm-install"), { label: `Running npm install for ${host.domain}...` })}>npm install</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "npm-dev"), { label: `Starting Node dev server for ${host.domain}...` })}>npm run dev</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "composer-install"), { label: `Running composer install for ${host.domain}...` })}>composer install</Button>
+            </div>
+          </Panel>
+          <Panel title="Dependency Map">
+            <div className="dependency-map">
+              <span><strong>{host.domain}</strong><small>Host</small></span>
+              <span><strong>{host.webServer}</strong><small>Web server</small></span>
+              <span><strong>PHP {host.phpVersion}</strong><small>Runtime</small></span>
+              <span><strong>{host.database || "None"}</strong><small>Database</small></span>
+              <span><strong>{host.ssl ? "SSL on" : "SSL off"}</strong><small>Certificate</small></span>
+            </div>
+          </Panel>
+          <Panel title="Change History">
+            <div className="content-results compact-results">
+              {hostHistory.filter((item) => item.host.id === host.id).slice(0, 6).map((entry) => (
+                <button key={entry.id} onClick={() => void run(() => api.saveHost({ ...entry.host, updatedAt: new Date().toISOString() }), { label: `Restoring ${entry.host.domain}...` })}>
+                  <strong>{entry.summary}</strong>
+                  <span>{new Date(entry.changedAt).toLocaleString()}</span>
+                </button>
+              ))}
+              {!hostHistory.some((item) => item.host.id === host.id) && <div className="empty-row">No changes yet.</div>}
             </div>
           </Panel>
           {diagnostics?.hostId === host.id && (

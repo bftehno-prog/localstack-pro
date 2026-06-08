@@ -4,7 +4,8 @@ import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { api } from "../ui/api";
-import type { AppRun, AppSnapshot, CmsInstallRequest, CmsTemplate, DatabaseInfo } from "../ui/types";
+import { pickFolder } from "../ui/dialogs";
+import type { AppRun, AppSnapshot, CmsInstallRequest, CmsTemplate, DatabaseInfo, ProjectInspection } from "../ui/types";
 
 export function CmsPage({
   state,
@@ -30,6 +31,7 @@ export function CmsPage({
   const [lastInstallDomain, setLastInstallDomain] = useState("");
   const [envPreset, setEnvPreset] = useState("Laravel");
   const [envPreview, setEnvPreview] = useState("");
+  const [projectChecks, setProjectChecks] = useState<string[]>([]);
 
   useEffect(() => {
     void api.getCmsTemplates().then((items) => {
@@ -149,6 +151,30 @@ export function CmsPage({
     const content = envPreview || buildEnvPreset();
     await run(() => api.writeFileWithEncoding(`${rootFolder.trim()}\\.env`, content, "utf-8"), { label: "Writing .env file..." });
   };
+  const importExistingProject = async () => {
+    const folder = await pickFolder();
+    if (!folder) return;
+    setRootFolder(folder);
+    const slug = folder.split(/[\\/]/).pop()?.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "project";
+    setDomain(`${slug}.test`);
+    setDatabaseName(sanitizeDatabaseName(slug));
+    setDatabaseUser(`${sanitizeDatabaseName(slug)}_user`);
+    const result = await run(() => api.inspectProject(folder), { label: "Inspecting existing project..." });
+    if (result && typeof result === "object" && "kind" in result && "checks" in result) {
+      const inspection = result as ProjectInspection;
+      setProjectChecks(inspection.checks.map((check) => `${check.severity}: ${check.title} - ${check.message}`));
+      if (inspection.kind.toLowerCase().includes("node")) {
+        setSelectedId("nextjs");
+        setCreateDatabase(false);
+      }
+      if (inspection.documentRoot) {
+        const match = templates.find((template) => template.documentRoot === inspection.documentRoot || inspection.kind.toLowerCase().includes(template.id));
+        if (match) setSelectedId(match.id);
+      }
+    }
+    const envExample = await api.readFileWithEncoding(`${folder}\\.env.example`, "utf-8").catch(() => undefined);
+    if (envExample?.content) setEnvPreview(envExample.content);
+  };
   const refreshTemplates = async () => {
     const result = await run(api.getCmsTemplates, { label: "Refreshing CMS templates..." });
     if (Array.isArray(result)) {
@@ -162,6 +188,7 @@ export function CmsPage({
         <h1>CMS <small>{templates.length}</small></h1>
         <div className="toolbar">
           <Button icon={<RefreshCw size={16} />} onClick={() => void refreshTemplates()}>Refresh</Button>
+          <Button icon={<Folder size={16} />} onClick={() => void importExistingProject()}>Import Project</Button>
           <Button variant="primary" icon={<PackagePlus size={16} />} disabled={!selected} onClick={() => void install()}>
             Install CMS
           </Button>
@@ -380,6 +407,11 @@ export function CmsPage({
               <Button icon={<KeyRound size={16} />} onClick={() => buildEnvPreset()}>Generate .env</Button>
               <Button variant="primary" icon={<Download size={16} />} onClick={() => void writeEnvFile()}>Write .env</Button>
             </div>
+            {projectChecks.length > 0 && (
+              <div className="content-results compact-results">
+                {projectChecks.map((check) => <button key={check}><strong>{check}</strong></button>)}
+              </div>
+            )}
           </Panel>
         </aside>
       </div>

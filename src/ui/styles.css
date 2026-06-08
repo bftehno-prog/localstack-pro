@@ -1902,6 +1902,60 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   min-height: 190px;
   margin-top: 10px;
 }
+
+.preview-modal {
+  width: min(1080px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.file-preview-frame,
+.file-preview-image {
+  width: 100%;
+  height: min(720px, calc(100vh - 150px));
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+}
+
+.file-preview-image {
+  object-fit: contain;
+}
+
+.dependency-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.dependency-map span {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  padding: 8px 10px;
+  display: grid;
+  gap: 3px;
+}
+
+.dependency-map strong,
+.dependency-map small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dependency-map small {
+  color: var(--muted);
+}
 .success-banner {
   border: 1px solid #c8ead5;
   background: #f0fbf4;
@@ -1926,6 +1980,14 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   justify-content: space-between;
   color: var(--muted);
   font-size: 12px;
+}
+.operation-title button {
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--control-text);
+  padding: 0 8px;
 }
 .operation-title strong { color: var(--text); font-size: 13px; }
 .operation-list {

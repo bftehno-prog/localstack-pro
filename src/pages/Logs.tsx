@@ -49,8 +49,8 @@ export function LogsPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const haystack = `${log.service} ${log.host ?? ""} ${log.message} ${log.detail ?? ""}`.toLowerCase();
     return matchesLevel && matchesService && matchesHost && (!query.trim() || haystack.includes(query.toLowerCase()));
   });
-  const visibleLogs = logs.length > 0 ? logs : [fallbackLog];
-  const visibleTailLines = (fileTail?.lines ?? []).filter((line) => {
+  const visibleLogs = (logs.length > 0 ? logs : [fallbackLog]).slice(0, 1000);
+  const visibleTailLines = (fileTail?.lines ?? []).slice(-1500).filter((line) => {
     const matchesLevel = level === "All" || line.toUpperCase().includes(level);
     return matchesLevel && (!query.trim() || line.toLowerCase().includes(query.toLowerCase()));
   });
@@ -113,7 +113,7 @@ export function LogsPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
                   </pre>
                 ))}
             </div>
-            <div className="table-foot"><span>{fileTail ? `Showing ${visibleTailLines.length} lines from ${fileTail.path}` : `Showing ${logs.length} of ${state.logs.length} log entries`}</span><label><input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} /> Auto-scroll</label></div>
+            <div className="table-foot"><span>{fileTail ? `Showing ${visibleTailLines.length} lines from ${fileTail.path}` : `Showing ${visibleLogs.length} of ${logs.length} filtered / ${state.logs.length} total`}</span><label><input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} /> Auto-scroll</label></div>
           </Panel>
         </section>
         <aside className="detail-rail">

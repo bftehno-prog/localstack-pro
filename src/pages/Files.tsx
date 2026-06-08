@@ -6,8 +6,8 @@ import { markdown } from "@codemirror/lang-markdown";
 import { php } from "@codemirror/lang-php";
 import { sql } from "@codemirror/lang-sql";
 import { EditorView } from "@codemirror/view";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import CodeMirror from "@uiw/react-codemirror";
 import {
   Archive,
   ArrowLeft,
@@ -33,7 +33,7 @@ import {
   Undo2,
   Upload
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { api } from "../ui/api";
@@ -97,6 +97,7 @@ type FolderCompareRow = {
 };
 
 const encodings = ["auto", "utf-8", "utf-8-bom", "utf-16le", "utf-16be"];
+const CodeMirror = lazy(() => import("@uiw/react-codemirror"));
 
 export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const t = useT();
@@ -154,6 +155,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [autosave, setAutosave] = useState(false);
   const [autosaveSeconds, setAutosaveSeconds] = useState(20);
   const [jumpLine, setJumpLine] = useState("");
+  const [previewPath, setPreviewPath] = useState("");
   const cancelledOperations = useRef(new Set<string>());
   const folderCache = useRef(new Map<string, { time: number; entries: FileEntry[] }>());
 
@@ -739,6 +741,16 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     await openFile(entry.path, encoding, true);
   };
 
+  const previewEntry = (entry = selectedEntries[0]) => {
+    if (!entry || entry.kind !== "file") return;
+    if (!/\.(png|jpe?g|gif|webp|svg|bmp|pdf)$/i.test(entry.name)) {
+      void openFile(entry.path, encoding, true);
+      return;
+    }
+    setPreviewPath(entry.path);
+    setContextMenu(null);
+  };
+
   const closeEditor = () => {
     syncCurrentTab();
     setOpenedFile(null);
@@ -984,6 +996,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       {contextMenu && (
         <div className="file-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseLeave={() => setContextMenu(null)}>
           <button disabled={contextMenu.entry.kind !== "file"} onClick={() => void editEntry(contextMenu.entry)}><Edit size={15} />{t("Edit")}</button>
+          <button disabled={contextMenu.entry.kind !== "file"} onClick={() => previewEntry(contextMenu.entry)}><ExternalLink size={15} />{t("Preview")}</button>
           <button onClick={() => copyPath(contextMenu.entry.path)}><Copy size={15} />{t("Copy Path")}</button>
           <button onClick={() => void copySelected(true)}><Copy size={15} />{t("Copy to Other Pane")}</button>
           <button onClick={() => void moveSelected(true)}><MoveRight size={15} />{t("Move to Other Pane")}</button>
@@ -1045,19 +1058,21 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <Button icon={<GitCompare size={16} />} disabled={editorTabs.length < 2} onClick={compareTabs}>Diff</Button>
               <Button onClick={formatCurrentFile}>Format</Button>
             </div>
-            <CodeMirror
-              value={content}
-              height="calc(100vh - 260px)"
-              extensions={[languageExtension(openedFile.language ?? openedFile.path), editorTheme, wrapLines ? EditorView.lineWrapping : []]}
-              basicSetup={{ searchKeymap: true, foldGutter: true, highlightActiveLine: true, highlightSelectionMatches: true }}
-              editable={!openedFile.readOnly}
-              onChange={(value) => {
-                setContent(value);
-                syncCurrentTab(value);
-                setEditorMessage("");
-                setDiffText("");
-              }}
-            />
+            <Suspense fallback={<div className="empty-row">Loading editor...</div>}>
+              <CodeMirror
+                value={content}
+                height="calc(100vh - 260px)"
+                extensions={[languageExtension(openedFile.language ?? openedFile.path), editorTheme, wrapLines ? EditorView.lineWrapping : []]}
+                basicSetup={{ searchKeymap: true, foldGutter: true, highlightActiveLine: true, highlightSelectionMatches: true }}
+                editable={!openedFile.readOnly}
+                onChange={(value) => {
+                  setContent(value);
+                  syncCurrentTab(value);
+                  setEditorMessage("");
+                  setDiffText("");
+                }}
+              />
+            </Suspense>
             {diffText && <pre className="diff-panel">{diffText}</pre>}
             <div className="file-editor-status">
               <span>{dirty ? t("Unsaved changes") : t("No unsaved changes")} · {openedFile.language ?? "Text"} · {openedFile.encoding ?? encoding} · {formatSize(openedFile.size ?? content.length)} · {editorMatches} {t("matches")}</span>
@@ -1065,6 +1080,27 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               {codeDiagnostics.map((item) => <strong key={item} className="danger-text">{item}</strong>)}
               {editorMessage && <strong>{t(editorMessage)}</strong>}
             </div>
+          </div>
+        </div>
+      )}
+      {previewPath && (
+        <div className="modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPreviewPath("");
+        }}>
+          <div className="preview-modal">
+            <div className="code-modal-head">
+              <div>
+                <h2>{t("Preview")} - {fileName(previewPath)}</h2>
+                <code>{previewPath}</code>
+              </div>
+              <div className="toolbar">
+                <Button icon={<ExternalLink size={16} />} onClick={() => void run(() => api.openPath(previewPath), { label: `Opening ${previewPath}...` })}>Open</Button>
+                <Button onClick={() => setPreviewPath("")}>Close</Button>
+              </div>
+            </div>
+            {previewPath.toLowerCase().endsWith(".pdf")
+              ? <iframe className="file-preview-frame" src={convertFileSrc(previewPath)} title={previewPath} />
+              : <img className="file-preview-image" src={convertFileSrc(previewPath)} alt={fileName(previewPath)} />}
           </div>
         </div>
       )}

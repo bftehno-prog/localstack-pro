@@ -18,6 +18,7 @@ export function useAppState() {
   const [actionLabel, setActionLabel] = useState<string | null>(null);
   const [operations, setOperations] = useState<OperationEntry[]>([]);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const lastActionRef = useRef<{ action: () => Promise<AppRunResult>; options?: RunOptions } | null>(null);
   const busy = busyCount > 0;
 
   useEffect(() => {
@@ -30,6 +31,18 @@ export function useAppState() {
     const timer = window.setTimeout(() => setNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+  useEffect(() => {
+    const capture = (event: ErrorEvent | PromiseRejectionEvent) => {
+      const message = "reason" in event ? String(event.reason) : event.message;
+      localStorage.setItem("localstack.lastCrash", JSON.stringify({ message, at: new Date().toISOString() }));
+    };
+    window.addEventListener("error", capture);
+    window.addEventListener("unhandledrejection", capture);
+    return () => {
+      window.removeEventListener("error", capture);
+      window.removeEventListener("unhandledrejection", capture);
+    };
+  }, []);
 
   const refresh = useCallback(async (silent = false) => {
     try {
@@ -102,6 +115,7 @@ export function useAppState() {
   }, []);
 
   const run = useCallback((action: () => Promise<AppRunResult>, options?: RunOptions) => {
+    if (!options?.silent) lastActionRef.current = { action, options };
     if (options?.silent) return execute(action, options);
 
     const next = queueRef.current
@@ -111,6 +125,11 @@ export function useAppState() {
     return next;
   }, [execute]);
 
+  const retryLast = useCallback(() => {
+    if (!lastActionRef.current) return Promise.resolve();
+    return run(lastActionRef.current.action, lastActionRef.current.options);
+  }, [run]);
+
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => {
@@ -119,5 +138,5 @@ export function useAppState() {
     return () => window.clearInterval(timer);
   }, [busy, refresh]);
 
-  return useMemo(() => ({ state, loading, error, notice, busy, actionLabel, operations, refresh, run, setError }), [state, loading, error, notice, busy, actionLabel, operations, refresh, run]);
+  return useMemo(() => ({ state, loading, error, notice, busy, actionLabel, operations, refresh, run, retryLast, setError }), [state, loading, error, notice, busy, actionLabel, operations, refresh, run, retryLast]);
 }

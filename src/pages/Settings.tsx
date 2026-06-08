@@ -11,6 +11,12 @@ import { useStoredBoolean } from "../ui/preferences";
 const tabs = ["General", "Paths", "Startup", "Network", "Theme", "Notifications", "Integrations", "Updates", "Backups", "Advanced"];
 const themeOptions = ["Light", "Pearl", "Graphite", "Azure", "Forest", "Dark", "Midnight", "Carbon", "Wet Asphalt", "High Contrast", "System"];
 
+type UiHealthIssue = {
+  type: string;
+  target: string;
+  detail: string;
+};
+
 export function SettingsPage({
   state,
   run,
@@ -27,6 +33,7 @@ export function SettingsPage({
   const [release, setRelease] = useState<ReleaseInfo>();
   const [snapshots, setSnapshots] = useState<EnvironmentSnapshotInfo[]>([]);
   const [processes, setProcesses] = useState<ResourceProcess[]>([]);
+  const [uiIssues, setUiIssues] = useState<UiHealthIssue[]>([]);
   const [snapshotName, setSnapshotName] = useState("working");
   const [downloadedInstaller, setDownloadedInstaller] = useState("");
   const [notificationLevel, setNotificationLevel] = useState(localStorage.getItem("localstack.notificationLevel") ?? "Errors only");
@@ -151,6 +158,26 @@ export function SettingsPage({
     const result = await run(api.resourceMonitor, { label: "Reading resource monitor..." });
     if (Array.isArray(result)) setProcesses(result as ResourceProcess[]);
   };
+  const runUiHealth = () => {
+    const issues: UiHealthIssue[] = [];
+    const root = document.querySelector(".app-frame") ?? document.body;
+    if (document.documentElement.scrollWidth > window.innerWidth + 2) {
+      issues.push({ type: "Overflow", target: "Window", detail: `Horizontal overflow ${document.documentElement.scrollWidth - window.innerWidth}px` });
+    }
+    root.querySelectorAll<HTMLElement>("button, input, select, textarea, .panel, .data-table, .file-row").forEach((element) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > window.innerWidth + 2) {
+        issues.push({ type: "Width", target: element.tagName.toLowerCase(), detail: `${Math.round(rect.width)}px wider than viewport` });
+      }
+      if (element.scrollWidth > element.clientWidth + 3 && rect.width > 0) {
+        issues.push({ type: "Clipped", target: element.textContent?.trim().slice(0, 40) || element.tagName.toLowerCase(), detail: `${element.scrollWidth - element.clientWidth}px hidden` });
+      }
+      if (element.tagName === "BUTTON" && !element.textContent?.trim() && !element.getAttribute("aria-label") && !element.getAttribute("title")) {
+        issues.push({ type: "A11y", target: "Icon button", detail: "Missing aria-label or title" });
+      }
+    });
+    setUiIssues(issues.slice(0, 80));
+  };
   return (
     <div className="settings-page">
       <h1>{t("Settings")}</h1>
@@ -252,9 +279,26 @@ export function SettingsPage({
               <Button onClick={() => void run(api.openDocumentation)}>Open Documentation</Button>
               <Button icon={<RefreshCw size={16} />} onClick={() => void runHealthCheck()}>Health Check</Button>
               <Button icon={<Wrench size={16} />} onClick={() => void repairAll()}>One-click Fix</Button>
+              <Button icon={<RefreshCw size={16} />} onClick={runUiHealth}>UI Health</Button>
             </div>
             {healthError && <div className="error-inline">{healthError}</div>}
             {health && <HealthCheckView report={health} />}
+          </Panel>
+          <Panel title="UI Health">
+            <div className="health-mini-grid">
+              <span><strong>{uiIssues.length}</strong><small>issues</small></span>
+              <span><strong>{window.innerWidth}x{window.innerHeight}</strong><small>viewport</small></span>
+              <span><strong>{settings.theme}</strong><small>theme</small></span>
+            </div>
+            <div className="content-results compact-results">
+              {uiIssues.map((issue, index) => (
+                <button key={`${issue.type}-${index}`}>
+                  <strong>{issue.type}: {issue.target}</strong>
+                  <span>{issue.detail}</span>
+                </button>
+              ))}
+              {!uiIssues.length && <div className="empty-row">Run UI Health to check current screen.</div>}
+            </div>
           </Panel>
           <Panel title="Security Center">
             <SecurityCenter state={state} />
