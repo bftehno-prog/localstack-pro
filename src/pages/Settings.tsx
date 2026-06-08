@@ -127,6 +127,11 @@ export function SettingsPage({
       await run(() => api.exportSettings(path));
     }
   };
+  const exportProfile = async () => {
+    const path = await saveJsonFile(`${state.appDataDir}\\environment-profile.json`);
+    if (!path) return;
+    await run(() => api.writeFileWithEncoding(path, JSON.stringify({ settings, services: state.services.map(({ id, autostart, ports }) => ({ id, autostart, ports })) }, null, 2), "utf-8"), { label: "Exporting environment profile..." });
+  };
   const createBackup = async () => {
     const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
     const path = await saveZipFile(`${settings.backupsFolder}\\localstack-pro-backup-${stamp}.zip`);
@@ -192,6 +197,7 @@ export function SettingsPage({
               <Switch label="Minimize to System Tray" checked={settings.minimizeToTray} onChange={(value) => update("minimizeToTray", value)} />
               <Switch label="Close to System Tray" checked={settings.closeToTray} onChange={(value) => update("closeToTray", value)} />
               <Switch label="Enable Telemetry" checked={settings.telemetry} onChange={(value) => update("telemetry", value)} />
+              <Button onClick={() => window.dispatchEvent(new Event("localstack:first-run"))}>Open First Run Wizard</Button>
             </Panel></>}
           {activeTab === "Paths" && <Panel title="Paths">
             <SettingInput label="Projects Folder" value={settings.projectsFolder} onChange={(value) => update("projectsFolder", value)} />
@@ -263,6 +269,7 @@ export function SettingsPage({
           <Panel title="Import / Export Settings">
             <Button icon={<Upload size={16} />} onClick={() => void importSettings()}>Import Settings</Button>
             <Button icon={<Upload size={16} />} onClick={() => void exportSettings()}>Export Settings</Button>
+            <Button icon={<Download size={16} />} onClick={() => void exportProfile()}>Export Profile</Button>
             <Button icon={<Save size={16} />} onClick={() => void run(() => api.saveSettings(settings))}>Save Settings</Button>
           </Panel>
           <Panel title="Reset Settings">

@@ -31,6 +31,7 @@ export function OverviewPage({
   const [linksVersion, setLinksVersion] = useState(0);
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [workdayHostId, setWorkdayHostId] = useState(() => localStorage.getItem("localstack.workdayHost") ?? "");
   const favorites = useStoredList("localstack.favoriteHosts");
   const visibleHosts = useMemo(() => state.hosts
     .filter((host) => `${host.domain} ${host.rootFolder}`.toLowerCase().includes(query.toLowerCase()))
@@ -73,6 +74,7 @@ export function OverviewPage({
     }
   };
   const openSelectedWithChecks = async (host: HostInfo) => {
+    localStorage.setItem("localstack.lastHost", host.id);
     await run(() => api.diagnoseHost(host.id), { label: `Checking ${host.domain}...` }).catch(() => undefined);
     const serviceId = host.webServer.toLowerCase() === "nginx" ? "nginx" : "apache";
     const service = state.services.find((item) => item.id === serviceId);
@@ -81,6 +83,20 @@ export function OverviewPage({
     }
     await run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." }).catch(() => undefined);
     await run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` });
+  };
+  const startWorkday = async () => {
+    const target = state.hosts.find((host) => host.id === workdayHostId)
+      ?? state.hosts.find((host) => host.id === localStorage.getItem("localstack.lastHost"))
+      ?? selected;
+    if (!target) return;
+    localStorage.setItem("localstack.workdayHost", target.id);
+    const ids = new Set<string>();
+    ids.add(target.webServer.toLowerCase() === "nginx" ? "nginx" : "apache");
+    if (target.database) ids.add("mysql");
+    if (target.mailService !== "Disabled") ids.add("mailpit");
+    await run(() => api.startServiceProfile(Array.from(ids)), { label: `Starting workspace for ${target.domain}...` });
+    await run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file...", silent: true }).catch(() => undefined);
+    await run(() => api.openHost(target.id), { label: `Opening ${target.domain}...` });
   };
   const previewSelected = async (host: HostInfo) => {
     const result = await run(() => api.previewHost(host.id), { label: `Previewing ${host.domain}...` });
@@ -143,8 +159,28 @@ export function OverviewPage({
           </div>
         </Panel>
       )}
+      <Panel title="Workday">
+        <div className="workday-row">
+          <select value={workdayHostId} onChange={(event) => setWorkdayHostId(event.target.value)}>
+            <option value="">Last opened project</option>
+            {state.hosts.map((host) => <option key={host.id} value={host.id}>{host.domain}</option>)}
+          </select>
+          <Button variant="primary" icon={<Play size={16} />} onClick={() => void startWorkday()}>Start Workday</Button>
+          <Button icon={<Wrench size={16} />} onClick={() => void run(() => api.repairEnvironment(), { label: "Repairing environment..." })}>Ready Check</Button>
+        </div>
+      </Panel>
       <div className="overview-grid">
         <section className="stack-left">
+          <Panel title="Recent Projects">
+            <div className="recent-project-grid">
+              {visibleHosts.slice(0, 6).map((host) => (
+                <button key={host.id} onClick={() => { selectHost(host); void openSelectedWithChecks(host); }}>
+                  <strong>{host.domain}</strong>
+                  <span>{host.rootFolder}</span>
+                </button>
+              ))}
+            </div>
+          </Panel>
           <Panel
             title="Hosts"
             action={

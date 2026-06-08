@@ -30,8 +30,13 @@ export default function App() {
 
   useEffect(() => {
     const handleHash = () => setPageState(pageFromHash());
+    const handleFirstRun = () => setShowFirstRun(true);
     window.addEventListener("hashchange", handleHash);
-    return () => window.removeEventListener("hashchange", handleHash);
+    window.addEventListener("localstack:first-run", handleFirstRun);
+    return () => {
+      window.removeEventListener("hashchange", handleHash);
+      window.removeEventListener("localstack:first-run", handleFirstRun);
+    };
   }, []);
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
@@ -153,6 +158,18 @@ function AppContent({
       if (key === "k" || key === "p") {
         event.preventDefault();
         setPaletteOpen((value) => !value);
+      } else if (/^[1-9]$/.test(key)) {
+        const next = pageKeys.filter((item) => item !== "host-editor")[Number(key) - 1];
+        if (next) {
+          event.preventDefault();
+          setPage(next);
+        }
+      } else if (event.shiftKey && key === "s") {
+        event.preventDefault();
+        void run(() => api.startAll(), { label: "Starting all services..." });
+      } else if (event.shiftKey && key === "x") {
+        event.preventDefault();
+        void run(() => api.stopAll(), { label: "Stopping all services..." });
       }
     };
     window.addEventListener("keydown", handleKey);

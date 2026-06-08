@@ -1,7 +1,7 @@
 import { Box, Clock, Database, Download, FileText, Folder, MoreVertical, Play, RefreshCw, Search, Settings, Square, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../ui/api";
-import type { AppRun, AppSnapshot, InstalledTool, ServiceInfo } from "../ui/types";
+import type { AppRun, AppSnapshot, InstalledTool, PortInspection, ServiceInfo } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
@@ -56,6 +56,27 @@ export function ServicesPage({
     } catch {
       addTimeline(service, "fix", "error");
     }
+  };
+  const safeStartService = async (service: ServiceInfo) => {
+    addTimeline(service, "safe start", "preflight");
+    const ports = await run(api.scanPorts, { label: "Checking ports..." }).catch(() => []);
+    if (Array.isArray(ports)) {
+      const scanned = ports as PortInspection[];
+      const busyPorts = scanned.filter((port) => service.ports.includes(port.port) && port.status !== "free");
+      if (busyPorts.length > 0) {
+        const used = new Set(scanned.filter((port) => port.status !== "free").map((port) => port.port));
+        const nextPorts = service.ports.map((port) => {
+          if (!used.has(port)) return port;
+          let candidate = Math.max(1024, port + 1);
+          while (used.has(candidate) && candidate < 65535) candidate += 1;
+          used.add(candidate);
+          return candidate;
+        });
+        await run(() => api.saveService({ ...service, ports: nextPorts }), { label: `Assigning free ports for ${service.name}...`, serial: true });
+        addTimeline(service, "free port", nextPorts.join(", "));
+      }
+    }
+    await fixService(service);
   };
   const startProfile = (name: string, serviceIds: string[]) => {
     const availableIds = serviceIds.filter((serviceId) => state.services.some((item) => item.id === serviceId));
@@ -161,6 +182,7 @@ export function ServicesPage({
                     {service.status === "running" ? "Stop" : "Start"}
                   </Button>
                   <Button icon={<RefreshCw size={16} />} onClick={(event) => { event.stopPropagation(); void serviceAction(service, "restart"); }}>Restart</Button>
+                  <Button icon={<Play size={16} />} onClick={(event) => { event.stopPropagation(); void safeStartService(service); }}>Safe Start</Button>
                   <Button icon={<Wrench size={16} />} onClick={(event) => { event.stopPropagation(); void fixService(service); }}>Fix</Button>
                   <Button icon={<Settings size={16} />} onClick={(event) => { event.stopPropagation(); void loadConfig(service); }}>Config</Button>
                   <Button icon={<FileText size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(service.logPath), { label: `Opening ${service.name} logs...` }); }}>Logs</Button>
@@ -192,6 +214,7 @@ export function ServicesPage({
               <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} folder...` })}>Open Root Folder</Button>
               <Button icon={<Download size={17} />} onClick={() => void run(() => api.installServiceDependency(current.id), { label: `Installing ${current.name}...`, successLabel: `${current.name} installed or detected.` })}>Install</Button>
               <Button icon={<Wrench size={17} />} onClick={() => void fixService(current)}>Fix this service</Button>
+              <Button icon={<Play size={17} />} onClick={() => void safeStartService(current)}>Safe Start</Button>
               <Button icon={<RefreshCw size={17} />} onClick={() => void serviceAction(current, "restart")}>Restart</Button>
             </div>
           </Panel>

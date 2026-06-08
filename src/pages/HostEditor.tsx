@@ -53,6 +53,7 @@ export function HostEditorPage({
   const [error, setError] = useState<string | null>(null);
   const [configOk, setConfigOk] = useState<string | null>(null);
   const forceHttps = host.rewriteRules.includes("FORCE_HTTPS=1");
+  const hostDiff = useMemo(() => initial ? diffHost(initial, host) : [], [host, initial]);
 
   const update = <K extends keyof HostInfo>(key: K, value: HostInfo[K]) => {
     setError(null);
@@ -212,6 +213,11 @@ export function HostEditorPage({
       <div className="editor-grid">
         <section className="editor-main">
           <Panel title="Basic Information">
+            <div className="template-row">
+              {["PHP CMS", "WordPress", "Laravel", "Next.js", "Static", "Production"].map((preset) => (
+                <button key={preset} className={environmentPreset === preset ? "active" : ""} onClick={() => applyPreset(preset)}>{preset}</button>
+              ))}
+            </div>
             <div className="form-grid">
               <label>Environment Preset<select value={environmentPreset} onChange={(event) => applyPreset(event.target.value)}><option>PHP CMS</option><option>WordPress</option><option>Laravel</option><option>Next.js</option><option>Static</option><option>Production</option></select></label>
               <label>Host Name *<input value={host.domain} onChange={(event) => updateDomain(event.target.value)} /></label>
@@ -300,6 +306,18 @@ export function HostEditorPage({
               <span>Database</span><strong>{host.database}</strong>
             </div>
           </Panel>
+          {hostDiff.length > 0 && (
+            <Panel title="Changes Preview">
+              <div className="content-results compact-results">
+                {hostDiff.map((row) => (
+                  <button key={row.key}>
+                    <strong>{row.key}</strong>
+                    <span>{row.before} → {row.after}</span>
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          )}
           <Panel title="Actions">
             <div className="stack-buttons">
               <Button variant="primary" icon={<Save size={16} />} onClick={() => void save(false)}>Save</Button>
@@ -316,6 +334,13 @@ export function HostEditorPage({
       </div>
     </div>
   );
+}
+
+function diffHost(before: HostInfo, after: HostInfo) {
+  const keys: Array<keyof HostInfo> = ["domain", "rootFolder", "documentRoot", "phpVersion", "webServer", "ssl", "environment", "httpPort", "httpsPort", "database", "mailService", "rewriteRules", "notes"];
+  return keys
+    .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+    .map((key) => ({ key: String(key), before: String(before[key] ?? ""), after: String(after[key] ?? "") }));
 }
 
 function validateHost(host: HostInfo, others: HostInfo[]) {

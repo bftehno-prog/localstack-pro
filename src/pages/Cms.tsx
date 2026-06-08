@@ -5,7 +5,7 @@ import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { api } from "../ui/api";
 import { pickFolder } from "../ui/dialogs";
-import type { AppRun, AppSnapshot, CmsInstallRequest, CmsTemplate, DatabaseInfo, ProjectInspection } from "../ui/types";
+import type { AppRun, AppSnapshot, CmsInstallRequest, CmsTemplate, DatabaseInfo, HostInfo, ProjectInspection } from "../ui/types";
 
 export function CmsPage({
   state,
@@ -150,6 +150,59 @@ export function CmsPage({
   const writeEnvFile = async () => {
     const content = envPreview || buildEnvPreset();
     await run(() => api.writeFileWithEncoding(`${rootFolder.trim()}\\.env`, content, "utf-8"), { label: "Writing .env file..." });
+  };
+  const deployExistingProject = async () => {
+    const slug = domain.split(".")[0].replace(/[^a-z0-9_-]+/gi, "").toLowerCase() || "project";
+    const now = new Date().toISOString();
+    const needsDb = createDatabase && databaseName.trim();
+    if (needsDb && !state.databases.some((item) => item.name === databaseName || item.id === databaseName)) {
+      await run(() => api.createDatabase({
+        id: databaseName,
+        name: databaseName,
+        description: `${domain} database`,
+        engine: databaseEngine,
+        version: databaseEngine === "PostgreSQL" ? "15.3" : databaseEngine === "MariaDB" ? "10.11.6" : "8.0.36",
+        schemas: 1,
+        user: databaseUser,
+        password: databasePassword,
+        port: databaseEngine === "PostgreSQL" ? 5432 : databaseEngine === "MariaDB" ? 3307 : 3306,
+        status: "stopped",
+        sizeMb: 0,
+        createdAt: now
+      }), { label: `Creating database ${databaseName}...` });
+    }
+    const host: HostInfo = {
+      id: domain.trim().toLowerCase(),
+      domain: domain.trim().toLowerCase(),
+      rootFolder: rootFolder.trim(),
+      documentRoot: selectedIsNode ? "." : selected?.documentRoot ?? "public",
+      phpVersion,
+      webServer,
+      ssl,
+      environment: "Development",
+      httpPort: 80,
+      httpsPort: 443,
+      database: databaseName,
+      mailService: "Mailpit",
+      envVariables: {
+        APP_ENV: "local",
+        APP_DEBUG: "true",
+        APP_URL: `${ssl ? "https" : "http"}://${domain.trim().toLowerCase()}`,
+        DB_DATABASE: databaseName,
+        DB_USERNAME: databaseUser,
+        DB_PASSWORD: databasePassword
+      },
+      rewriteRules: "",
+      notes: `Existing project deployed from ${rootFolder}`,
+      status: "stopped",
+      tags: [selectedIsNode ? "node" : "php", slug],
+      createdAt: now,
+      updatedAt: now
+    };
+    await writeEnvFile().catch(() => undefined);
+    await run(() => api.saveHost(host), { label: `Creating host ${host.domain}...` });
+    await run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file...", silent: true }).catch(() => undefined);
+    setLastInstallDomain(host.domain);
   };
   const importExistingProject = async () => {
     const folder = await pickFolder();
@@ -406,6 +459,7 @@ export function CmsPage({
             <div className="stack-buttons">
               <Button icon={<KeyRound size={16} />} onClick={() => buildEnvPreset()}>Generate .env</Button>
               <Button variant="primary" icon={<Download size={16} />} onClick={() => void writeEnvFile()}>Write .env</Button>
+              <Button variant="primary" icon={<PackagePlus size={16} />} onClick={() => void deployExistingProject()}>Deploy Existing Project</Button>
             </div>
             {projectChecks.length > 0 && (
               <div className="content-results compact-results">

@@ -1833,6 +1833,60 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   gap: 8px;
 }
 
+.workday-row,
+.recent-project-grid,
+.template-row {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workday-row {
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  align-items: center;
+}
+
+.recent-project-grid,
+.template-row {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.recent-project-grid button,
+.template-row button {
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  padding: 7px 9px;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.template-row button {
+  place-items: center;
+  text-align: center;
+}
+
+.template-row button.active {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 14%, var(--input));
+}
+
+.recent-project-grid strong,
+.recent-project-grid span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-project-grid span {
+  color: var(--muted);
+}
+
 .timeline-list {
   display: grid;
   gap: 6px;
