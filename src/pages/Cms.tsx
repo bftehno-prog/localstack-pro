@@ -28,6 +28,8 @@ export function CmsPage({
   const [overwrite, setOverwrite] = useState(false);
   const [formError, setFormError] = useState("");
   const [lastInstallDomain, setLastInstallDomain] = useState("");
+  const [envPreset, setEnvPreset] = useState("Laravel");
+  const [envPreview, setEnvPreview] = useState("");
 
   useEffect(() => {
     void api.getCmsTemplates().then((items) => {
@@ -101,6 +103,51 @@ export function CmsPage({
     await run(() => api.installCms(request), { label: `Installing ${selected.name} at ${request.domain}...` });
     setLastInstallDomain(request.domain);
     await run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file...", silent: true }).catch(() => undefined);
+  };
+  const buildEnvPreset = (preset = envPreset) => {
+    const appUrl = `${ssl ? "https" : "http"}://${domain.trim()}`;
+    const rows = preset === "Next.js"
+      ? [
+        `NEXT_PUBLIC_APP_URL=${appUrl}`,
+        `DATABASE_URL=mysql://${databaseUser}:${databasePassword}@127.0.0.1:3306/${databaseName}`,
+        `MYSQL_HOST=127.0.0.1`,
+        `MYSQL_PORT=3306`,
+        `MYSQL_DATABASE=${databaseName}`,
+        `MYSQL_USER=${databaseUser}`,
+        `MYSQL_PASSWORD=${databasePassword}`
+      ]
+      : preset === "WordPress"
+        ? [
+          `WORDPRESS_DB_HOST=127.0.0.1:3306`,
+          `WORDPRESS_DB_NAME=${databaseName}`,
+          `WORDPRESS_DB_USER=${databaseUser}`,
+          `WORDPRESS_DB_PASSWORD=${databasePassword}`,
+          `WP_HOME=${appUrl}`,
+          `WP_SITEURL=${appUrl}`
+        ]
+        : [
+          `APP_NAME=${domain.split(".")[0] || "LocalStack"}`,
+          `APP_ENV=local`,
+          `APP_DEBUG=true`,
+          `APP_URL=${appUrl}`,
+          `DB_CONNECTION=mysql`,
+          `DB_HOST=127.0.0.1`,
+          `DB_PORT=3306`,
+          `DB_DATABASE=${databaseName}`,
+          `DB_USERNAME=${databaseUser}`,
+          `DB_PASSWORD=${databasePassword}`,
+          `MAIL_MAILER=smtp`,
+          `MAIL_HOST=127.0.0.1`,
+          `MAIL_PORT=1025`
+        ];
+    const text = `${rows.join("\n")}\n`;
+    setEnvPreset(preset);
+    setEnvPreview(text);
+    return text;
+  };
+  const writeEnvFile = async () => {
+    const content = envPreview || buildEnvPreset();
+    await run(() => api.writeFileWithEncoding(`${rootFolder.trim()}\\.env`, content, "utf-8"), { label: "Writing .env file..." });
   };
   const refreshTemplates = async () => {
     const result = await run(api.getCmsTemplates, { label: "Refreshing CMS templates..." });
@@ -316,6 +363,22 @@ export function CmsPage({
                 const installed = state.hosts.find((host) => host.domain === lastInstallDomain);
                 void run(() => installed ? api.openHost(installed.id) : api.openUrl(`http://${lastInstallDomain}`), { label: `Opening ${lastInstallDomain}...` });
               }}>Open Installed Site</Button>}
+            </div>
+          </Panel>
+          <Panel title=".env Presets">
+            <div className="preset-grid compact-preset-grid">
+              {["Laravel", "WordPress", "Next.js"].map((preset) => (
+                <button key={preset} className={envPreset === preset ? "active" : ""} onClick={() => buildEnvPreset(preset)}>
+                  <KeyRound size={15} />
+                  <strong>{preset}</strong>
+                  <small>.env</small>
+                </button>
+              ))}
+            </div>
+            <textarea className="config-editor env-editor" value={envPreview} onChange={(event) => setEnvPreview(event.target.value)} placeholder="APP_ENV=local" />
+            <div className="stack-buttons">
+              <Button icon={<KeyRound size={16} />} onClick={() => buildEnvPreset()}>Generate .env</Button>
+              <Button variant="primary" icon={<Download size={16} />} onClick={() => void writeEnvFile()}>Write .env</Button>
             </div>
           </Panel>
         </aside>

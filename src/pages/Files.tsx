@@ -89,6 +89,13 @@ type SavedSearch = {
   excludeFolders: string;
 };
 
+type FolderCompareRow = {
+  name: string;
+  status: "left-only" | "right-only" | "changed";
+  left?: FileEntry;
+  right?: FileEntry;
+};
+
 const encodings = ["auto", "utf-8", "utf-8-bom", "utf-16le", "utf-16be"];
 
 export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
@@ -130,6 +137,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [recentFiles, setRecentFiles] = useState<string[]>(() => loadStringList("localstack.recentFiles"));
   const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([]);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => loadJsonList<SavedSearch>("localstack.fileSearches"));
+  const [trashItems, setTrashItems] = useState<TrashRecord[]>(() => loadJsonList<TrashRecord>("localstack.fileTrash"));
+  const [bulkFind, setBulkFind] = useState("");
+  const [bulkReplace, setBulkReplace] = useState("");
+  const [bulkRegexp, setBulkRegexp] = useState(false);
+  const [compareRows, setCompareRows] = useState<FolderCompareRow[]>([]);
   const [includeExtensions, setIncludeExtensions] = useState("");
   const [excludeFolders, setExcludeFolders] = useState("node_modules,.git,.next,vendor,target");
   const [aclIdentity, setAclIdentity] = useState("Users");
@@ -139,7 +151,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [paneHistory, setPaneHistory] = useState<PaneHistory>({ left: { back: [], forward: [] }, right: { back: [], forward: [] } });
   const [lastUndo, setLastUndo] = useState<UndoAction | null>(null);
   const [diffText, setDiffText] = useState("");
+  const [autosave, setAutosave] = useState(false);
+  const [autosaveSeconds, setAutosaveSeconds] = useState(20);
+  const [jumpLine, setJumpLine] = useState("");
   const cancelledOperations = useRef(new Set<string>());
+  const folderCache = useRef(new Map<string, { time: number; entries: FileEntry[] }>());
 
   const dirty = openedFile ? content !== savedContent : false;
   const pane = activePane === "left" ? leftPane : rightPane;
@@ -158,6 +174,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const selectedFilesLabel = selectedEntries.length > 1 ? `${selectedEntries.length} files` : selectedEntries[0]?.name ?? "";
   const editorMatches = useMemo(() => countMatches(content, editorSearch, editorRegexp, caseSensitive), [caseSensitive, content, editorRegexp, editorSearch]);
   const jsonError = useMemo(() => validateJson(content, openedFile?.language ?? openedFile?.path ?? ""), [content, openedFile]);
+  const codeDiagnostics = useMemo(() => quickCodeDiagnostics(content, openedFile?.language ?? openedFile?.path ?? ""), [content, openedFile]);
 
   const setPane = (key: PaneKey, next: PaneState | ((current: PaneState) => PaneState)) => {
     if (key === "left") setLeftPane(next);
@@ -173,6 +190,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const operation: FileOperation = { id, label, status: "running", completed: 0, total };
     setOperationQueue((current) => [operation, ...current].slice(0, 8));
     try {
+      folderCache.current.clear();
       await action({
         isCancelled: () => cancelledOperations.current.has(id),
         progress: (completed) => setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, completed } : item))
@@ -198,8 +216,15 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const refresh = async (key: PaneKey = activePane, target?: string, pushHistory = true) => {
     const current = key === "left" ? leftPane : rightPane;
     const folder = target ?? current.folder;
+    const cached = folderCache.current.get(folder);
+    if (cached && Date.now() - cached.time < 5000) {
+      setPane(key, { ...current, folder, entries: cached.entries, selected: null });
+      setPaneSelectedPaths(key, []);
+      return;
+    }
     const result = await run(() => api.listFiles(folder), { label: `Reading ${folder}...` });
     if (Array.isArray(result)) {
+      folderCache.current.set(folder, { time: Date.now(), entries: result as FileEntry[] });
       if (pushHistory && folder !== current.folder) {
         setPaneHistory((history) => ({
           ...history,
@@ -312,6 +337,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const name = nameInput.trim();
     if (!name) return;
     await run(() => api.createFolder(joinPath(pane.folder, name)), { label: `Creating ${name}...` });
+    folderCache.current.delete(pane.folder);
     setNameInput("");
     await refresh(activePane);
   };
@@ -321,6 +347,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     if (!name) return;
     const path = joinPath(pane.folder, name);
     await run(() => api.createFile(path), { label: `Creating ${name}...` });
+    folderCache.current.delete(pane.folder);
     setNameInput("");
     await refresh(activePane);
     await openFile(path, "utf-8");
@@ -334,6 +361,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       setOpenedFile({ ...openedFile, path: result });
     }
     setNameInput("");
+    folderCache.current.delete(pane.folder);
     await refresh(activePane);
   };
 
@@ -382,7 +410,12 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
         if (result && typeof result === "object" && "trashPath" in result) trashed.push(result as TrashRecord);
         progress(index + 1);
       }
-      if (trashed.length) setLastUndo({ label: `Undo delete ${selectedFilesLabel}`, restoreItems: trashed.reverse() });
+      if (trashed.length) {
+        const nextTrash = [...trashed, ...trashItems].slice(0, 100);
+        setTrashItems(nextTrash);
+        localStorage.setItem("localstack.fileTrash", JSON.stringify(nextTrash));
+        setLastUndo({ label: `Undo delete ${selectedFilesLabel}`, restoreItems: trashed.reverse() });
+      }
       if (openedFile && selectedEntries.some((item) => item.path === openedFile.path || item.kind === "folder")) closeEditor();
       await refresh(activePane);
     });
@@ -397,6 +430,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       let completed = 0;
       for (const item of action.restoreItems ?? []) {
         await run(() => api.restoreTrashPath(item.originalPath, item.trashPath, overwrite), { label: `Restoring ${item.name}...`, silent: true });
+        setTrashItems((current) => {
+          const next = current.filter((entry) => entry.trashPath !== item.trashPath);
+          localStorage.setItem("localstack.fileTrash", JSON.stringify(next));
+          return next;
+        });
         progress(++completed);
       }
       for (const item of action.moveBack ?? []) {
@@ -410,6 +448,60 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       await refresh("left");
       await refresh("right");
     });
+  };
+
+  const restoreTrashItem = async (item: TrashRecord) => {
+    await run(() => api.restoreTrashPath(item.originalPath, item.trashPath, overwrite), { label: `Restoring ${item.name}...` });
+    const next = trashItems.filter((entry) => entry.trashPath !== item.trashPath);
+    setTrashItems(next);
+    localStorage.setItem("localstack.fileTrash", JSON.stringify(next));
+    await refresh("left");
+    await refresh("right");
+  };
+
+  const emptyTrash = async () => {
+    if (!trashItems.length) return;
+    await runFileOperation(`Empty trash`, trashItems.length, async ({ progress }) => {
+      for (const [index, item] of trashItems.entries()) {
+        await run(() => api.deletePath(item.trashPath), { label: `Deleting ${item.name}...`, silent: true }).catch(() => undefined);
+        progress(index + 1);
+      }
+      setTrashItems([]);
+      localStorage.setItem("localstack.fileTrash", "[]");
+    });
+  };
+
+  const bulkRenameSelected = async () => {
+    if (!selectedEntries.length || !bulkFind) return;
+    const moved: Array<{ from: string; to: string }> = [];
+    await runFileOperation(`Bulk rename ${selectedEntries.length} item(s)`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of selectedEntries.entries()) {
+        if (isCancelled()) break;
+        const nextName = renameWithPattern(item.name, bulkFind, bulkReplace, bulkRegexp);
+        if (nextName && nextName !== item.name) {
+          const result = await run(() => api.renamePath(item.path, nextName), { label: `Renaming ${item.name}...`, silent: selectedEntries.length > 1 });
+          if (typeof result === "string") moved.push({ from: result, to: item.path });
+        }
+        progress(index + 1);
+      }
+      if (moved.length) setLastUndo({ label: "Undo bulk rename", moveBack: moved.reverse() });
+      await refresh(activePane);
+    });
+  };
+
+  const compareFolders = () => {
+    const rightByName = new Map(rightPane.entries.map((entry) => [entry.name.toLowerCase(), entry]));
+    const leftByName = new Map(leftPane.entries.map((entry) => [entry.name.toLowerCase(), entry]));
+    const rows: FolderCompareRow[] = [];
+    for (const left of leftPane.entries) {
+      const right = rightByName.get(left.name.toLowerCase());
+      if (!right) rows.push({ name: left.name, status: "left-only", left });
+      else if (left.kind !== right.kind || left.size !== right.size) rows.push({ name: left.name, status: "changed", left, right });
+    }
+    for (const right of rightPane.entries) {
+      if (!leftByName.has(right.name.toLowerCase())) rows.push({ name: right.name, status: "right-only", right });
+    }
+    setCompareRows(rows.slice(0, 200));
   };
 
   const moveDroppedPaths = async (key: PaneKey, paths: string[], mode: "copy" | "move") => {
@@ -546,6 +638,12 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const other = editorTabs.find((tab) => tab.path !== openedFile.path);
     if (!other) return;
     setDiffText(buildLineDiff(fileName(openedFile.path), content, fileName(other.path), other.draftContent));
+  };
+
+  const jumpToLine = () => {
+    const line = Math.max(1, Number.parseInt(jumpLine, 10) || 1);
+    const target = document.querySelector(`.cm-content .cm-line:nth-child(${line})`);
+    target?.scrollIntoView({ block: "center" });
   };
 
   const searchContents = async () => {
@@ -718,6 +816,12 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     return () => window.clearInterval(timer);
   }, [dirty, editorOpen, encoding, openedFile]);
 
+  useEffect(() => {
+    if (!autosave || !dirty || !openedFile || openedFile.readOnly) return;
+    const timer = window.setTimeout(() => void saveFile(), Math.max(5, autosaveSeconds) * 1000);
+    return () => window.clearTimeout(timer);
+  }, [autosave, autosaveSeconds, dirty, openedFile, content]);
+
   return (
     <div className="files-workspace">
       <div className="page-title">
@@ -771,6 +875,40 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
             <Button disabled={!selectedEntries.length} icon={<Archive size={16} />} onClick={() => void extractSelected()}>Extract Here</Button>
             <Button disabled={!selectedEntries.length} icon={<Archive size={16} />} onClick={() => void previewArchive()}>Preview Archive</Button>
             <Button icon={<FolderOpen size={16} />} onClick={() => void run(() => api.openPath(pane.folder), { label: `Opening ${pane.folder}...` })}>Open Folder</Button>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="file-tools-grid">
+        <Panel title="Bulk Rename and Compare">
+          <div className="file-ops-grid compact">
+            <input className="toolbar-input" value={bulkFind} onChange={(event) => setBulkFind(event.target.value)} placeholder={String(t("Find in name"))} />
+            <input className="toolbar-input" value={bulkReplace} onChange={(event) => setBulkReplace(event.target.value)} placeholder={String(t("Replace with"))} />
+            <label className="check-line"><input type="checkbox" checked={bulkRegexp} onChange={(event) => setBulkRegexp(event.target.checked)} /> RegExp</label>
+            <Button disabled={!selectedEntries.length || !bulkFind} onClick={() => void bulkRenameSelected()}>Bulk Rename</Button>
+            <Button icon={<GitCompare size={16} />} onClick={compareFolders}>Compare Panes</Button>
+          </div>
+          <div className="content-results compact-results">
+            {compareRows.map((row) => (
+              <button key={`${row.status}-${row.name}`} title={row.name}>
+                <strong>{row.name}</strong>
+                <span>{row.status} · {row.left ? formatSize(row.left.size) : "-"} / {row.right ? formatSize(row.right.size) : "-"}</span>
+              </button>
+            ))}
+            {!compareRows.length && <div className="empty-row">{t("No folder comparison yet.")}</div>}
+          </div>
+        </Panel>
+
+        <Panel title="Trash" action={<Button variant="danger" disabled={!trashItems.length} onClick={() => void emptyTrash()}>Empty</Button>}>
+          <div className="content-results compact-results">
+            {trashItems.slice(0, 20).map((item) => (
+              <button key={item.trashPath} title={item.originalPath}>
+                <strong>{item.name}</strong>
+                <span>{item.kind} · {item.originalPath}</span>
+                <small onClick={(event) => { event.stopPropagation(); void restoreTrashItem(item); }}>{t("Restore")}</small>
+              </button>
+            ))}
+            {!trashItems.length && <div className="empty-row">{t("Trash is empty.")}</div>}
           </div>
         </Panel>
       </div>
@@ -897,6 +1035,10 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <label className="check-line"><input type="checkbox" checked={editorRegexp} onChange={(event) => setEditorRegexp(event.target.checked)} /> RegExp</label>
               <label className="check-line"><input type="checkbox" checked={caseSensitive} onChange={(event) => setCaseSensitive(event.target.checked)} /> Aa</label>
               <label className="check-line"><input type="checkbox" checked={wrapLines} onChange={(event) => setWrapLines(event.target.checked)} /> {t("Wrap")}</label>
+              <label className="check-line"><input type="checkbox" checked={autosave} onChange={(event) => setAutosave(event.target.checked)} /> Autosave</label>
+              <input className="toolbar-input line-input" value={autosaveSeconds} type="number" min={5} max={300} onChange={(event) => setAutosaveSeconds(Number(event.target.value) || 20)} />
+              <input className="toolbar-input line-input" value={jumpLine} onChange={(event) => setJumpLine(event.target.value)} placeholder={String(t("Line"))} />
+              <Button onClick={jumpToLine}>Go</Button>
               <Button onClick={() => setShowReplace((value) => !value)}>{showReplace ? "Hide Replace" : "Show Replace"}</Button>
               <Button icon={<Replace size={16} />} disabled={!editorSearch} onClick={replaceNext}>Replace</Button>
               <Button icon={<Replace size={16} />} disabled={!editorSearch} onClick={replaceAll}>Replace All</Button>
@@ -920,6 +1062,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
             <div className="file-editor-status">
               <span>{dirty ? t("Unsaved changes") : t("No unsaved changes")} · {openedFile.language ?? "Text"} · {openedFile.encoding ?? encoding} · {formatSize(openedFile.size ?? content.length)} · {editorMatches} {t("matches")}</span>
               {jsonError && <strong className="danger-text">{jsonError}</strong>}
+              {codeDiagnostics.map((item) => <strong key={item} className="danger-text">{item}</strong>)}
               {editorMessage && <strong>{t(editorMessage)}</strong>}
             </div>
           </div>
@@ -1162,6 +1305,15 @@ function replaceInText(content: string, find: string, replacement: string, regex
   }
 }
 
+function renameWithPattern(name: string, find: string, replacement: string, regexp: boolean) {
+  if (!find) return name;
+  try {
+    return regexp ? name.replace(new RegExp(find, "g"), replacement) : name.split(find).join(replacement);
+  } catch {
+    return name;
+  }
+}
+
 function validateJson(content: string, languageOrPath: string) {
   const value = languageOrPath.toLowerCase();
   if (!value.includes("json") && !value.endsWith(".json")) return "";
@@ -1171,6 +1323,20 @@ function validateJson(content: string, languageOrPath: string) {
   } catch (error) {
     return error instanceof Error ? error.message : "Invalid JSON";
   }
+}
+
+function quickCodeDiagnostics(content: string, languageOrPath: string) {
+  const value = languageOrPath.toLowerCase();
+  const diagnostics: string[] = [];
+  if ((value.includes("php") || value.endsWith(".php")) && !content.includes("<?php") && !content.includes("<?= ")) {
+    diagnostics.push("PHP opening tag is missing.");
+  }
+  const open = (content.match(/[({[]/g) ?? []).length;
+  const close = (content.match(/[)}\]]/g) ?? []).length;
+  if ((value.includes("javascript") || value.includes("typescript") || value.endsWith(".js") || value.endsWith(".ts") || value.endsWith(".tsx")) && Math.abs(open - close) > 0) {
+    diagnostics.push("Bracket count looks unbalanced.");
+  }
+  return diagnostics;
 }
 
 function formatEditorContent(content: string, languageOrPath: string) {

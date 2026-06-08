@@ -57,7 +57,7 @@ export function useAppState() {
           status: "running",
           startedAt: new Date(startedAt).toISOString()
         };
-        setOperations((items) => [operation, ...items].slice(0, 6));
+        setOperations((items) => [operation, ...items].slice(0, 12));
       }
       setError(null);
       setNotice(null);
@@ -74,7 +74,9 @@ export function useAppState() {
           durationMs: finishedAt - startedAt,
           message: options?.successLabel
         } : item));
-        if (options?.successLabel) setNotice(options.successLabel);
+        if (options?.successLabel && localStorage.getItem("localstack.notificationLevel") !== "Errors only") {
+          setNotice(options.successLabel);
+        }
       }
       return result;
     } catch (err) {

@@ -1,5 +1,5 @@
-import { Box, Database, Download, FileText, Folder, MoreVertical, Play, RefreshCw, Search, Settings, Square } from "lucide-react";
-import { useState } from "react";
+import { Box, Clock, Database, Download, FileText, Folder, MoreVertical, Play, RefreshCw, Search, Settings, Square, Wrench } from "lucide-react";
+import { useMemo, useState } from "react";
 import { api } from "../ui/api";
 import type { AppRun, AppSnapshot, InstalledTool, ServiceInfo } from "../ui/types";
 import { Button } from "../components/Button";
@@ -23,6 +23,40 @@ export function ServicesPage({
   const [configPath, setConfigPath] = useState("");
   const [configText, setConfigText] = useState("");
   const [tools, setTools] = useState<InstalledTool[]>([]);
+  const [timeline, setTimeline] = useState<Array<{ id: string; time: string; service: string; action: string; status: string }>>([]);
+  const dependencyRows = useMemo(() => state.services.map((service) => ({
+    service,
+    executable: service.executablePath ? "set" : "missing",
+    ports: service.ports.length ? service.ports.join(", ") : "none",
+    autostart: service.autostart ? "on" : "off",
+    state: service.lastError ? "needs fix" : service.status
+  })), [state.services]);
+  const addTimeline = (service: ServiceInfo, action: string, status: string) => {
+    setTimeline((items) => [{ id: crypto.randomUUID(), time: new Date().toLocaleTimeString(), service: service.name, action, status }, ...items].slice(0, 12));
+  };
+  const serviceAction = async (service: ServiceInfo, action: "start" | "stop" | "restart") => {
+    addTimeline(service, action, "queued");
+    try {
+      if (action === "start" && service.lastError?.toLowerCase().includes("not found")) {
+        await run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, serial: true });
+      }
+      await run(() => action === "start" ? api.startService(service.id) : action === "stop" ? api.stopService(service.id) : api.restartService(service.id), { label: `${action === "start" ? "Starting" : action === "stop" ? "Stopping" : "Restarting"} ${service.name}...`, serial: true });
+      addTimeline(service, action, "done");
+    } catch {
+      addTimeline(service, action, "error");
+    }
+  };
+  const fixService = async (service: ServiceInfo) => {
+    addTimeline(service, "fix", "queued");
+    try {
+      await run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, serial: true });
+      await run(api.detectDependencies, { label: "Detecting installed dependencies...", serial: true });
+      await run(() => api.restartService(service.id), { label: `Restarting ${service.name}...`, serial: true });
+      addTimeline(service, "fix", "done");
+    } catch {
+      addTimeline(service, "fix", "error");
+    }
+  };
   const startProfile = (name: string, serviceIds: string[]) => {
     const availableIds = serviceIds.filter((serviceId) => state.services.some((item) => item.id === serviceId));
     void run(() => api.startServiceProfile(availableIds), {
@@ -67,17 +101,31 @@ export function ServicesPage({
         </Panel>
         <Panel title="Dependency Graph">
           <div className="dependency-graph">
-            {state.hosts.slice(0, 6).map((host) => (
-              <div key={host.id}>
-                <strong>{host.domain}</strong>
-                <span>{host.webServer}</span>
-                <span>PHP {host.phpVersion}</span>
-                <span>{host.database || "No DB"}</span>
-                <span>{host.ssl ? "SSL" : "No SSL"}</span>
+            {dependencyRows.map(({ service, executable, ports, autostart, state }) => (
+              <div key={service.id}>
+                <strong>{service.name}</strong>
+                <span>exe: {executable}</span>
+                <span>ports: {ports}</span>
+                <span>autostart: {autostart}</span>
+                <span>{state}</span>
               </div>
             ))}
           </div>
         </Panel>
+        {timeline.length > 0 && (
+          <Panel title="Startup Timeline">
+            <div className="timeline-list">
+              {timeline.map((item) => (
+                <div key={item.id}>
+                  <Clock size={15} />
+                  <strong>{item.time}</strong>
+                  <span>{item.service}</span>
+                  <small>{item.action} · {item.status}</small>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
         {tools.length > 0 && (
           <Panel title="Installed Tools">
             <div className="tools-grid">
@@ -109,10 +157,11 @@ export function ServicesPage({
                   <span>RAM <strong>{service.memoryMb} MB</strong><i style={{ width: `${Math.min(service.memoryMb / 4, 100)}%` }} /></span>
                 </div>
                 <div className="service-actions">
-                  <Button variant="primary" icon={service.status === "running" ? <Square size={14} /> : <Play size={14} />} onClick={(event) => { event.stopPropagation(); void run(() => service.status === "running" ? api.stopService(service.id) : api.startService(service.id), { label: `${service.status === "running" ? "Stopping" : "Starting"} ${service.name}...` }); }}>
+                  <Button variant="primary" icon={service.status === "running" ? <Square size={14} /> : <Play size={14} />} onClick={(event) => { event.stopPropagation(); void serviceAction(service, service.status === "running" ? "stop" : "start"); }}>
                     {service.status === "running" ? "Stop" : "Start"}
                   </Button>
-                  <Button icon={<RefreshCw size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.restartService(service.id), { label: `Restarting ${service.name}...` }); }}>Restart</Button>
+                  <Button icon={<RefreshCw size={16} />} onClick={(event) => { event.stopPropagation(); void serviceAction(service, "restart"); }}>Restart</Button>
+                  <Button icon={<Wrench size={16} />} onClick={(event) => { event.stopPropagation(); void fixService(service); }}>Fix</Button>
                   <Button icon={<Settings size={16} />} onClick={(event) => { event.stopPropagation(); void loadConfig(service); }}>Config</Button>
                   <Button icon={<FileText size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(service.logPath), { label: `Opening ${service.name} logs...` }); }}>Logs</Button>
                   <Button icon={<Download size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, successLabel: `${service.name} installed or detected.` }); }}>Install</Button>
@@ -142,7 +191,8 @@ export function ServicesPage({
               <Button icon={<FileText size={17} />} onClick={() => void run(() => api.openPath(current.logPath), { label: `Opening ${current.name} logs...` })}>View Logs</Button>
               <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} folder...` })}>Open Root Folder</Button>
               <Button icon={<Download size={17} />} onClick={() => void run(() => api.installServiceDependency(current.id), { label: `Installing ${current.name}...`, successLabel: `${current.name} installed or detected.` })}>Install</Button>
-              <Button icon={<RefreshCw size={17} />} onClick={() => void run(() => api.restartService(current.id), { label: `Restarting ${current.name}...` })}>Restart</Button>
+              <Button icon={<Wrench size={17} />} onClick={() => void fixService(current)}>Fix this service</Button>
+              <Button icon={<RefreshCw size={17} />} onClick={() => void serviceAction(current, "restart")}>Restart</Button>
             </div>
           </Panel>
           {configPath && <Panel title="Config Editor" action={<Button icon={<Settings size={16} />} onClick={() => void run(() => api.saveConfigFile(configPath, configText), { label: `Saving ${current.name} config...` })}>Save Config</Button>}>

@@ -1351,6 +1351,10 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   max-width: 120px;
 }
 
+.line-input {
+  max-width: 76px;
+}
+
 .code-editor-shell,
 .content-search-box,
 .content-results {
@@ -1361,7 +1365,7 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
 
 .editor-findbar {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) repeat(8, auto);
+  grid-template-columns: repeat(auto-fit, minmax(88px, auto));
   gap: 8px;
   align-items: center;
   min-width: 0;
@@ -1370,6 +1374,10 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
 .content-results {
   max-height: 520px;
   overflow: auto;
+}
+
+.content-results.compact-results {
+  max-height: 180px;
 }
 
 .content-results button {
@@ -1394,6 +1402,11 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
 
 .content-results span {
   color: var(--muted);
+}
+
+.content-results small {
+  color: var(--blue);
+  cursor: pointer;
 }
 
 .file-operation-list {
@@ -1819,6 +1832,36 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
 }
+
+.timeline-list {
+  display: grid;
+  gap: 6px;
+}
+
+.timeline-list div {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--input);
+  display: grid;
+  grid-template-columns: 18px 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+}
+
+.timeline-list span,
+.timeline-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-list small {
+  color: var(--muted);
+}
 .smart-log-list, .security-list {
   display: grid;
   gap: 8px;
@@ -1841,6 +1884,24 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
 .security-list strong { font-size: 18px; }
 .security-list span { font-weight: 600; }
 .security-list small { color: var(--muted); }
+
+.quick-host-edit {
+  margin-top: 10px;
+}
+
+.compact-preset-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.compact-preset-grid button.active {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 14%, var(--input));
+}
+
+.env-editor {
+  min-height: 190px;
+  margin-top: 10px;
+}
 .success-banner {
   border: 1px solid #c8ead5;
   background: #f0fbf4;

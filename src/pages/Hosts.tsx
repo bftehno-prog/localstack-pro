@@ -2,7 +2,7 @@ import { Copy, Database, Download, ExternalLink, Filter, Folder, MoreVertical, P
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
-import type { AppRun, AppSnapshot, DatabaseDiagnosticReport, DatabaseInfo, HostDiagnosticReport, HostInfo, LogFileTail, NodeScript } from "../ui/types";
+import type { AppRun, AppSnapshot, DatabaseDiagnosticReport, DatabaseInfo, HostDiagnosticReport, HostInfo, LogFileTail, NodeScript, SitePreview } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
@@ -37,6 +37,7 @@ export function HostsPage({
   const [dbDiagnostics, setDbDiagnostics] = useState<DatabaseDiagnosticReport | null>(null);
   const [hostLogs, setHostLogs] = useState<LogFileTail | null>(null);
   const [nodeScripts, setNodeScripts] = useState<NodeScript[]>([]);
+  const [sitePreviews, setSitePreviews] = useState<Record<string, SitePreview>>({});
   const [wizardType, setWizardType] = useState("WordPress");
   const [wizardDomain, setWizardDomain] = useState("new.test");
   const [wizardFolder, setWizardFolder] = useState(`${state.settings.projectsFolder}\\new`);
@@ -49,6 +50,27 @@ export function HostsPage({
       setSelected(state.hosts[0]);
     }
   }, [selected, setSelected, state.hosts]);
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const targets = state.hosts.slice(0, 8);
+      const updates: Record<string, SitePreview> = {};
+      for (const item of targets) {
+        try {
+          updates[item.id] = await api.previewHost(item.id);
+        } catch {
+          // Live checks are advisory and must stay quiet.
+        }
+      }
+      if (!cancelled) setSitePreviews((current) => ({ ...current, ...updates }));
+    };
+    void check();
+    const timer = window.setInterval(check, 90000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [state.hosts]);
   const importHosts = async () => {
     const path = await pickJsonFile();
     if (path) {
@@ -100,6 +122,10 @@ export function HostsPage({
     await run(() => api.deleteHost(target.id), { label: `Deleting ${target.domain}...` });
     setDiagnostics(null);
     setSelected(next);
+  };
+  const quickUpdateHost = async (patch: Partial<HostInfo>) => {
+    if (!host) return;
+    await run(() => api.saveHost({ ...host, ...patch, updatedAt: new Date().toISOString() }), { label: `Saving ${host.domain}...` });
   };
   const resetFilters = () => {
     setQuery("");
@@ -279,7 +305,7 @@ export function HostsPage({
                   <td><span className="pill blue">{row.environment}</span></td>
                   <td>{row.phpVersion}</td>
                   <td><span className={row.ssl ? "green-text" : "muted"}>{row.ssl ? "Valid" : "Disabled"}</span></td>
-                  <td><span className={`score-pill ${readinessClass(score)}`}>{score}%</span></td>
+                  <td><span className={`score-pill ${readinessClass(score)}`}>{score}%</span>{sitePreviews[row.id] && <small>{sitePreviews[row.id].status}</small>}</td>
                   <td>{row.tags.map((tag) => <span className="pill" key={tag}>{tag}</span>)}</td>
                   <td>2m ago</td>
                   <td className="row-actions">
@@ -323,6 +349,22 @@ export function HostsPage({
               <span>Document Root</span><strong>{host.rootFolder}\\{host.documentRoot}</strong>
               <span>Status</span><StatusDot status={host.status} />
               <span>Tags</span><div>{host.tags.map((tag) => <span className="pill" key={tag}>{tag}</span>)}</div>
+            </div>
+            <div className="form-grid two quick-host-edit">
+              <label>
+                PHP
+                <select value={host.phpVersion} onChange={(event) => void quickUpdateHost({ phpVersion: event.target.value })}>
+                  {state.phpVersions.map((php) => <option key={php.version}>{php.version}</option>)}
+                </select>
+              </label>
+              <label>
+                Document Root
+                <input key={host.id} defaultValue={host.documentRoot} onBlur={(event) => event.target.value !== host.documentRoot && void quickUpdateHost({ documentRoot: event.target.value })} />
+              </label>
+              <label className="toggle-line">
+                SSL
+                <span className={`toggle ${host.ssl ? "on" : ""}`} onClick={() => void quickUpdateHost({ ssl: !host.ssl })} />
+              </label>
             </div>
             {tab !== "General" && <p className="muted">{host.domain} {tab.toLowerCase()} settings are stored in its host configuration and can be edited with the Edit action.</p>}
           </Panel>
