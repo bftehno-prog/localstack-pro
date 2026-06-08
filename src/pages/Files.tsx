@@ -29,12 +29,12 @@ import {
   Trash2,
   Upload
 } from "lucide-react";
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { api } from "../ui/api";
 import { useT } from "../ui/i18n";
-import type { AppRun, AppSnapshot, ConfigFile, FileEntry, FileSearchResult } from "../ui/types";
+import type { AppRun, AppSnapshot, ArchiveEntry, ConfigFile, FileEntry, FileSearchResult } from "../ui/types";
 
 type PaneKey = "left" | "right";
 type PaneState = {
@@ -42,6 +42,8 @@ type PaneState = {
   entries: FileEntry[];
   selected: FileEntry | null;
   filter: string;
+  sortKey: "name" | "size" | "modified";
+  sortDir: "asc" | "desc";
 };
 
 type FileOperation = {
@@ -49,6 +51,8 @@ type FileOperation = {
   label: string;
   status: "running" | "done" | "error" | "cancelled";
   message?: string;
+  completed?: number;
+  total?: number;
 };
 
 type FileContextMenu = {
@@ -94,6 +98,16 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [operationQueue, setOperationQueue] = useState<FileOperation[]>([]);
   const [contextMenu, setContextMenu] = useState<FileContextMenu | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>(() => loadStringList("localstack.fileFavorites"));
+  const [recentFiles, setRecentFiles] = useState<string[]>(() => loadStringList("localstack.recentFiles"));
+  const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([]);
+  const [includeExtensions, setIncludeExtensions] = useState("");
+  const [excludeFolders, setExcludeFolders] = useState("node_modules,.git,.next,vendor,target");
+  const [aclIdentity, setAclIdentity] = useState("Users");
+  const [aclRights, setAclRights] = useState("M");
+  const [aclInherit, setAclInherit] = useState(true);
+  const [showReplace, setShowReplace] = useState(false);
+  const cancelledOperations = useRef(new Set<string>());
 
   const dirty = openedFile ? content !== savedContent : false;
   const pane = activePane === "left" ? leftPane : rightPane;
@@ -105,6 +119,10 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const entries = pane.entries.filter((entry) => paths.has(entry.path));
     return entries.length > 0 ? entries : selected ? [selected] : [];
   }, [activePane, pane.entries, selected, selectedPaths]);
+  const paneRoots = useMemo(() => [
+    ...favorites.map((path) => ({ label: `* ${fileName(path) || path}`, path })),
+    ...roots
+  ], [favorites, roots]);
   const selectedFilesLabel = selectedEntries.length > 1 ? `${selectedEntries.length} files` : selectedEntries[0]?.name ?? "";
   const editorMatches = useMemo(() => countMatches(content, editorSearch, editorRegexp, caseSensitive), [caseSensitive, content, editorRegexp, editorSearch]);
 
@@ -117,16 +135,26 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     setSelectedPaths((current) => ({ ...current, [key]: paths }));
   };
 
-  const runFileOperation = async (label: string, action: () => Promise<void>) => {
+  const runFileOperation = async (label: string, total: number, action: (helpers: { isCancelled: () => boolean; progress: (completed: number) => void }) => Promise<void>) => {
     const id = crypto.randomUUID();
-    const operation: FileOperation = { id, label, status: "running" };
+    const operation: FileOperation = { id, label, status: "running", completed: 0, total };
     setOperationQueue((current) => [operation, ...current].slice(0, 8));
     try {
-      await action();
-      setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, status: "done" } : item));
+      await action({
+        isCancelled: () => cancelledOperations.current.has(id),
+        progress: (completed) => setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, completed } : item))
+      });
+      setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, status: cancelledOperations.current.has(id) ? "cancelled" : "done" } : item));
     } catch (error) {
       setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, status: "error", message: String(error) } : item));
+    } finally {
+      cancelledOperations.current.delete(id);
     }
+  };
+
+  const cancelOperation = (id: string) => {
+    cancelledOperations.current.add(id);
+    setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, status: "cancelled" } : item));
   };
 
   const refresh = async (key: PaneKey = activePane, target?: string) => {
@@ -186,6 +214,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       setContent(file.content);
       setSavedContent(file.content);
       setEncoding(file.encoding ?? fileEncoding);
+      rememberRecentFile(path);
       if (showModal) setEditorOpen(true);
     }
   };
@@ -222,9 +251,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const copySelected = async (toOtherPane = false) => {
     if (!selectedEntries.length) return;
     const target = targetPath.trim() || (toOtherPane ? otherPane.folder : pane.folder);
-    await runFileOperation(`Copy ${selectedFilesLabel}`, async () => {
-      for (const item of selectedEntries) {
+    await runFileOperation(`Copy ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of selectedEntries.entries()) {
+        if (isCancelled()) break;
         await run(() => api.copyPath(item.path, target, overwrite), { label: `Copying ${item.name}...`, silent: selectedEntries.length > 1 });
+        progress(index + 1);
       }
       await refresh(activePane);
       await refresh(activePane === "left" ? "right" : "left");
@@ -234,9 +265,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const moveSelected = async (toOtherPane = false) => {
     if (!selectedEntries.length) return;
     const target = targetPath.trim() || (toOtherPane ? otherPane.folder : pane.folder);
-    await runFileOperation(`Move ${selectedFilesLabel}`, async () => {
-      for (const item of selectedEntries) {
+    await runFileOperation(`Move ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of selectedEntries.entries()) {
+        if (isCancelled()) break;
         await run(() => api.movePath(item.path, target, overwrite), { label: `Moving ${item.name}...`, silent: selectedEntries.length > 1 });
+        progress(index + 1);
       }
       if (openedFile && selectedEntries.some((item) => item.path === openedFile.path)) setOpenedFile(null);
       await refresh(activePane);
@@ -246,9 +279,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
 
   const deleteSelected = async () => {
     if (!selectedEntries.length) return;
-    await runFileOperation(`Delete ${selectedFilesLabel}`, async () => {
-      for (const item of selectedEntries) {
+    await runFileOperation(`Delete ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of selectedEntries.entries()) {
+        if (isCancelled()) break;
         await run(() => api.deletePath(item.path), { label: `Deleting ${item.name}...`, silent: selectedEntries.length > 1 });
+        progress(index + 1);
       }
       if (openedFile && selectedEntries.some((item) => item.path === openedFile.path || item.kind === "folder")) closeEditor();
       await refresh(activePane);
@@ -258,9 +293,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const chmodSelected = async () => {
     if (!selectedEntries.length) return;
     const readOnly = ["400", "440", "444", "500", "550", "555"].includes(chmodMode.trim());
-    await runFileOperation(`chmod ${selectedFilesLabel}`, async () => {
-      for (const item of selectedEntries) {
+    await runFileOperation(`chmod ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of selectedEntries.entries()) {
+        if (isCancelled()) break;
         await run(() => api.chmodPath(item.path, chmodMode, readOnly), { label: `Changing permissions for ${item.name}...`, silent: selectedEntries.length > 1 });
+        progress(index + 1);
       }
       await refresh(activePane);
       if (openedFile && selectedEntries.some((item) => item.path === openedFile.path)) await openFile(openedFile.path, encoding);
@@ -281,8 +318,9 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       .map((file) => (file as File & { path?: string }).path)
       .filter((path): path is string => Boolean(path));
     if (!sources.length) return;
-    await runFileOperation(`Upload ${sources.length} file(s)`, async () => {
+    await runFileOperation(`Upload ${sources.length} file(s)`, sources.length, async ({ progress }) => {
       await run(() => api.uploadFiles(sources, destination, overwrite), { label: `Uploading ${sources.length} file(s)...` });
+      progress(sources.length);
       await refresh(key);
     });
   };
@@ -290,9 +328,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const extractSelected = async () => {
     if (!selectedEntries.length) return;
     const archives = selectedEntries.filter((item) => item.kind === "file");
-    await runFileOperation(`Extract ${archives.length} archive(s)`, async () => {
-      for (const item of archives) {
+    await runFileOperation(`Extract ${archives.length} archive(s)`, archives.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of archives.entries()) {
+        if (isCancelled()) break;
         await run(() => api.extractArchiveTo(item.path, targetPath.trim() || pane.folder), { label: `Extracting ${item.name}...`, silent: archives.length > 1 });
+        progress(index + 1);
       }
       await refresh(activePane);
       await refresh(activePane === "left" ? "right" : "left");
@@ -309,8 +349,9 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       target = saved;
     }
     const paths = selectedEntries.map((item) => item.path);
-    await runFileOperation(`Archive ${selectedFilesLabel}`, async () => {
+    await runFileOperation(`Archive ${selectedFilesLabel}`, selectedEntries.length, async ({ progress }) => {
       await run(() => api.createArchive(paths, target), { label: `Creating archive ${fileName(target)}...` });
+      progress(selectedEntries.length);
       setArchivePath(target);
       await refresh(activePane);
     });
@@ -321,6 +362,16 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     await run(() => api.writeFileWithEncoding(openedFile.path, content, encoding), { label: `Saving ${openedFile.path}...` });
     setSavedContent(content);
     setEditorMessage("Saved.");
+    await refresh("left");
+    await refresh("right");
+  };
+
+  const saveFileAs = async () => {
+    if (!openedFile) return;
+    const target = await saveDialog({ defaultPath: openedFile.path });
+    if (!target) return;
+    await run(() => api.writeFileWithEncoding(target, content, encoding), { label: `Saving ${target}...` });
+    await openFile(target, encoding, true);
     await refresh("left");
     await refresh("right");
   };
@@ -346,13 +397,63 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       setContentResults([]);
       return;
     }
-    const result = await run(() => api.searchFileContents(pane.folder, contentSearch, editorRegexp, caseSensitive), { label: `Searching ${pane.folder}...` });
+    const result = await run(() => api.searchFileContentsAdvanced(pane.folder, contentSearch, editorRegexp, caseSensitive, includeExtensions, excludeFolders, 1000), { label: `Searching ${pane.folder}...` });
     if (Array.isArray(result)) setContentResults(result as FileSearchResult[]);
   };
 
   const copyPath = (value: string) => {
     void navigator.clipboard?.writeText(value);
     setEditorMessage("Path copied.");
+  };
+
+  const toggleFavorite = (path = pane.folder) => {
+    setFavorites((current) => {
+      const next = current.includes(path) ? current.filter((item) => item !== path) : [path, ...current].slice(0, 12);
+      localStorage.setItem("localstack.fileFavorites", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const rememberRecentFile = (path: string) => {
+    setRecentFiles((current) => {
+      const next = [path, ...current.filter((item) => item !== path)].slice(0, 10);
+      localStorage.setItem("localstack.recentFiles", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const selectAllInPane = (key: PaneKey) => {
+    const current = key === "left" ? leftPane : rightPane;
+    setPaneSelectedPaths(key, current.entries.map((entry) => entry.path));
+  };
+
+  const invertSelectionInPane = (key: PaneKey) => {
+    const current = key === "left" ? leftPane : rightPane;
+    const selectedSet = new Set(selectedPaths[key]);
+    setPaneSelectedPaths(key, current.entries.filter((entry) => !selectedSet.has(entry.path)).map((entry) => entry.path));
+  };
+
+  const changePaneSort = (key: PaneKey, sortKey: PaneState["sortKey"]) => {
+    setPane(key, (current) => ({ ...current, sortKey, sortDir: current.sortKey === sortKey && current.sortDir === "asc" ? "desc" : "asc" }));
+  };
+
+  const previewArchive = async () => {
+    const entry = selectedEntries[0];
+    if (!entry || entry.kind !== "file") return;
+    const result = await run(() => api.listArchiveEntries(entry.path), { label: `Reading archive ${entry.name}...` });
+    if (Array.isArray(result)) setArchiveEntries(result as ArchiveEntry[]);
+  };
+
+  const applyAcl = async () => {
+    if (!selectedEntries.length) return;
+    await runFileOperation(`ACL ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      for (const [index, item] of selectedEntries.entries()) {
+        if (isCancelled()) break;
+        await run(() => api.applyWindowsAcl(item.path, aclIdentity, aclRights, aclInherit), { label: `Applying ACL to ${item.name}...`, silent: selectedEntries.length > 1 });
+        progress(index + 1);
+      }
+      await refresh(activePane);
+    });
   };
 
   const openContextMenu = (key: PaneKey, entry: FileEntry, event: MouseEvent) => {
@@ -379,6 +480,44 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     void refresh("right", state.appDataDir);
   }, [state.appDataDir]);
 
+  useEffect(() => {
+    if (!editorOpen) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "s") {
+        event.preventDefault();
+        void saveFile();
+      } else if (key === "f") {
+        event.preventDefault();
+        setShowReplace(false);
+        document.querySelector<HTMLInputElement>("[data-editor-find]")?.focus();
+      } else if (key === "h") {
+        event.preventDefault();
+        setShowReplace(true);
+        document.querySelector<HTMLInputElement>("[data-editor-replace]")?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [editorOpen, openedFile, content, encoding]);
+
+  useEffect(() => {
+    if (!editorOpen || !openedFile) return;
+    const timer = window.setInterval(async () => {
+      if (dirty) return;
+      try {
+        const fresh = await api.readFileWithEncoding(openedFile.path, encoding);
+        if (fresh.modified && openedFile.modified && fresh.modified !== openedFile.modified) {
+          setEditorMessage("File changed on disk.");
+        }
+      } catch {
+        setEditorMessage("File is no longer available.");
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [dirty, editorOpen, encoding, openedFile]);
+
   return (
     <div className="files-workspace">
       <div className="page-title">
@@ -388,13 +527,14 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
           <Button icon={<FolderPlus size={16} />} disabled={!nameInput.trim()} onClick={() => void createFolder()}>New Folder</Button>
           <Button icon={<FilePlus size={16} />} disabled={!nameInput.trim()} onClick={() => void createFile()}>New File</Button>
           <Button icon={<Upload size={16} />} onClick={() => void uploadIntoPane()}>Upload</Button>
+          <Button onClick={() => toggleFavorite()}>{favorites.includes(pane.folder) ? "Unfavorite" : "Favorite"}</Button>
         </div>
       </div>
 
       <Panel title="Files">
         <div className="dual-file-manager">
-          <FilePane paneKey="left" pane={leftPane} active={activePane === "left"} selectedPaths={selectedPaths.left} roots={roots} onActivate={() => setActivePane("left")} onRefresh={(path) => void refresh("left", path)} onFilter={(filter) => setLeftPane((current) => ({ ...current, filter }))} onSelect={selectEntry} onOpen={(entry) => void openEntry("left", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onCopyPath={copyPath} />
-          <FilePane paneKey="right" pane={rightPane} active={activePane === "right"} selectedPaths={selectedPaths.right} roots={roots} onActivate={() => setActivePane("right")} onRefresh={(path) => void refresh("right", path)} onFilter={(filter) => setRightPane((current) => ({ ...current, filter }))} onSelect={selectEntry} onOpen={(entry) => void openEntry("right", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onCopyPath={copyPath} />
+          <FilePane paneKey="left" pane={leftPane} active={activePane === "left"} selectedPaths={selectedPaths.left} roots={paneRoots} onActivate={() => setActivePane("left")} onRefresh={(path) => void refresh("left", path)} onFilter={(filter) => setLeftPane((current) => ({ ...current, filter }))} onSort={changePaneSort} onSelectAll={selectAllInPane} onInvertSelection={invertSelectionInPane} onSelect={selectEntry} onOpen={(entry) => void openEntry("left", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onCopyPath={copyPath} />
+          <FilePane paneKey="right" pane={rightPane} active={activePane === "right"} selectedPaths={selectedPaths.right} roots={paneRoots} onActivate={() => setActivePane("right")} onRefresh={(path) => void refresh("right", path)} onFilter={(filter) => setRightPane((current) => ({ ...current, filter }))} onSort={changePaneSort} onSelectAll={selectAllInPane} onInvertSelection={invertSelectionInPane} onSelect={selectEntry} onOpen={(entry) => void openEntry("right", entry)} onContextMenu={openContextMenu} onDropFiles={uploadDroppedFiles} onCopyPath={copyPath} />
         </div>
       </Panel>
 
@@ -416,9 +556,19 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
           <div className="file-ops-grid compact">
             <input className="toolbar-input" value={chmodMode} onChange={(event) => setChmodMode(event.target.value)} placeholder="644" />
             <Button disabled={!selectedEntries.length} icon={<Shield size={16} />} onClick={() => void chmodSelected()}>Apply chmod</Button>
+            <input className="toolbar-input" value={aclIdentity} onChange={(event) => setAclIdentity(event.target.value)} placeholder="Users" />
+            <select className="toolbar-input compact-select" value={aclRights} onChange={(event) => setAclRights(event.target.value)}>
+              <option value="R">Read</option>
+              <option value="RX">Read/Execute</option>
+              <option value="M">Modify</option>
+              <option value="F">Full</option>
+            </select>
+            <label className="check-line"><input type="checkbox" checked={aclInherit} onChange={(event) => setAclInherit(event.target.checked)} /> Inherit</label>
+            <Button disabled={!selectedEntries.length} icon={<Shield size={16} />} onClick={() => void applyAcl()}>Apply ACL</Button>
             <input className="toolbar-input" value={archivePath} onChange={(event) => setArchivePath(event.target.value)} placeholder={String(t("Archive path"))} />
             <Button disabled={!selectedEntries.length} icon={<Archive size={16} />} onClick={() => void createArchive()}>Create Archive</Button>
             <Button disabled={!selectedEntries.length} icon={<Archive size={16} />} onClick={() => void extractSelected()}>Extract Here</Button>
+            <Button disabled={!selectedEntries.length} icon={<Archive size={16} />} onClick={() => void previewArchive()}>Preview Archive</Button>
             <Button icon={<FolderOpen size={16} />} onClick={() => void run(() => api.openPath(pane.folder), { label: `Opening ${pane.folder}...` })}>Open Folder</Button>
           </div>
         </Panel>
@@ -436,8 +586,8 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <div className={`file-operation file-operation-${operation.status}`} key={operation.id}>
                 <i />
                 <strong>{t(operation.label)}</strong>
-                <span>{t(operation.status)}</span>
-                {operation.status === "running" && <button onClick={() => setOperationQueue((items) => items.map((item) => item.id === operation.id ? { ...item, status: "cancelled" } : item))}>{t("Cancel")}</button>}
+                <span>{operation.completed ?? 0}/{operation.total ?? 0} · {t(operation.status)}</span>
+                {operation.status === "running" && <button onClick={() => cancelOperation(operation.id)}>{t("Cancel")}</button>}
               </div>
             ))}
             {!operationQueue.length && <div className="empty-row">{t("No file operations yet.")}</div>}
@@ -454,6 +604,8 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
             <div className="toolbar">
               <label className="check-line"><input type="checkbox" checked={editorRegexp} onChange={(event) => setEditorRegexp(event.target.checked)} /> RegExp</label>
               <label className="check-line"><input type="checkbox" checked={caseSensitive} onChange={(event) => setCaseSensitive(event.target.checked)} /> Aa</label>
+              <input className="toolbar-input" value={includeExtensions} onChange={(event) => setIncludeExtensions(event.target.value)} placeholder=".php,.ts,.json" />
+              <input className="toolbar-input" value={excludeFolders} onChange={(event) => setExcludeFolders(event.target.value)} placeholder="node_modules,.git" />
               <Button icon={<Search size={16} />} onClick={() => void searchContents()}>Search</Button>
             </div>
             <div className="content-results">
@@ -464,6 +616,22 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
                 </button>
               ))}
               {!contentResults.length && <div className="empty-row">{t("No matches found.")}</div>}
+            </div>
+            <div className="content-results">
+              {archiveEntries.slice(0, 80).map((entry) => (
+                <button key={`${entry.path}:${entry.size}`} title={entry.path}>
+                  <strong>{entry.path}</strong>
+                  <span>{entry.kind} · {formatSize(entry.size)}</span>
+                </button>
+              ))}
+            </div>
+            <div className="content-results">
+              {recentFiles.map((path) => (
+                <button key={path} onClick={() => void openFile(path, encoding, true)} title={path}>
+                  <strong>{fileName(path)}</strong>
+                  <span>{path}</span>
+                </button>
+              ))}
             </div>
           </div>
         </Panel>
@@ -499,15 +667,17 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
                 <Button icon={<RotateCcw size={16} />} onClick={() => void reloadFile()}>Reload</Button>
                 <Button icon={<ExternalLink size={16} />} onClick={() => void run(() => api.openPath(openedFile.path), { label: `Opening ${openedFile.path}...` })}>Open</Button>
                 <Button variant="primary" icon={<Save size={16} />} disabled={!dirty || openedFile.readOnly} onClick={() => void saveFile()}>Save</Button>
+                <Button icon={<Save size={16} />} onClick={() => void saveFileAs()}>Save As</Button>
                 <Button onClick={() => setEditorOpen(false)}>Close</Button>
               </div>
             </div>
             <div className="editor-findbar">
-              <input className="toolbar-input" value={editorSearch} onChange={(event) => setEditorSearch(event.target.value)} placeholder={String(t("Find"))} />
-              <input className="toolbar-input" value={editorReplace} onChange={(event) => setEditorReplace(event.target.value)} placeholder={String(t("Replace"))} />
+              <input data-editor-find className="toolbar-input" value={editorSearch} onChange={(event) => setEditorSearch(event.target.value)} placeholder={String(t("Find"))} />
+              {showReplace && <input data-editor-replace className="toolbar-input" value={editorReplace} onChange={(event) => setEditorReplace(event.target.value)} placeholder={String(t("Replace"))} />}
               <label className="check-line"><input type="checkbox" checked={editorRegexp} onChange={(event) => setEditorRegexp(event.target.checked)} /> RegExp</label>
               <label className="check-line"><input type="checkbox" checked={caseSensitive} onChange={(event) => setCaseSensitive(event.target.checked)} /> Aa</label>
               <label className="check-line"><input type="checkbox" checked={wrapLines} onChange={(event) => setWrapLines(event.target.checked)} /> {t("Wrap")}</label>
+              <Button onClick={() => setShowReplace((value) => !value)}>{showReplace ? "Hide Replace" : "Show Replace"}</Button>
               <Button icon={<Replace size={16} />} disabled={!editorSearch} onClick={replaceNext}>Replace</Button>
               <Button icon={<Replace size={16} />} disabled={!editorSearch} onClick={replaceAll}>Replace All</Button>
             </div>
@@ -542,6 +712,9 @@ function FilePane({
   onActivate,
   onRefresh,
   onFilter,
+  onSort,
+  onSelectAll,
+  onInvertSelection,
   onSelect,
   onOpen,
   onContextMenu,
@@ -556,6 +729,9 @@ function FilePane({
   onActivate: () => void;
   onRefresh: (path?: string) => void;
   onFilter: (filter: string) => void;
+  onSort: (pane: PaneKey, sortKey: PaneState["sortKey"]) => void;
+  onSelectAll: (pane: PaneKey) => void;
+  onInvertSelection: (pane: PaneKey) => void;
   onSelect: (pane: PaneKey, entry: FileEntry, event?: MouseEvent) => void;
   onOpen: (entry: FileEntry) => void;
   onContextMenu: (pane: PaneKey, entry: FileEntry, event: MouseEvent) => void;
@@ -565,9 +741,15 @@ function FilePane({
   const t = useT();
   const filteredEntries = useMemo(() => {
     const query = pane.filter.trim().toLowerCase();
-    if (!query) return pane.entries;
-    return pane.entries.filter((entry) => entry.name.toLowerCase().includes(query));
-  }, [pane.entries, pane.filter]);
+    const entries = query ? pane.entries.filter((entry) => entry.name.toLowerCase().includes(query)) : pane.entries;
+    return [...entries].sort((a, b) => {
+      const dir = pane.sortDir === "asc" ? 1 : -1;
+      if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
+      if (pane.sortKey === "size") return (a.size - b.size) * dir;
+      if (pane.sortKey === "modified") return ((a.modified ?? "").localeCompare(b.modified ?? "")) * dir;
+      return a.name.localeCompare(b.name) * dir;
+    });
+  }, [pane.entries, pane.filter, pane.sortDir, pane.sortKey]);
 
   return (
     <div
@@ -583,7 +765,16 @@ function FilePane({
     >
       <div className="file-pane-head">
         <strong>{paneKey === "left" ? t("Left Pane") : t("Right Pane")}</strong>
-        <Button variant="icon" icon={<RefreshCw size={16} />} onClick={() => onRefresh()} aria-label="Refresh" />
+        <div className="toolbar">
+          <Button variant="icon" icon={<CheckSquare size={16} />} onClick={() => onSelectAll(paneKey)} aria-label="Select all" />
+          <Button variant="icon" icon={<Replace size={16} />} onClick={() => onInvertSelection(paneKey)} aria-label="Invert selection" />
+          <Button variant="icon" icon={<RefreshCw size={16} />} onClick={() => onRefresh()} aria-label="Refresh" />
+        </div>
+      </div>
+      <div className="file-breadcrumbs">
+        {breadcrumbs(pane.folder).map((crumb) => (
+          <button key={crumb.path} onClick={() => onRefresh(crumb.path)}>{crumb.label}</button>
+        ))}
       </div>
       <div className="file-pathbar">
         <button onClick={() => onRefresh(parentFolder(pane.folder))}>..</button>
@@ -602,6 +793,11 @@ function FilePane({
         <Search size={16} />
         <input value={pane.filter} onChange={(event) => onFilter(event.target.value)} placeholder={String(t("Search files..."))} />
         <span>{filteredEntries.length} / {pane.entries.length}</span>
+      </div>
+      <div className="file-sortbar">
+        <button onClick={() => onSort(paneKey, "name")}>{t("Name")} {pane.sortKey === "name" ? pane.sortDir : ""}</button>
+        <button onClick={() => onSort(paneKey, "size")}>{t("Size")} {pane.sortKey === "size" ? pane.sortDir : ""}</button>
+        <button onClick={() => onSort(paneKey, "modified")}>{t("Modified")} {pane.sortKey === "modified" ? pane.sortDir : ""}</button>
       </div>
       <div className="file-list pane-list">
         {filteredEntries.map((entry) => (
@@ -626,7 +822,7 @@ function FilePane({
 }
 
 function paneState(folder: string): PaneState {
-  return { folder, entries: [], selected: null, filter: "" };
+  return { folder, entries: [], selected: null, filter: "", sortKey: "name", sortDir: "asc" };
 }
 
 function parentFolder(path: string) {
@@ -647,6 +843,31 @@ function stripExtension(name: string) {
 
 function isInside(path: string, root: string) {
   return path.toLowerCase().startsWith(root.toLowerCase());
+}
+
+function breadcrumbs(path: string) {
+  const normalized = path.replace(/[\\/]+$/, "");
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  if (!parts.length) return [{ label: normalized || "/", path: normalized || "/" }];
+  const root = normalized.match(/^[A-Za-z]:/)?.[0];
+  const crumbs: Array<{ label: string; path: string }> = [];
+  let current = root ?? "";
+  if (root) crumbs.push({ label: root, path: `${root}\\` });
+  const rest = root ? parts.slice(1) : parts;
+  for (const part of rest) {
+    current = current ? `${current}\\${part}` : part;
+    crumbs.push({ label: part, path: current });
+  }
+  return crumbs.slice(-6);
+}
+
+function loadStringList(key: string) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function countMatches(content: string, query: string, regexp: boolean, caseSensitive: boolean) {

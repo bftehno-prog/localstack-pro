@@ -602,6 +602,18 @@ fn search_file_contents(root: String, query: String, regexp: bool, case_sensitiv
     tools::search_file_contents(root, query, regexp, case_sensitive)
 }
 #[tauri::command]
+fn search_file_contents_advanced(root: String, query: String, regexp: bool, case_sensitive: bool, include_extensions: String, exclude_folders: String, limit: usize) -> AppResult<Vec<tools::FileSearchResult>> {
+    tools::search_file_contents_advanced(root, query, regexp, case_sensitive, include_extensions, exclude_folders, limit)
+}
+#[tauri::command]
+fn list_archive_entries(path: String) -> AppResult<Vec<tools::ArchiveEntry>> {
+    tools::list_archive_entries(path)
+}
+#[tauri::command]
+fn apply_windows_acl(path: String, identity: String, rights: String, inherit: bool) -> AppResult<String> {
+    tools::apply_windows_acl(path, identity, rights, inherit)
+}
+#[tauri::command]
 fn list_environment_snapshots() -> AppResult<Vec<tools::EnvironmentSnapshotInfo>> {
     tools::list_environment_snapshots()
 }
@@ -821,6 +833,9 @@ pub fn run() {
             extract_archive_to,
             create_archive,
             search_file_contents,
+            search_file_contents_advanced,
+            list_archive_entries,
+            apply_windows_acl,
             list_environment_snapshots,
             create_environment_snapshot,
             restore_environment_snapshot,

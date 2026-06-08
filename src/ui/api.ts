@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppSettings,
   AppSnapshot,
+  ArchiveEntry,
   CertificateInfo,
   CmsInstallRequest,
   CmsTemplate,
@@ -353,6 +354,9 @@ export const api = {
   extractArchiveTo: (path: string, destination: string) => call<string>("extract_archive_to", { path, destination }, destination),
   createArchive: (paths: string[], target: string) => call<string>("create_archive", { paths, target }, target),
   searchFileContents: (root: string, query: string, regexp: boolean, caseSensitive: boolean) => call<FileSearchResult[]>("search_file_contents", { root, query, regexp, caseSensitive }, []),
+  searchFileContentsAdvanced: (root: string, query: string, regexp: boolean, caseSensitive: boolean, includeExtensions: string, excludeFolders: string, limit: number) => call<FileSearchResult[]>("search_file_contents_advanced", { root, query, regexp, caseSensitive, includeExtensions, excludeFolders, limit }, []),
+  listArchiveEntries: (path: string) => call<ArchiveEntry[]>("list_archive_entries", { path }, []),
+  applyWindowsAcl: (path: string, identity: string, rights: string, inherit: boolean) => call<string>("apply_windows_acl", { path, identity, rights, inherit }, path),
   listEnvironmentSnapshots: () => call<EnvironmentSnapshotInfo[]>("list_environment_snapshots"),
   createEnvironmentSnapshot: (name: string) => call<EnvironmentSnapshotInfo>("create_environment_snapshot", { name }),
   restoreEnvironmentSnapshot: (id: string) => call<AppSnapshot>("restore_environment_snapshot", { id }),

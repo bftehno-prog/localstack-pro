@@ -127,6 +127,14 @@ pub struct FileSearchResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ArchiveEntry {
+    pub path: String,
+    pub kind: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnvironmentSnapshotInfo {
     pub id: String,
     pub name: String,
@@ -874,6 +882,26 @@ pub fn create_archive(paths: Vec<String>, target: String) -> AppResult<String> {
 }
 
 pub fn search_file_contents(root: String, query: String, regexp: bool, case_sensitive: bool) -> AppResult<Vec<FileSearchResult>> {
+    search_file_contents_advanced(
+        root,
+        query,
+        regexp,
+        case_sensitive,
+        "".to_string(),
+        "node_modules,.git,.next,vendor,target".to_string(),
+        500,
+    )
+}
+
+pub fn search_file_contents_advanced(
+    root: String,
+    query: String,
+    regexp: bool,
+    case_sensitive: bool,
+    include_extensions: String,
+    exclude_folders: String,
+    limit: usize,
+) -> AppResult<Vec<FileSearchResult>> {
     let root = allowed_workspace_path(root)?;
     if !root.is_dir() {
         return Err("Search root must be a folder.".to_string());
@@ -893,8 +921,84 @@ pub fn search_file_contents(root: String, query: String, regexp: bool, case_sens
         None
     };
     let mut results = Vec::new();
-    search_folder(&root, &query, regex.as_ref(), case_sensitive, &mut results)?;
+    let include_extensions = split_csv(&include_extensions)
+        .into_iter()
+        .map(|item| item.trim_start_matches('.').to_string())
+        .collect::<Vec<_>>();
+    let exclude_folders = split_csv(&exclude_folders);
+    search_folder(&root, &query, regex.as_ref(), case_sensitive, &include_extensions, &exclude_folders, limit.clamp(1, 5000), &mut results)?;
     Ok(results)
+}
+
+pub fn list_archive_entries(path: String) -> AppResult<Vec<ArchiveEntry>> {
+    let archive = allowed_workspace_path(path)?;
+    if !archive.is_file() {
+        return Err(format!("Archive does not exist: {}", archive.display()));
+    }
+    let lower = archive
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if lower.ends_with(".zip") {
+        let file = File::open(&archive)
+            .map_err(|err| format!("Cannot open archive {}: {err}", archive.display()))?;
+        let mut archive = ZipArchive::new(file)
+            .map_err(|err| format!("Cannot read zip archive: {err}"))?;
+        let mut entries = Vec::new();
+        for index in 0..archive.len() {
+            let entry = archive
+                .by_index(index)
+                .map_err(|err| format!("Cannot read zip entry: {err}"))?;
+            entries.push(ArchiveEntry {
+                path: entry.name().to_string(),
+                kind: if entry.is_dir() { "folder" } else { "file" }.to_string(),
+                size: entry.size(),
+            });
+        }
+        Ok(entries)
+    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz") {
+        list_tar_entries(&archive, lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz"))
+    } else {
+        Err("Supported archive preview: zip, tar, tar.gz, tgz, gz.".to_string())
+    }
+}
+
+pub fn apply_windows_acl(path: String, identity: String, rights: String, inherit: bool) -> AppResult<String> {
+    let target = allowed_workspace_path(path)?;
+    let identity = identity.trim();
+    if identity.is_empty() {
+        return Err("Enter a Windows user or group.".to_string());
+    }
+    let rights = match rights.trim().to_uppercase().as_str() {
+        "R" | "READ" => "R",
+        "RX" | "READEXECUTE" | "READ_EXECUTE" => "RX",
+        "M" | "MODIFY" => "M",
+        "F" | "FULL" | "FULLCONTROL" | "FULL_CONTROL" => "F",
+        _ => return Err("Supported ACL rights: R, RX, M, F.".to_string()),
+    };
+    let grant = if inherit {
+        format!("{identity}:(OI)(CI){rights}")
+    } else {
+        format!("{identity}:{rights}")
+    };
+    let mut command = Command::new("icacls.exe");
+    command
+        .arg(&target)
+        .arg("/grant")
+        .arg(grant)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags_hidden();
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot start icacls: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Cannot apply Windows ACL. {detail}"));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 pub fn list_environment_snapshots() -> AppResult<Vec<EnvironmentSnapshotInfo>> {
@@ -1490,6 +1594,39 @@ fn extract_tar_safe(source: &Path, target: &Path, gzip: bool) -> AppResult<()> {
     }
 }
 
+fn list_tar_entries(source: &Path, gzip: bool) -> AppResult<Vec<ArchiveEntry>> {
+    let file = File::open(source)
+        .map_err(|err| format!("Cannot open archive {}: {err}", source.display()))?;
+    if gzip {
+        let decoder = GzDecoder::new(file);
+        collect_tar_entries(TarArchive::new(decoder))
+    } else {
+        collect_tar_entries(TarArchive::new(file))
+    }
+}
+
+fn collect_tar_entries<R: Read>(mut archive: TarArchive<R>) -> AppResult<Vec<ArchiveEntry>> {
+    let mut entries = Vec::new();
+    for entry in archive
+        .entries()
+        .map_err(|err| format!("Cannot read tar entries: {err}"))?
+    {
+        let entry = entry.map_err(|err| format!("Cannot read tar entry: {err}"))?;
+        let path = entry
+            .path()
+            .map_err(|err| format!("Cannot read tar entry path: {err}"))?
+            .to_string_lossy()
+            .to_string();
+        let header = entry.header();
+        entries.push(ArchiveEntry {
+            path,
+            kind: if header.entry_type().is_dir() { "folder" } else { "file" }.to_string(),
+            size: header.size().unwrap_or(0),
+        });
+    }
+    Ok(entries)
+}
+
 fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> AppResult<()> {
     let target_root = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
     for entry in archive
@@ -1517,6 +1654,14 @@ fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> App
             .map_err(|err| format!("Cannot unpack {}: {err}", destination.display()))?;
     }
     Ok(())
+}
+
+fn split_csv(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
 }
 
 fn create_zip_archive(sources: &[PathBuf], target: &Path) -> AppResult<()> {
@@ -1595,9 +1740,12 @@ fn search_folder(
     query: &str,
     regex: Option<&regex::Regex>,
     case_sensitive: bool,
+    include_extensions: &[String],
+    exclude_folders: &[String],
+    limit: usize,
     results: &mut Vec<FileSearchResult>,
 ) -> AppResult<()> {
-    if results.len() >= 500 {
+    if results.len() >= limit {
         return Ok(());
     }
     for entry in fs::read_dir(folder).map_err(|err| format!("Cannot search {}: {err}", folder.display()))? {
@@ -1605,17 +1753,27 @@ fn search_folder(
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if path.is_dir() {
-            if matches!(name.as_str(), "node_modules" | ".git" | ".next" | "vendor" | "target") {
+            if exclude_folders.iter().any(|item| item.eq_ignore_ascii_case(&name)) {
                 continue;
             }
-            search_folder(&path, query, regex, case_sensitive, results)?;
-            if results.len() >= 500 {
+            search_folder(&path, query, regex, case_sensitive, include_extensions, exclude_folders, limit, results)?;
+            if results.len() >= limit {
                 return Ok(());
             }
             continue;
         }
         if !path.is_file() {
             continue;
+        }
+        if !include_extensions.is_empty() {
+            let ext = path
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !include_extensions.iter().any(|item| item.eq_ignore_ascii_case(&ext)) {
+                continue;
+            }
         }
         let metadata = match path.metadata() {
             Ok(value) => value,
@@ -1652,7 +1810,7 @@ fn search_folder(
                     column,
                     preview: line.trim().chars().take(240).collect(),
                 });
-                if results.len() >= 500 {
+                if results.len() >= limit {
                     return Ok(());
                 }
             }

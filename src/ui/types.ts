@@ -290,6 +290,12 @@ export interface FileSearchResult {
   preview: string;
 }
 
+export interface ArchiveEntry {
+  path: string;
+  kind: "file" | "folder";
+  size: number;
+}
+
 export interface SslDiagnostic {
   domain: string;
   caTrusted: boolean;
@@ -347,7 +353,7 @@ export interface LogFileTail {
   lines: string[];
 }
 
-export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | InstalledTool[] | FileEntry[] | FileSearchResult[] | EnvironmentSnapshotInfo[] | EnvironmentSnapshotInfo | ResourceProcess[] | NodeScript[] | string[] | string | void;
+export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | InstalledTool[] | FileEntry[] | FileSearchResult[] | ArchiveEntry[] | EnvironmentSnapshotInfo[] | EnvironmentSnapshotInfo | ResourceProcess[] | NodeScript[] | string[] | string | void;
 
 export type AppRun = (
   action: () => Promise<AppRunResult>,
