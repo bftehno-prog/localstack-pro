@@ -28,10 +28,8 @@
   --primary-bg: #0b63e5;
   --primary-hover: #095bd1;
   --primary-text: #ffffff;
-  --primary-bg: #0b63e5;
-  --primary-hover: #095bd1;
-  --primary-text: #ffffff;
   --selected: #e9f2ff;
+  --nav-active-text: #17202a;
   --pill-bg: #f0f2f5;
   --pill-text: #4f5762;
   --success-bg: #f0fbf4;
@@ -131,6 +129,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-muted: #675e55;
   --control-border-hover: #cbbca9;
   --selected: #f0ebff;
+  --nav-active-text: #16130f;
   --pill-bg: #f1e8dc;
   --pill-text: #5d5146;
   --primary-bg: #6847c7;
@@ -162,6 +161,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-muted: #5d6874;
   --control-border-hover: #b9c3cf;
   --selected: #dfe7f2;
+  --nav-active-text: #121820;
   --pill-bg: #e6eaf0;
   --pill-text: #49525d;
   --primary-bg: #255fb8;
@@ -193,6 +193,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-muted: #5f6f84;
   --control-border-hover: #9fc5e8;
   --selected: #dff0ff;
+  --nav-active-text: #0d1b2b;
   --pill-bg: #e6f2fc;
   --pill-text: #465569;
   --primary-bg: #075fd8;
@@ -224,6 +225,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-muted: #5c6f68;
   --control-border-hover: #a4c6b3;
   --selected: #dff1e7;
+  --nav-active-text: #000000;
   --pill-bg: #e6f1eb;
   --pill-text: #445750;
   --primary-bg: #0f6f4c;
@@ -255,10 +257,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-text: #eef4fa;
   --control-muted: #aeb8c4;
   --control-border-hover: #596779;
-  --primary-bg: #1f6feb;
-  --primary-hover: #2f81f7;
+  --primary-bg: #1a63d8;
+  --primary-hover: #1f6feb;
   --primary-text: #ffffff;
   --selected: #16305a;
+  --nav-active-text: #eaf4ff;
   --pill-bg: #232c38;
   --pill-text: #d1dae5;
   --success-bg: #10291b;
@@ -286,6 +289,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-hover: #21314a;
   --control-border-hover: #52657f;
   --selected: #17335f;
+  --nav-active-text: #eaf4ff;
   --pill-bg: #202b3c;
   --primary-bg: #2b6fe8;
   --primary-hover: #3b82f6;
@@ -306,6 +310,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-hover: #303742;
   --control-border-hover: #626b78;
   --selected: #273449;
+  --nav-active-text: #f2f7ff;
   --pill-bg: #2a3039;
   --primary-bg: #336fd1;
   --primary-hover: #4d86e6;
@@ -336,6 +341,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --control-muted: #b5c0c5;
   --control-border-hover: #6f7c83;
   --selected: #263813;
+  --nav-active-text: #efffd0;
   --pill-bg: #243017;
   --pill-text: #d6f6a6;
   --primary-bg: #9be22d;
@@ -378,6 +384,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --primary-hover: #004c9f;
   --primary-text: #ffffff;
   --selected: #dcecff;
+  --nav-active-text: #000000;
   --pill-bg: #eef2f7;
   --pill-text: #111827;
   --success-bg: #e8f7ee;
@@ -514,11 +521,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   position: relative;
 }
 .nav button.active {
-  color: var(--blue);
+  color: var(--nav-active-text, var(--blue));
   background: #f1f5fa;
   font-weight: 600;
 }
-.nav button:hover { background: var(--hover); color: var(--blue); }
+.nav button:hover { background: var(--hover); color: var(--nav-active-text, var(--blue)); }
 .nav button.active::before {
   content: "";
   position: absolute;
@@ -1380,7 +1387,8 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   max-height: 180px;
 }
 
-.content-results button {
+.content-results button,
+.content-result {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -1390,6 +1398,21 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   display: grid;
   gap: 3px;
   text-align: left;
+}
+
+.content-result {
+  cursor: default;
+}
+
+.content-result .inline-action {
+  width: fit-content;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .content-results strong,
@@ -2924,6 +2947,10 @@ p,
 .data-table tr.selected,
 .cms-card.active {
   background: var(--selected);
+}
+.nav button.active {
+  color: var(--nav-active-text, var(--blue)) !important;
+  background: var(--selected) !important;
 }
 .btn,
 input,

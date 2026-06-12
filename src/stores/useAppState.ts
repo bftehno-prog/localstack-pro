@@ -19,7 +19,12 @@ export function useAppState() {
   const [operations, setOperations] = useState<OperationEntry[]>([]);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const lastActionRef = useRef<{ action: () => Promise<AppRunResult>; options?: RunOptions } | null>(null);
+  const busyRef = useRef(false);
   const busy = busyCount > 0;
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   useEffect(() => {
     if (!error) return;
@@ -117,6 +122,7 @@ export function useAppState() {
   const run = useCallback((action: () => Promise<AppRunResult>, options?: RunOptions) => {
     if (!options?.silent) lastActionRef.current = { action, options };
     if (options?.silent) return execute(action, options);
+    if (options?.serial === false) return execute(action, options);
 
     const next = queueRef.current
       .catch(() => undefined)
@@ -133,10 +139,10 @@ export function useAppState() {
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => {
-      if (!document.hidden && !busy) void refresh(true);
+      if (!document.hidden && !busyRef.current) void refresh(true);
     }, 300000);
     return () => window.clearInterval(timer);
-  }, [busy, refresh]);
+  }, [refresh]);
 
   return useMemo(() => ({ state, loading, error, notice, busy, actionLabel, operations, refresh, run, retryLast, setError }), [state, loading, error, notice, busy, actionLabel, operations, refresh, run, retryLast]);
 }

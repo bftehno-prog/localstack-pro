@@ -218,19 +218,17 @@ fn start_service_at_mode(
                     );
                     return Ok(());
                 }
-                Some(ServiceStatus::Stopped) => {
-                    if start_windows_service(service_name) {
-                        wait_for_service_ports(&snapshot.services[index].ports)?;
-                        mark_running_from_ports(snapshot, index);
-                        store.log(
-                            snapshot,
-                            LogLevel::Info,
-                            &name,
-                            format!("{name} started through Windows service {service_name}"),
-                            None,
-                        );
-                        return Ok(());
-                    }
+                Some(ServiceStatus::Stopped) if start_windows_service(service_name) => {
+                    wait_for_service_ports(&snapshot.services[index].ports)?;
+                    mark_running_from_ports(snapshot, index);
+                    store.log(
+                        snapshot,
+                        LogLevel::Info,
+                        &name,
+                        format!("{name} started through Windows service {service_name}"),
+                        None,
+                    );
+                    return Ok(());
                 }
                 _ => {}
             }
@@ -404,23 +402,22 @@ fn stop_service_at(
         if matches!(
             windows_service_status(service_name),
             Some(ServiceStatus::Running)
-        ) {
-            if stop_windows_service(service_name) {
-                snapshot.services[index].pid = None;
-                snapshot.services[index].status = ServiceStatus::Stopped;
-                snapshot.services[index].started_at = None;
-                snapshot.services[index].uptime_seconds = 0;
-                snapshot.services[index].cpu = 0.0;
-                snapshot.services[index].memory_mb = 0;
-                store.log(
-                    snapshot,
-                    LogLevel::Info,
-                    &name,
-                    format!("{name} stopped through Windows service {service_name}"),
-                    None,
-                );
-                return Ok(());
-            }
+        ) && stop_windows_service(service_name)
+        {
+            snapshot.services[index].pid = None;
+            snapshot.services[index].status = ServiceStatus::Stopped;
+            snapshot.services[index].started_at = None;
+            snapshot.services[index].uptime_seconds = 0;
+            snapshot.services[index].cpu = 0.0;
+            snapshot.services[index].memory_mb = 0;
+            store.log(
+                snapshot,
+                LogLevel::Info,
+                &name,
+                format!("{name} stopped through Windows service {service_name}"),
+                None,
+            );
+            return Ok(());
         }
     }
     if let Some(pid) = snapshot.services[index].pid {
@@ -556,7 +553,7 @@ fn service_is_live(service: &ServiceInfo) -> bool {
     if !service.ports.is_empty() && service.ports.iter().all(|port| port_accepting(*port)) {
         return true;
     }
-    service.pid.is_some_and(|pid| process_exists(pid))
+    service.pid.is_some_and(process_exists)
 }
 
 fn process_exists(pid: u32) -> bool {

@@ -354,16 +354,16 @@ impl Store {
             let mut env = HashMap::new();
             env.insert("APP_ENV".to_string(), "local".to_string());
             env.insert("APP_DEBUG".to_string(), "true".to_string());
-            snapshot.hosts.push(host(
-                "shop.test",
-                "C:\\Projects\\shop",
-                "8.1.23",
-                true,
-                "Production",
-                vec!["ecommerce", "main"],
-                env,
-                &now,
-            ));
+            snapshot.hosts.push(host(HostSeed {
+                domain: "shop.test",
+                root: "C:\\Projects\\shop",
+                php_version: "8.1.23",
+                ssl: true,
+                environment: "Production",
+                tags: vec!["ecommerce", "main"],
+                env_variables: env,
+                now: &now,
+            }));
         }
         if snapshot.php_versions.is_empty() {
             let mut ini = HashMap::new();
@@ -373,16 +373,16 @@ impl Store {
             snapshot.php_versions.push(php("8.1.23", true, ini));
         }
         if snapshot.databases.is_empty() {
-            snapshot.databases.push(database(
-                "shop",
-                "Main e-commerce DB",
-                "MySQL",
-                "8.0.36",
-                "shop_user",
-                3306,
-                128.6,
-                &now,
-            ));
+            snapshot.databases.push(database(DatabaseSeed {
+                name: "shop",
+                description: "Main e-commerce DB",
+                engine: "MySQL",
+                version: "8.0.36",
+                user: "shop_user",
+                port: 3306,
+                size_mb: 128.6,
+                now: &now,
+            }));
         }
         if snapshot.certificates.is_empty() {
             snapshot.certificates = snapshot
@@ -1000,66 +1000,66 @@ impl Store {
             app_data_dir: base.clone(),
             services: extended_default_services(&services_dir),
             hosts: vec![
-                host(
-                    "shop.test",
-                    "C:\\Projects\\shop",
-                    "8.1.23",
-                    true,
-                    "Production",
-                    vec!["ecommerce", "main"],
-                    env.clone(),
-                    &now,
-                ),
-                host(
-                    "acme.test",
-                    "C:\\Projects\\acme",
-                    "8.2.10",
-                    true,
-                    "Production",
-                    vec!["corporate", "primary"],
-                    env.clone(),
-                    &now,
-                ),
-                host(
-                    "blog.test",
-                    "C:\\Projects\\blog",
-                    "8.3.6",
-                    true,
-                    "Staging",
-                    vec!["blog", "headless"],
-                    env.clone(),
-                    &now,
-                ),
-                host(
-                    "api.test",
-                    "C:\\Projects\\api",
-                    "8.2.10",
-                    false,
-                    "Development",
-                    vec!["api"],
-                    env.clone(),
-                    &now,
-                ),
-                host(
-                    "crm.test",
-                    "C:\\Projects\\crm",
-                    "7.4.33",
-                    true,
-                    "Production",
-                    vec!["internal"],
-                    env.clone(),
-                    &now,
-                ),
-                host(
-                    "legacy.test",
-                    "C:\\Projects\\legacy",
-                    "7.3.31",
-                    false,
-                    "Development",
-                    vec!["legacy"],
-                    env,
-                    &now,
-                ),
+                host(HostSeed {
+                    domain: "shop.test",
+                    root: "C:\\Projects\\shop",
+                    php_version: "8.1.23",
+                    ssl: true,
+                    environment: "Production",
+                    tags: vec!["ecommerce", "main"],
+                    env_variables: env.clone(),
+                    now: &now,
+                }),
+                host(HostSeed {
+                    domain: "acme.test",
+                    root: "C:\\Projects\\acme",
+                    php_version: "8.2.10",
+                    ssl: true,
+                    environment: "Production",
+                    tags: vec!["corporate", "primary"],
+                    env_variables: env.clone(),
+                    now: &now,
+                }),
+                host(HostSeed {
+                    domain: "blog.test",
+                    root: "C:\\Projects\\blog",
+                    php_version: "8.3.6",
+                    ssl: true,
+                    environment: "Staging",
+                    tags: vec!["blog", "headless"],
+                    env_variables: env.clone(),
+                    now: &now,
+                }),
+                host(HostSeed {
+                    domain: "api.test",
+                    root: "C:\\Projects\\api",
+                    php_version: "8.2.10",
+                    ssl: false,
+                    environment: "Development",
+                    tags: vec!["api"],
+                    env_variables: env.clone(),
+                    now: &now,
+                }),
+                host(HostSeed {
+                    domain: "crm.test",
+                    root: "C:\\Projects\\crm",
+                    php_version: "7.4.33",
+                    ssl: true,
+                    environment: "Production",
+                    tags: vec!["internal"],
+                    env_variables: env.clone(),
+                    now: &now,
+                }),
+                host(HostSeed {
+                    domain: "legacy.test",
+                    root: "C:\\Projects\\legacy",
+                    php_version: "7.3.31",
+                    ssl: false,
+                    environment: "Development",
+                    tags: vec!["legacy"],
+                    env_variables: env,
+                    now: &now,
+                }),
             ],
             php_versions: ["8.4.22", "8.3.30", "8.2.29", "8.1.33", "7.4.33", "7.3.33"]
                 .iter()
@@ -1067,56 +1067,56 @@ impl Store {
                 .map(|(idx, version)| php(version, idx == 0, ini.clone()))
                 .collect(),
             databases: vec![
-                database(
-                    "shop",
-                    "Main e-commerce DB",
-                    "MySQL",
-                    "8.0.36",
-                    "shop_user",
-                    3306,
-                    128.6,
-                    &now,
-                ),
-                database(
-                    "blog",
-                    "Blog application DB",
-                    "MySQL",
-                    "8.0.36",
-                    "blog_user",
-                    3306,
-                    64.2,
-                    &now,
-                ),
-                database(
-                    "cms",
-                    "CMS application DB",
-                    "MariaDB",
-                    "10.6.18",
-                    "cms_user",
-                    3307,
-                    93.1,
-                    &now,
-                ),
-                database(
-                    "test",
-                    "Testing & development",
-                    "MySQL",
-                    "8.0.36",
-                    "test_user",
-                    3306,
-                    12.4,
-                    &now,
-                ),
-                database(
-                    "analytics",
-                    "Analytics reporting",
-                    "PostgreSQL",
-                    "15.3",
-                    "analytics_user",
-                    5432,
-                    256.7,
-                    &now,
-                ),
+                database(DatabaseSeed {
+                    name: "shop",
+                    description: "Main e-commerce DB",
+                    engine: "MySQL",
+                    version: "8.0.36",
+                    user: "shop_user",
+                    port: 3306,
+                    size_mb: 128.6,
+                    now: &now,
+                }),
+                database(DatabaseSeed {
+                    name: "blog",
+                    description: "Blog application DB",
+                    engine: "MySQL",
+                    version: "8.0.36",
+                    user: "blog_user",
+                    port: 3306,
+                    size_mb: 64.2,
+                    now: &now,
+                }),
+                database(DatabaseSeed {
+                    name: "cms",
+                    description: "CMS application DB",
+                    engine: "MariaDB",
+                    version: "10.6.18",
+                    user: "cms_user",
+                    port: 3307,
+                    size_mb: 93.1,
+                    now: &now,
+                }),
+                database(DatabaseSeed {
+                    name: "test",
+                    description: "Testing & development",
+                    engine: "MySQL",
+                    version: "8.0.36",
+                    user: "test_user",
+                    port: 3306,
+                    size_mb: 12.4,
+                    now: &now,
+                }),
+                database(DatabaseSeed {
+                    name: "analytics",
+                    description: "Analytics reporting",
+                    engine: "PostgreSQL",
+                    version: "15.3",
+                    user: "analytics_user",
+                    port: 5432,
+                    size_mb: 256.7,
+                    now: &now,
+                }),
             ],
             certificates: vec![
                 certificate_for(&base, "shop.test"),
@@ -1368,36 +1368,43 @@ fn extended_default_services(services_dir: &str) -> Vec<ServiceInfo> {
     ]
 }
 
-fn host(
-    domain: &str,
-    root: &str,
-    php_version: &str,
+struct HostSeed<'a> {
+    domain: &'a str,
+    root: &'a str,
+    php_version: &'a str,
     ssl: bool,
-    environment: &str,
-    tags: Vec<&str>,
+    environment: &'a str,
+    tags: Vec<&'a str>,
     env_variables: HashMap<String, String>,
-    now: &str,
-) -> HostInfo {
+    now: &'a str,
+}
+
+fn host(seed: HostSeed<'_>) -> HostInfo {
     HostInfo {
-        id: domain.to_string(),
-        domain: domain.to_string(),
-        root_folder: root.to_string(),
+        id: seed.domain.to_string(),
+        domain: seed.domain.to_string(),
+        root_folder: seed.root.to_string(),
         document_root: "public".to_string(),
-        php_version: php_version.to_string(),
+        php_version: seed.php_version.to_string(),
         web_server: "Apache".to_string(),
-        ssl,
-        environment: environment.to_string(),
+        ssl: seed.ssl,
+        environment: seed.environment.to_string(),
         http_port: 80,
         https_port: 443,
-        database: domain.split('.').next().unwrap_or(domain).to_string(),
+        database: seed
+            .domain
+            .split('.')
+            .next()
+            .unwrap_or(seed.domain)
+            .to_string(),
         mail_service: "Mailpit".to_string(),
-        env_variables,
+        env_variables: seed.env_variables,
         rewrite_rules: String::new(),
         notes: "Primary development environment.".to_string(),
         status: ServiceStatus::Stopped,
-        tags: tags.into_iter().map(str::to_string).collect(),
-        created_at: now.to_string(),
-        updated_at: now.to_string(),
+        tags: seed.tags.into_iter().map(str::to_string).collect(),
+        created_at: seed.now.to_string(),
+        updated_at: seed.now.to_string(),
     }
 }
 
@@ -1444,29 +1451,31 @@ fn php(version: &str, default: bool, ini: HashMap<String, String>) -> PhpVersion
     }
 }
 
-fn database(
-    name: &str,
-    description: &str,
-    engine: &str,
-    version: &str,
-    user: &str,
+struct DatabaseSeed<'a> {
+    name: &'a str,
+    description: &'a str,
+    engine: &'a str,
+    version: &'a str,
+    user: &'a str,
     port: u16,
     size_mb: f64,
-    now: &str,
-) -> DatabaseInfo {
+    now: &'a str,
+}
+
+fn database(seed: DatabaseSeed<'_>) -> DatabaseInfo {
     DatabaseInfo {
-        id: name.to_string(),
-        name: name.to_string(),
-        description: description.to_string(),
-        engine: engine.to_string(),
-        version: version.to_string(),
+        id: seed.name.to_string(),
+        name: seed.name.to_string(),
+        description: seed.description.to_string(),
+        engine: seed.engine.to_string(),
+        version: seed.version.to_string(),
         schemas: 4,
-        user: user.to_string(),
+        user: seed.user.to_string(),
         password: "localstack".to_string(),
-        port,
+        port: seed.port,
         status: ServiceStatus::Stopped,
-        size_mb,
-        created_at: now.to_string(),
+        size_mb: seed.size_mb,
+        created_at: seed.now.to_string(),
     }
 }
 

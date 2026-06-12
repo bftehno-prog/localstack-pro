@@ -4,8 +4,8 @@ use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use regex::RegexBuilder;
 use serde::Serialize;
 use std::{
-    fs::File,
     fs,
+    fs::File,
     io::{Read, Write},
     net::TcpStream,
     path::{Path, PathBuf},
@@ -199,13 +199,13 @@ pub fn scan_ports() -> AppResult<Vec<PortInspection>> {
         .map(|(port, service)| {
             let pid = pid_for_port(&netstat, port);
             let process = pid.and_then(process_name);
-            let listening = TcpStream::connect_timeout(
-                &format!("127.0.0.1:{port}")
-                    .parse()
-                    .unwrap_or_else(|_| "127.0.0.1:9".parse().expect("static socket")),
-                Duration::from_millis(180),
-            )
-            .is_ok();
+            let listening = format!("127.0.0.1:{port}")
+                .parse()
+                .ok()
+                .and_then(|address| {
+                    TcpStream::connect_timeout(&address, Duration::from_millis(180)).ok()
+                })
+                .is_some();
             PortInspection {
                 port,
                 status: if listening { "Listening" } else { "Free" }.to_string(),
@@ -628,8 +628,8 @@ pub fn read_file_with_encoding(path: String, encoding: String) -> AppResult<Conf
     if metadata.len() > 5_000_000 {
         return Err("File is too large for the built-in editor.".to_string());
     }
-    let bytes = fs::read(&target)
-        .map_err(|err| format!("Cannot read file {}: {err}", target.display()))?;
+    let bytes =
+        fs::read(&target).map_err(|err| format!("Cannot read file {}: {err}", target.display()))?;
     if bytes.contains(&0) {
         return Err("Binary files cannot be opened in the built-in editor.".to_string());
     }
@@ -653,7 +653,11 @@ pub fn write_file(path: String, content: String) -> AppResult<String> {
     write_file_with_encoding(path, content, "utf-8".to_string())
 }
 
-pub fn write_file_with_encoding(path: String, content: String, encoding: String) -> AppResult<String> {
+pub fn write_file_with_encoding(
+    path: String,
+    content: String,
+    encoding: String,
+) -> AppResult<String> {
     let target = allowed_workspace_path(path)?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("Cannot create parent folder: {err}"))?;
@@ -729,13 +733,16 @@ pub fn trash_path(path: String) -> AppResult<TrashRecord> {
         Err(_) => {
             if source.is_dir() {
                 copy_dir_all(&source, &target)?;
-                fs::remove_dir_all(&source)
-                    .map_err(|err| format!("Cannot remove original folder {}: {err}", source.display()))?;
+                fs::remove_dir_all(&source).map_err(|err| {
+                    format!("Cannot remove original folder {}: {err}", source.display())
+                })?;
             } else {
-                fs::copy(&source, &target)
-                    .map_err(|err| format!("Cannot move file to trash {}: {err}", source.display()))?;
-                fs::remove_file(&source)
-                    .map_err(|err| format!("Cannot remove original file {}: {err}", source.display()))?;
+                fs::copy(&source, &target).map_err(|err| {
+                    format!("Cannot move file to trash {}: {err}", source.display())
+                })?;
+                fs::remove_file(&source).map_err(|err| {
+                    format!("Cannot remove original file {}: {err}", source.display())
+                })?;
             }
         }
     }
@@ -747,7 +754,11 @@ pub fn trash_path(path: String) -> AppResult<TrashRecord> {
     })
 }
 
-pub fn restore_trash_path(original_path: String, trash_path: String, overwrite: bool) -> AppResult<String> {
+pub fn restore_trash_path(
+    original_path: String,
+    trash_path: String,
+    overwrite: bool,
+) -> AppResult<String> {
     let source = allowed_workspace_path(trash_path)?;
     let target = allowed_workspace_path(original_path)?;
     if !source.exists() {
@@ -755,7 +766,10 @@ pub fn restore_trash_path(original_path: String, trash_path: String, overwrite: 
     }
     if target.exists() {
         if !overwrite {
-            return Err(format!("Original path already exists: {}", target.display()));
+            return Err(format!(
+                "Original path already exists: {}",
+                target.display()
+            ));
         }
         if target.is_dir() {
             fs::remove_dir_all(&target)
@@ -773,13 +787,15 @@ pub fn restore_trash_path(original_path: String, trash_path: String, overwrite: 
         Err(_) => {
             if source.is_dir() {
                 copy_dir_all(&source, &target)?;
-                fs::remove_dir_all(&source)
-                    .map_err(|err| format!("Cannot remove trash folder {}: {err}", source.display()))?;
+                fs::remove_dir_all(&source).map_err(|err| {
+                    format!("Cannot remove trash folder {}: {err}", source.display())
+                })?;
             } else {
                 fs::copy(&source, &target)
                     .map_err(|err| format!("Cannot restore file {}: {err}", source.display()))?;
-                fs::remove_file(&source)
-                    .map_err(|err| format!("Cannot remove trash file {}: {err}", source.display()))?;
+                fs::remove_file(&source).map_err(|err| {
+                    format!("Cannot remove trash file {}: {err}", source.display())
+                })?;
             }
             Ok(target.display().to_string())
         }
@@ -825,13 +841,15 @@ pub fn copy_path(source: String, target: String, overwrite: bool) -> AppResult<S
     }
     if source.is_dir() {
         if target.exists() && overwrite {
-            fs::remove_dir_all(&target)
-                .map_err(|err| format!("Cannot replace target folder {}: {err}", target.display()))?;
+            fs::remove_dir_all(&target).map_err(|err| {
+                format!("Cannot replace target folder {}: {err}", target.display())
+            })?;
         }
         copy_dir_all(&source, &target)?;
     } else if source.is_file() {
         if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).map_err(|err| format!("Cannot create target folder: {err}"))?;
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("Cannot create target folder: {err}"))?;
         }
         fs::copy(&source, &target)
             .map_err(|err| format!("Cannot copy {}: {err}", source.display()))?;
@@ -849,8 +867,9 @@ pub fn move_path(source: String, target: String, overwrite: bool) -> AppResult<S
             return Err(format!("Target already exists: {}", target.display()));
         }
         if target.is_dir() {
-            fs::remove_dir_all(&target)
-                .map_err(|err| format!("Cannot replace target folder {}: {err}", target.display()))?;
+            fs::remove_dir_all(&target).map_err(|err| {
+                format!("Cannot replace target folder {}: {err}", target.display())
+            })?;
         } else {
             fs::remove_file(&target)
                 .map_err(|err| format!("Cannot replace target file {}: {err}", target.display()))?;
@@ -862,7 +881,11 @@ pub fn move_path(source: String, target: String, overwrite: bool) -> AppResult<S
     match fs::rename(&source, &target) {
         Ok(_) => Ok(target.display().to_string()),
         Err(_) => {
-            copy_path(source.display().to_string(), target.display().to_string(), true)?;
+            copy_path(
+                source.display().to_string(),
+                target.display().to_string(),
+                true,
+            )?;
             delete_path(source.display().to_string())?;
             Ok(target.display().to_string())
         }
@@ -875,7 +898,8 @@ pub fn chmod_path(path: String, mode: String, read_only: bool) -> AppResult<Stri
         .metadata()
         .map_err(|err| format!("Cannot inspect permissions: {err}"))?
         .permissions();
-    let readonly = read_only || matches!(mode.trim(), "400" | "440" | "444" | "500" | "550" | "555");
+    let readonly =
+        read_only || matches!(mode.trim(), "400" | "440" | "444" | "500" | "550" | "555");
     permissions.set_readonly(readonly);
     fs::set_permissions(&target, permissions)
         .map_err(|err| format!("Cannot change permissions for {}: {err}", target.display()))?;
@@ -886,15 +910,26 @@ pub fn chmod_path(path: String, mode: String, read_only: bool) -> AppResult<Stri
     })
 }
 
-pub fn upload_files(sources: Vec<String>, destination: String, overwrite: bool) -> AppResult<Vec<String>> {
+pub fn upload_files(
+    sources: Vec<String>,
+    destination: String,
+    overwrite: bool,
+) -> AppResult<Vec<String>> {
     let destination = allowed_workspace_path(destination)?;
-    fs::create_dir_all(&destination)
-        .map_err(|err| format!("Cannot create upload folder {}: {err}", destination.display()))?;
+    fs::create_dir_all(&destination).map_err(|err| {
+        format!(
+            "Cannot create upload folder {}: {err}",
+            destination.display()
+        )
+    })?;
     let mut uploaded = Vec::new();
     for source in sources {
         let source_path = PathBuf::from(source.trim());
         if !source_path.exists() {
-            return Err(format!("Upload source does not exist: {}", source_path.display()));
+            return Err(format!(
+                "Upload source does not exist: {}",
+                source_path.display()
+            ));
         }
         let name = source_path
             .file_name()
@@ -924,8 +959,12 @@ pub fn extract_archive_to(path: String, destination: String) -> AppResult<String
         return Err(format!("Archive does not exist: {}", archive.display()));
     }
     let destination = allowed_workspace_path(destination)?;
-    fs::create_dir_all(&destination)
-        .map_err(|err| format!("Cannot create extract folder {}: {err}", destination.display()))?;
+    fs::create_dir_all(&destination).map_err(|err| {
+        format!(
+            "Cannot create extract folder {}: {err}",
+            destination.display()
+        )
+    })?;
     let lower = archive
         .file_name()
         .and_then(|value| value.to_str())
@@ -933,8 +972,16 @@ pub fn extract_archive_to(path: String, destination: String) -> AppResult<String
         .to_lowercase();
     if lower.ends_with(".zip") {
         extract_zip_safe(&archive, &destination)?;
-    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz") {
-        extract_tar_safe(&archive, &destination, lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz"))?;
+    } else if lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".gz")
+    {
+        extract_tar_safe(
+            &archive,
+            &destination,
+            lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz"),
+        )?;
     } else {
         return Err("Supported archives: zip, tar, tar.gz, tgz, gz.".to_string());
     }
@@ -961,14 +1008,23 @@ pub fn create_archive(paths: Vec<String>, target: String) -> AppResult<String> {
     if lower.ends_with(".zip") {
         create_zip_archive(&sources, &target)?;
     } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
-        create_tar_archive(&sources, &target, lower.ends_with(".tar.gz") || lower.ends_with(".tgz"))?;
+        create_tar_archive(
+            &sources,
+            &target,
+            lower.ends_with(".tar.gz") || lower.ends_with(".tgz"),
+        )?;
     } else {
         return Err("Archive target must end with .zip, .tar, .tar.gz or .tgz.".to_string());
     }
     Ok(target.display().to_string())
 }
 
-pub fn search_file_contents(root: String, query: String, regexp: bool, case_sensitive: bool) -> AppResult<Vec<FileSearchResult>> {
+pub fn search_file_contents(
+    root: String,
+    query: String,
+    regexp: bool,
+    case_sensitive: bool,
+) -> AppResult<Vec<FileSearchResult>> {
     search_file_contents_advanced(
         root,
         query,
@@ -1013,7 +1069,15 @@ pub fn search_file_contents_advanced(
         .map(|item| item.trim_start_matches('.').to_string())
         .collect::<Vec<_>>();
     let exclude_folders = split_csv(&exclude_folders);
-    search_folder(&root, &query, regex.as_ref(), case_sensitive, &include_extensions, &exclude_folders, limit.clamp(1, 5000), &mut results)?;
+    let options = SearchOptions {
+        query: &query,
+        regex: regex.as_ref(),
+        case_sensitive,
+        include_extensions: &include_extensions,
+        exclude_folders: &exclude_folders,
+        limit: limit.clamp(1, 5000),
+    };
+    search_folder(&root, &options, &mut results)?;
     Ok(results)
 }
 
@@ -1030,8 +1094,8 @@ pub fn list_archive_entries(path: String) -> AppResult<Vec<ArchiveEntry>> {
     if lower.ends_with(".zip") {
         let file = File::open(&archive)
             .map_err(|err| format!("Cannot open archive {}: {err}", archive.display()))?;
-        let mut archive = ZipArchive::new(file)
-            .map_err(|err| format!("Cannot read zip archive: {err}"))?;
+        let mut archive =
+            ZipArchive::new(file).map_err(|err| format!("Cannot read zip archive: {err}"))?;
         let mut entries = Vec::new();
         for index in 0..archive.len() {
             let entry = archive
@@ -1044,14 +1108,26 @@ pub fn list_archive_entries(path: String) -> AppResult<Vec<ArchiveEntry>> {
             });
         }
         Ok(entries)
-    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz") {
-        list_tar_entries(&archive, lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz"))
+    } else if lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".gz")
+    {
+        list_tar_entries(
+            &archive,
+            lower.ends_with(".tar.gz") || lower.ends_with(".tgz") || lower.ends_with(".gz"),
+        )
     } else {
         Err("Supported archive preview: zip, tar, tar.gz, tgz, gz.".to_string())
     }
 }
 
-pub fn apply_windows_acl(path: String, identity: String, rights: String, inherit: bool) -> AppResult<String> {
+pub fn apply_windows_acl(
+    path: String,
+    identity: String,
+    rights: String,
+    inherit: bool,
+) -> AppResult<String> {
     let target = allowed_workspace_path(path)?;
     let identity = identity.trim();
     if identity.is_empty() {
@@ -1636,7 +1712,13 @@ fn unique_trash_path(root: &Path, name: &str) -> PathBuf {
     let stamp = Utc::now().format("%Y%m%d%H%M%S%3f");
     let clean = name
         .chars()
-        .map(|ch| if matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { '_' } else { ch })
+        .map(|ch| {
+            if matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                '_'
+            } else {
+                ch
+            }
+        })
         .collect::<String>();
     let mut target = root.join(format!("{stamp}-{clean}"));
     let mut counter = 1;
@@ -1652,7 +1734,9 @@ fn extract_zip_safe(source: &Path, target: &Path) -> AppResult<()> {
         .map_err(|err| format!("Cannot open archive {}: {err}", source.display()))?;
     let mut archive = ZipArchive::new(file)
         .map_err(|err| format!("Cannot read zip archive {}: {err}", source.display()))?;
-    let target_root = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
+    let target_root = target
+        .canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
@@ -1722,7 +1806,12 @@ fn collect_tar_entries<R: Read>(mut archive: TarArchive<R>) -> AppResult<Vec<Arc
         let header = entry.header();
         entries.push(ArchiveEntry {
             path,
-            kind: if header.entry_type().is_dir() { "folder" } else { "file" }.to_string(),
+            kind: if header.entry_type().is_dir() {
+                "folder"
+            } else {
+                "file"
+            }
+            .to_string(),
             size: header.size().unwrap_or(0),
         });
     }
@@ -1730,7 +1819,9 @@ fn collect_tar_entries<R: Read>(mut archive: TarArchive<R>) -> AppResult<Vec<Arc
 }
 
 fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> AppResult<()> {
-    let target_root = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
+    let target_root = target
+        .canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
     for entry in archive
         .entries()
         .map_err(|err| format!("Cannot read tar entries: {err}"))?
@@ -1740,7 +1831,11 @@ fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> App
             .path()
             .map_err(|err| format!("Cannot read tar entry path: {err}"))?
             .to_path_buf();
-        if path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
             return Err("Archive contains an unsafe path.".to_string());
         }
         let destination = target.join(path);
@@ -1782,7 +1877,12 @@ fn create_zip_archive(sources: &[PathBuf], target: &Path) -> AppResult<()> {
     Ok(())
 }
 
-fn add_path_to_zip(zip: &mut ZipWriter<File>, path: &Path, base: &Path, options: SimpleFileOptions) -> AppResult<()> {
+fn add_path_to_zip(
+    zip: &mut ZipWriter<File>,
+    path: &Path,
+    base: &Path,
+    options: SimpleFileOptions,
+) -> AppResult<()> {
     let relative = path.strip_prefix(base).unwrap_or(path);
     let name = relative.to_string_lossy().replace('\\', "/");
     if path.is_dir() {
@@ -1790,17 +1890,18 @@ fn add_path_to_zip(zip: &mut ZipWriter<File>, path: &Path, base: &Path, options:
             zip.add_directory(format!("{name}/"), options)
                 .map_err(|err| format!("Cannot add folder to zip: {err}"))?;
         }
-        for entry in fs::read_dir(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))? {
+        for entry in
+            fs::read_dir(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))?
+        {
             let entry = entry.map_err(|err| format!("Cannot read folder entry: {err}"))?;
             add_path_to_zip(zip, &entry.path(), base, options)?;
         }
     } else {
         zip.start_file(name, options)
             .map_err(|err| format!("Cannot add file to zip: {err}"))?;
-        let mut file = File::open(path)
-            .map_err(|err| format!("Cannot open {}: {err}", path.display()))?;
-        std::io::copy(&mut file, zip)
-            .map_err(|err| format!("Cannot write zip file: {err}"))?;
+        let mut file =
+            File::open(path).map_err(|err| format!("Cannot open {}: {err}", path.display()))?;
+        std::io::copy(&mut file, zip).map_err(|err| format!("Cannot write zip file: {err}"))?;
     }
     Ok(())
 }
@@ -1812,11 +1913,13 @@ fn create_tar_archive(sources: &[PathBuf], target: &Path, gzip: bool) -> AppResu
         let encoder = GzEncoder::new(file, Compression::default());
         let mut tar = TarBuilder::new(encoder);
         add_sources_to_tar(&mut tar, sources)?;
-        tar.finish().map_err(|err| format!("Cannot finish tar archive: {err}"))?;
+        tar.finish()
+            .map_err(|err| format!("Cannot finish tar archive: {err}"))?;
     } else {
         let mut tar = TarBuilder::new(file);
         add_sources_to_tar(&mut tar, sources)?;
-        tar.finish().map_err(|err| format!("Cannot finish tar archive: {err}"))?;
+        tar.finish()
+            .map_err(|err| format!("Cannot finish tar archive: {err}"))?;
     }
     Ok(())
 }
@@ -1837,29 +1940,39 @@ fn add_sources_to_tar<W: Write>(tar: &mut TarBuilder<W>, sources: &[PathBuf]) ->
     Ok(())
 }
 
+struct SearchOptions<'a> {
+    query: &'a str,
+    regex: Option<&'a regex::Regex>,
+    case_sensitive: bool,
+    include_extensions: &'a [String],
+    exclude_folders: &'a [String],
+    limit: usize,
+}
+
 fn search_folder(
     folder: &Path,
-    query: &str,
-    regex: Option<&regex::Regex>,
-    case_sensitive: bool,
-    include_extensions: &[String],
-    exclude_folders: &[String],
-    limit: usize,
+    options: &SearchOptions<'_>,
     results: &mut Vec<FileSearchResult>,
 ) -> AppResult<()> {
-    if results.len() >= limit {
+    if results.len() >= options.limit {
         return Ok(());
     }
-    for entry in fs::read_dir(folder).map_err(|err| format!("Cannot search {}: {err}", folder.display()))? {
+    for entry in
+        fs::read_dir(folder).map_err(|err| format!("Cannot search {}: {err}", folder.display()))?
+    {
         let entry = entry.map_err(|err| format!("Cannot read search entry: {err}"))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if path.is_dir() {
-            if exclude_folders.iter().any(|item| item.eq_ignore_ascii_case(&name)) {
+            if options
+                .exclude_folders
+                .iter()
+                .any(|item| item.eq_ignore_ascii_case(&name))
+            {
                 continue;
             }
-            search_folder(&path, query, regex, case_sensitive, include_extensions, exclude_folders, limit, results)?;
-            if results.len() >= limit {
+            search_folder(&path, options, results)?;
+            if results.len() >= options.limit {
                 return Ok(());
             }
             continue;
@@ -1867,13 +1980,17 @@ fn search_folder(
         if !path.is_file() {
             continue;
         }
-        if !include_extensions.is_empty() {
+        if !options.include_extensions.is_empty() {
             let ext = path
                 .extension()
                 .and_then(|value| value.to_str())
                 .unwrap_or("")
                 .to_lowercase();
-            if !include_extensions.iter().any(|item| item.eq_ignore_ascii_case(&ext)) {
+            if !options
+                .include_extensions
+                .iter()
+                .any(|item| item.eq_ignore_ascii_case(&ext))
+            {
                 continue;
             }
         }
@@ -1896,13 +2013,13 @@ fn search_folder(
             Err(_) => continue,
         };
         for (index, line) in content.lines().enumerate() {
-            let matched = if let Some(regex) = regex {
+            let matched = if let Some(regex) = options.regex {
                 regex.find(line).map(|hit| hit.start() + 1)
-            } else if case_sensitive {
-                line.find(query).map(|column| column + 1)
+            } else if options.case_sensitive {
+                line.find(options.query).map(|column| column + 1)
             } else {
                 line.to_lowercase()
-                    .find(&query.to_lowercase())
+                    .find(&options.query.to_lowercase())
                     .map(|column| column + 1)
             };
             if let Some(column) = matched {
@@ -1912,7 +2029,7 @@ fn search_folder(
                     column,
                     preview: line.trim().chars().take(240).collect(),
                 });
-                if results.len() >= limit {
+                if results.len() >= options.limit {
                     return Ok(());
                 }
             }
@@ -1921,7 +2038,7 @@ fn search_folder(
     Ok(())
 }
 
-fn compress_folder(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
+fn compress_folder(source: &Path, target: &Path) -> AppResult<()> {
     let script = format!(
         "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Compress-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
         source.display().to_string().replace('\'', "''"),
@@ -1953,7 +2070,7 @@ fn compress_folder(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
     Ok(())
 }
 
-fn extract_archive(source: &PathBuf, target: &PathBuf) -> AppResult<()> {
+fn extract_archive(source: &Path, target: &Path) -> AppResult<()> {
     let script = format!(
         "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
         source.display().to_string().replace('\'', "''"),
@@ -2122,14 +2239,17 @@ fn decode_text(bytes: Vec<u8>, encoding: &str) -> AppResult<(String, String)> {
             ));
         }
         if bytes.starts_with(&[0xFF, 0xFE]) {
-            return decode_utf16(&bytes[2..], true).map(|content| (content, "utf-16le".to_string()));
+            return decode_utf16(&bytes[2..], true)
+                .map(|content| (content, "utf-16le".to_string()));
         }
         if bytes.starts_with(&[0xFE, 0xFF]) {
-            return decode_utf16(&bytes[2..], false).map(|content| (content, "utf-16be".to_string()));
+            return decode_utf16(&bytes[2..], false)
+                .map(|content| (content, "utf-16be".to_string()));
         }
         return Ok((
-            String::from_utf8(bytes)
-                .map_err(|_| "This file is not valid UTF-8 text. Try another encoding.".to_string())?,
+            String::from_utf8(bytes).map_err(|_| {
+                "This file is not valid UTF-8 text. Try another encoding.".to_string()
+            })?,
             "utf-8".to_string(),
         ));
     }
@@ -2184,7 +2304,7 @@ fn encode_text(content: &str, encoding: &str) -> AppResult<Vec<u8>> {
 }
 
 fn decode_utf16(bytes: &[u8], little_endian: bool) -> AppResult<String> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err("Invalid UTF-16 byte length.".to_string());
     }
     let values = bytes

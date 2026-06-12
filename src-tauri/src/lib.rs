@@ -32,6 +32,17 @@ fn cache_snapshot(snapshot: AppSnapshot) -> AppSnapshot {
     snapshot
 }
 
+fn with_snapshot_cache(result: AppResult<AppSnapshot>) -> AppResult<AppSnapshot> {
+    result.map(cache_snapshot)
+}
+
+fn invalidate_snapshot_cache() {
+    let cache = STATE_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cache.lock() {
+        *guard = None;
+    }
+}
+
 pub fn try_run_service_helper() -> bool {
     services::try_run_service_helper()
 }
@@ -273,15 +284,15 @@ fn save_service(service: ServiceInfo) -> AppResult<AppSnapshot> {
 }
 #[tauri::command]
 fn install_service_dependency(service_id: String) -> AppResult<AppSnapshot> {
-    dependencies::install_service_dependency(service_id)
+    with_snapshot_cache(dependencies::install_service_dependency(service_id))
 }
 #[tauri::command]
 fn install_all_missing_dependencies() -> AppResult<AppSnapshot> {
-    dependencies::install_all_missing_dependencies()
+    with_snapshot_cache(dependencies::install_all_missing_dependencies())
 }
 #[tauri::command]
 fn detect_dependencies() -> AppResult<AppSnapshot> {
-    dependencies::detect_dependencies()
+    with_snapshot_cache(dependencies::detect_dependencies())
 }
 #[tauri::command]
 fn run_health_check() -> AppResult<health::HealthReport> {
@@ -289,24 +300,28 @@ fn run_health_check() -> AppResult<health::HealthReport> {
 }
 #[tauri::command]
 fn repair_environment() -> AppResult<health::HealthReport> {
-    health::repair_environment()
+    let result = health::repair_environment();
+    if result.is_ok() {
+        invalidate_snapshot_cache();
+    }
+    result
 }
 
 #[tauri::command]
 fn save_host(host: HostInfo) -> AppResult<AppSnapshot> {
-    hosts::save_host(host)
+    with_snapshot_cache(hosts::save_host(host))
 }
 #[tauri::command]
 fn delete_host(host_id: String) -> AppResult<AppSnapshot> {
-    hosts::delete_host(host_id)
+    with_snapshot_cache(hosts::delete_host(host_id))
 }
 #[tauri::command]
 fn duplicate_host(host_id: String) -> AppResult<AppSnapshot> {
-    hosts::duplicate_host(host_id)
+    with_snapshot_cache(hosts::duplicate_host(host_id))
 }
 #[tauri::command]
 fn import_hosts(path: String) -> AppResult<AppSnapshot> {
-    hosts::import_hosts(path)
+    with_snapshot_cache(hosts::import_hosts(path))
 }
 #[tauri::command]
 fn export_hosts(path: String) -> AppResult<String> {
@@ -314,7 +329,7 @@ fn export_hosts(path: String) -> AppResult<String> {
 }
 #[tauri::command]
 fn sync_hosts_file() -> AppResult<AppSnapshot> {
-    hosts::sync_hosts_file()
+    with_snapshot_cache(hosts::sync_hosts_file())
 }
 #[tauri::command]
 fn diagnose_host(host_id: String) -> AppResult<hosts::HostDiagnosticReport> {
@@ -322,33 +337,37 @@ fn diagnose_host(host_id: String) -> AppResult<hosts::HostDiagnosticReport> {
 }
 #[tauri::command]
 fn repair_host(host_id: String) -> AppResult<hosts::HostDiagnosticReport> {
-    hosts::repair_host(host_id)
+    let result = hosts::repair_host(host_id);
+    if result.is_ok() {
+        invalidate_snapshot_cache();
+    }
+    result
 }
 
 #[tauri::command]
 fn save_php_version(php: PhpVersion) -> AppResult<AppSnapshot> {
-    php::save_php_version(php)
+    with_snapshot_cache(php::save_php_version(php))
 }
 #[tauri::command]
 fn install_php_version(version: String) -> AppResult<AppSnapshot> {
-    php::install_php_version(version)
+    with_snapshot_cache(php::install_php_version(version))
 }
 #[tauri::command]
 fn remove_php_version(version: String) -> AppResult<AppSnapshot> {
-    php::remove_php_version(version)
+    with_snapshot_cache(php::remove_php_version(version))
 }
 #[tauri::command]
 fn set_default_php(version: String) -> AppResult<AppSnapshot> {
-    php::set_default_php(version)
+    with_snapshot_cache(php::set_default_php(version))
 }
 
 #[tauri::command]
 fn create_database(database: DatabaseInfo) -> AppResult<AppSnapshot> {
-    database::create_database(database)
+    with_snapshot_cache(database::create_database(database))
 }
 #[tauri::command]
 fn delete_database(database_id: String) -> AppResult<AppSnapshot> {
-    database::delete_database(database_id)
+    with_snapshot_cache(database::delete_database(database_id))
 }
 #[tauri::command]
 fn backup_database(database_id: String) -> AppResult<String> {
@@ -369,24 +388,24 @@ fn get_cms_templates() -> AppResult<Vec<cms::CmsTemplate>> {
 }
 #[tauri::command]
 fn install_cms(request: cms::CmsInstallRequest) -> AppResult<AppSnapshot> {
-    cms::install_cms(request)
+    with_snapshot_cache(cms::install_cms(request))
 }
 
 #[tauri::command]
 fn generate_certificate(domain: String, san_domains: Vec<String>) -> AppResult<AppSnapshot> {
-    ssl::generate_certificate(domain, san_domains)
+    with_snapshot_cache(ssl::generate_certificate(domain, san_domains))
 }
 #[tauri::command]
 fn trust_certificate(certificate_id: String) -> AppResult<AppSnapshot> {
-    ssl::trust_certificate(certificate_id)
+    with_snapshot_cache(ssl::trust_certificate(certificate_id))
 }
 #[tauri::command]
 fn revoke_certificate(certificate_id: String) -> AppResult<AppSnapshot> {
-    ssl::revoke_certificate(certificate_id)
+    with_snapshot_cache(ssl::revoke_certificate(certificate_id))
 }
 #[tauri::command]
 fn save_certificate(certificate: CertificateInfo) -> AppResult<AppSnapshot> {
-    ssl::save_certificate(certificate)
+    with_snapshot_cache(ssl::save_certificate(certificate))
 }
 #[tauri::command]
 fn export_certificate(certificate_id: String, folder: String) -> AppResult<String> {
@@ -395,7 +414,7 @@ fn export_certificate(certificate_id: String, folder: String) -> AppResult<Strin
 
 #[tauri::command]
 fn clear_logs() -> AppResult<AppSnapshot> {
-    logs::clear_logs()
+    with_snapshot_cache(logs::clear_logs())
 }
 #[tauri::command]
 fn export_logs(path: String) -> AppResult<String> {
@@ -408,7 +427,7 @@ fn tail_log_file(source: String, lines: Option<u32>) -> AppResult<logs::LogFileT
 
 #[tauri::command]
 fn save_settings(settings: AppSettings) -> AppResult<AppSnapshot> {
-    settings::save_settings(settings)
+    with_snapshot_cache(settings::save_settings(settings))
 }
 #[tauri::command]
 fn export_settings(path: String) -> AppResult<String> {
@@ -416,11 +435,11 @@ fn export_settings(path: String) -> AppResult<String> {
 }
 #[tauri::command]
 fn import_settings(path: String) -> AppResult<AppSnapshot> {
-    settings::import_settings(path)
+    with_snapshot_cache(settings::import_settings(path))
 }
 #[tauri::command]
 fn reset_settings() -> AppResult<AppSnapshot> {
-    settings::reset_settings()
+    with_snapshot_cache(settings::reset_settings())
 }
 #[tauri::command]
 fn create_app_backup(path: String) -> AppResult<String> {
@@ -428,7 +447,7 @@ fn create_app_backup(path: String) -> AppResult<String> {
 }
 #[tauri::command]
 fn restore_app_backup(path: String) -> AppResult<AppSnapshot> {
-    settings::restore_app_backup(path)
+    with_snapshot_cache(settings::restore_app_backup(path))
 }
 #[tauri::command]
 fn open_certificate_store() -> AppResult<()> {
@@ -452,7 +471,7 @@ fn open_terminal(path: String) -> AppResult<()> {
 }
 #[tauri::command]
 fn open_host(host_id: String) -> AppResult<AppSnapshot> {
-    settings::open_host(host_id)
+    with_snapshot_cache(settings::open_host(host_id))
 }
 #[tauri::command]
 fn open_database_admin(kind: String) -> AppResult<()> {
@@ -570,7 +589,11 @@ fn trash_path(path: String) -> AppResult<tools::TrashRecord> {
     tools::trash_path(path)
 }
 #[tauri::command]
-fn restore_trash_path(original_path: String, trash_path: String, overwrite: bool) -> AppResult<String> {
+fn restore_trash_path(
+    original_path: String,
+    trash_path: String,
+    overwrite: bool,
+) -> AppResult<String> {
     tools::restore_trash_path(original_path, trash_path, overwrite)
 }
 #[tauri::command]
@@ -594,7 +617,11 @@ fn chmod_path(path: String, mode: String, read_only: bool) -> AppResult<String> 
     tools::chmod_path(path, mode, read_only)
 }
 #[tauri::command]
-fn upload_files(sources: Vec<String>, destination: String, overwrite: bool) -> AppResult<Vec<String>> {
+fn upload_files(
+    sources: Vec<String>,
+    destination: String,
+    overwrite: bool,
+) -> AppResult<Vec<String>> {
     tools::upload_files(sources, destination, overwrite)
 }
 #[tauri::command]
@@ -606,19 +633,45 @@ fn create_archive(paths: Vec<String>, target: String) -> AppResult<String> {
     tools::create_archive(paths, target)
 }
 #[tauri::command]
-fn search_file_contents(root: String, query: String, regexp: bool, case_sensitive: bool) -> AppResult<Vec<tools::FileSearchResult>> {
+fn search_file_contents(
+    root: String,
+    query: String,
+    regexp: bool,
+    case_sensitive: bool,
+) -> AppResult<Vec<tools::FileSearchResult>> {
     tools::search_file_contents(root, query, regexp, case_sensitive)
 }
 #[tauri::command]
-fn search_file_contents_advanced(root: String, query: String, regexp: bool, case_sensitive: bool, include_extensions: String, exclude_folders: String, limit: usize) -> AppResult<Vec<tools::FileSearchResult>> {
-    tools::search_file_contents_advanced(root, query, regexp, case_sensitive, include_extensions, exclude_folders, limit)
+fn search_file_contents_advanced(
+    root: String,
+    query: String,
+    regexp: bool,
+    case_sensitive: bool,
+    include_extensions: String,
+    exclude_folders: String,
+    limit: usize,
+) -> AppResult<Vec<tools::FileSearchResult>> {
+    tools::search_file_contents_advanced(
+        root,
+        query,
+        regexp,
+        case_sensitive,
+        include_extensions,
+        exclude_folders,
+        limit,
+    )
 }
 #[tauri::command]
 fn list_archive_entries(path: String) -> AppResult<Vec<tools::ArchiveEntry>> {
     tools::list_archive_entries(path)
 }
 #[tauri::command]
-fn apply_windows_acl(path: String, identity: String, rights: String, inherit: bool) -> AppResult<String> {
+fn apply_windows_acl(
+    path: String,
+    identity: String,
+    rights: String,
+    inherit: bool,
+) -> AppResult<String> {
     tools::apply_windows_acl(path, identity, rights, inherit)
 }
 #[tauri::command]

@@ -463,7 +463,7 @@ export function CmsPage({
             </div>
             {projectChecks.length > 0 && (
               <div className="content-results compact-results">
-                {projectChecks.map((check) => <button key={check}><strong>{check}</strong></button>)}
+                {projectChecks.map((check) => <div className="content-result" key={check}><strong>{check}</strong></div>)}
               </div>
             )}
           </Panel>

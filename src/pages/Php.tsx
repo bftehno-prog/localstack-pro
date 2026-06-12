@@ -34,7 +34,7 @@ export function PhpPage({
   const [ini, setIni] = useState(php.ini);
   useEffect(() => {
     setIni(php.ini);
-  }, [php.version]);
+  }, [php.ini, php.version]);
   const installVersion = () => {
     void run(() => api.installPhpVersion("8.4"), { label: "Installing PHP 8.4..." });
   };

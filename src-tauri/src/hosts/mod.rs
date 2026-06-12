@@ -405,8 +405,6 @@ pub fn diagnose_host(host_id: String) -> AppResult<HostDiagnosticReport> {
             "Database mapping",
             if database.is_some() && db_service_running {
                 "ok"
-            } else if database.is_some() {
-                "warning"
             } else {
                 "warning"
             },

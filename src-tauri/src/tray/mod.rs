@@ -24,7 +24,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             } = event
             {
                 if matches!(button, MouseButton::Left | MouseButton::Right) {
-                    show_tray_panel(&tray.app_handle());
+                    show_tray_panel(tray.app_handle());
                 }
             }
         });

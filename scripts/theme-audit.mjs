@@ -16,9 +16,10 @@ const results = [];
 
 try {
   const page = await browser.newPage({ viewport: { width: 1366, height: 820 } });
+  page.setDefaultNavigationTimeout(30000);
   page.setDefaultTimeout(30000);
   for (const theme of themes) {
-    await page.goto(`${baseUrl}/#overview`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await gotoWithRetry(page, `${baseUrl}/#overview`);
     await page.waitForTimeout(400);
     await page.evaluate((themeName) => {
       const frame = document.querySelector(".app-frame");
@@ -58,27 +59,30 @@ if (summary.failures > 0) {
 function checkThemeContrast() {
   let fixture = document.querySelector("#theme-audit-fixture");
   if (!fixture) {
+    const host = document.querySelector(".app-frame") ?? document.body;
     fixture = document.createElement("div");
     fixture.id = "theme-audit-fixture";
     fixture.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:99999;display:flex;gap:8px;padding:8px;background:var(--card);border:1px solid var(--line)";
-    fixture.innerHTML = '<button class="btn">Button</button><button class="btn btn-primary">Primary</button><button class="btn btn-danger">Delete</button><span class="pill blue">Blue pill</span>';
-    document.body.appendChild(fixture);
+    fixture.innerHTML = '<button class="btn">Button</button><button class="btn btn-primary">Primary</button><button class="btn btn-danger">Delete</button><span class="pill blue">Blue pill</span><nav class="nav"><button class="active"><span>Active</span></button></nav>';
+    host.appendChild(fixture);
   }
   const targets = [
     [".btn", "button"],
     [".btn-primary", "primary button"],
     [".btn-danger", "danger button"],
-    [".nav button.active", "active nav"],
+    ["#theme-audit-fixture .nav button.active span", "active nav"],
     [".pill.blue", "blue pill"]
   ];
   return targets.map(([selector, label]) => {
-    const element = document.querySelector(selector);
+    const element = selector.includes(".nav")
+      ? document.querySelector(selector)
+      : fixture.querySelector(selector);
     if (!element) return { selector, label, ratio: 0, ok: false };
     const styles = getComputedStyle(element);
     const fg = rgb(styles.color);
-    const bg = effectiveBackground(element);
+    const bg = effectiveBackground(selector.includes(".nav") ? element.closest("button") : element);
     const ratio = contrast(fg, bg);
-    return { selector, label, ratio: Math.round(ratio * 100) / 100, ok: ratio >= 4.5 };
+    return { selector, label, ratio: Math.round(ratio * 100) / 100, ok: ratio >= 4.5, fg, bg };
   });
 
   function effectiveBackground(element) {
@@ -117,7 +121,7 @@ function checkThemeContrast() {
 }
 
 async function startServer() {
-  if (await isServerReady(`${baseUrl}/`)) return { pid: undefined };
+  if (await isServerReady(`${baseUrl}/`)) return { pid: undefined, kill: () => undefined };
   const command = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "npm";
   const args = process.platform === "win32"
     ? ["/d", "/s", "/c", `npm run dev -- --host 127.0.0.1 --port ${port}`]
@@ -125,12 +129,8 @@ async function startServer() {
   const child = spawn(command, args, { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BROWSER: "none" } });
   child.stdout.on("data", (data) => process.stdout.write(data));
   child.stderr.on("data", (data) => process.stderr.write(data));
-  const started = Date.now();
-  while (Date.now() - started < 30000) {
-    if (await isServerReady(`${baseUrl}/`)) return child;
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-  throw new Error("Theme audit server did not start.");
+  await waitForServer(`${baseUrl}/`);
+  return child;
 }
 
 async function launchBrowser() {
@@ -155,6 +155,15 @@ async function stopServer(server) {
   }
 }
 
+async function waitForServer(url) {
+  const started = Date.now();
+  while (Date.now() - started < 30000) {
+    if (await isServerReady(url)) return;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(`Theme audit server did not start at ${url}.`);
+}
+
 async function isServerReady(url) {
   try {
     const response = await fetch(url);
@@ -162,6 +171,22 @@ async function isServerReady(url) {
   } catch {
     return false;
   }
+}
+
+async function gotoWithRetry(page, url) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 10000 }).catch(() => undefined);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForLoadState("load", { timeout: 15000 }).catch(() => undefined);
+      return;
+    } catch (error) {
+      lastError = error;
+      await page.waitForTimeout(800);
+    }
+  }
+  throw lastError;
 }
 
 function renderHtml(summary) {

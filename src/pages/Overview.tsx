@@ -112,6 +112,7 @@ export function OverviewPage({
   };
   const storageKey = selected ? `localstack.accessLinks.${selected.id}` : "";
   const accessLinks = useMemo(() => {
+    void linksVersion;
     if (!selected || typeof window === "undefined") return [];
     try {
       return JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as Array<{ label: string; url: string }>;

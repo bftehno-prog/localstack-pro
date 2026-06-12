@@ -310,10 +310,10 @@ export function HostEditorPage({
             <Panel title="Changes Preview">
               <div className="content-results compact-results">
                 {hostDiff.map((row) => (
-                  <button key={row.key}>
+                  <div className="content-result" key={row.key}>
                     <strong>{row.key}</strong>
                     <span>{row.before} → {row.after}</span>
-                  </button>
+                  </div>
                 ))}
               </div>
             </Panel>

@@ -53,76 +53,76 @@ pub struct CmsInstallRequest {
 
 pub fn cms_templates() -> Vec<CmsTemplate> {
     vec![
-        template(
-            "nextjs",
-            "Next.js",
-            "React full-stack application with App Router and local dev server.",
-            "Node.js",
-            "localstack://node/nextjs",
-            ".",
-            false,
-            "MySQL",
-        ),
-        template(
-            "node-express",
-            "Node.js Express",
-            "Minimal Express application with local API routes.",
-            "Node.js",
-            "localstack://node/express",
-            ".",
-            false,
-            "MySQL",
-        ),
-        template(
-            "vite-react",
-            "Vite React",
-            "Fast React single-page application powered by Vite.",
-            "Node.js",
-            "localstack://node/vite-react",
-            ".",
-            false,
-            "MySQL",
-        ),
-        template(
-            "wordpress",
-            "WordPress",
-            "Classic PHP CMS for blogs, shops and company sites.",
-            "CMS",
-            "https://wordpress.org/latest.zip",
-            "public",
-            true,
-            "MySQL",
-        ),
-        template(
-            "joomla",
-            "Joomla",
-            "Full package from the official Joomla latest-release channel.",
-            "CMS",
-            "https://downloads.joomla.org/cms/joomla6/6-1-0/Joomla_6-1-0-Stable-Full_Package.zip?format=zip",
-            "public",
-            true,
-            "MySQL",
-        ),
-        template(
-            "drupal",
-            "Drupal",
-            "Latest recommended Drupal core ZIP from Drupal.org.",
-            "CMS",
-            "https://www.drupal.org/download-latest/zip",
-            "public",
-            true,
-            "MySQL",
-        ),
-        template(
-            "grav",
-            "Grav",
-            "Fast flat-file CMS, no database required.",
-            "Flat-file",
-            "https://getgrav.org/download/core/grav/latest",
-            "public",
-            false,
-            "MySQL",
-        ),
+        template(TemplateSpec {
+            id: "nextjs",
+            name: "Next.js",
+            description: "React full-stack application with App Router and local dev server.",
+            category: "Node.js",
+            download_url: "localstack://node/nextjs",
+            document_root: ".",
+            requires_database: false,
+            default_database_engine: "MySQL",
+        }),
+        template(TemplateSpec {
+            id: "node-express",
+            name: "Node.js Express",
+            description: "Minimal Express application with local API routes.",
+            category: "Node.js",
+            download_url: "localstack://node/express",
+            document_root: ".",
+            requires_database: false,
+            default_database_engine: "MySQL",
+        }),
+        template(TemplateSpec {
+            id: "vite-react",
+            name: "Vite React",
+            description: "Fast React single-page application powered by Vite.",
+            category: "Node.js",
+            download_url: "localstack://node/vite-react",
+            document_root: ".",
+            requires_database: false,
+            default_database_engine: "MySQL",
+        }),
+        template(TemplateSpec {
+            id: "wordpress",
+            name: "WordPress",
+            description: "Classic PHP CMS for blogs, shops and company sites.",
+            category: "CMS",
+            download_url: "https://wordpress.org/latest.zip",
+            document_root: "public",
+            requires_database: true,
+            default_database_engine: "MySQL",
+        }),
+        template(TemplateSpec {
+            id: "joomla",
+            name: "Joomla",
+            description: "Full package from the official Joomla latest-release channel.",
+            category: "CMS",
+            download_url: "https://downloads.joomla.org/cms/joomla6/6-1-0/Joomla_6-1-0-Stable-Full_Package.zip?format=zip",
+            document_root: "public",
+            requires_database: true,
+            default_database_engine: "MySQL",
+        }),
+        template(TemplateSpec {
+            id: "drupal",
+            name: "Drupal",
+            description: "Latest recommended Drupal core ZIP from Drupal.org.",
+            category: "CMS",
+            download_url: "https://www.drupal.org/download-latest/zip",
+            document_root: "public",
+            requires_database: true,
+            default_database_engine: "MySQL",
+        }),
+        template(TemplateSpec {
+            id: "grav",
+            name: "Grav",
+            description: "Fast flat-file CMS, no database required.",
+            category: "Flat-file",
+            download_url: "https://getgrav.org/download/core/grav/latest",
+            document_root: "public",
+            requires_database: false,
+            default_database_engine: "MySQL",
+        }),
     ]
 }
 
@@ -305,25 +305,27 @@ pub fn install_cms(request: CmsInstallRequest) -> AppResult<crate::state::AppSna
     Ok(snapshot)
 }
 
-fn template(
-    id: &str,
-    name: &str,
-    description: &str,
-    category: &str,
-    download_url: &str,
-    document_root: &str,
+struct TemplateSpec<'a> {
+    id: &'a str,
+    name: &'a str,
+    description: &'a str,
+    category: &'a str,
+    download_url: &'a str,
+    document_root: &'a str,
     requires_database: bool,
-    default_database_engine: &str,
-) -> CmsTemplate {
+    default_database_engine: &'a str,
+}
+
+fn template(spec: TemplateSpec<'_>) -> CmsTemplate {
     CmsTemplate {
-        id: id.to_string(),
-        name: name.to_string(),
-        description: description.to_string(),
-        category: category.to_string(),
-        download_url: download_url.to_string(),
-        document_root: document_root.to_string(),
-        requires_database,
-        default_database_engine: default_database_engine.to_string(),
+        id: spec.id.to_string(),
+        name: spec.name.to_string(),
+        description: spec.description.to_string(),
+        category: spec.category.to_string(),
+        download_url: spec.download_url.to_string(),
+        document_root: spec.document_root.to_string(),
+        requires_database: spec.requires_database,
+        default_database_engine: spec.default_database_engine.to_string(),
     }
 }
 
@@ -884,10 +886,8 @@ fn ensure_database(
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| {
-            format!(
-                "lsp_{}",
-                Uuid::new_v4().simple().to_string()[..12].to_string()
-            )
+            let token = Uuid::new_v4().simple().to_string();
+            format!("lsp_{}", &token[..12])
         });
     let database = DatabaseInfo {
         id: db_name.clone(),
@@ -1097,15 +1097,15 @@ fn validate_installed_cms(
         if !public.join("configuration.php").is_file() {
             issues.push("configuration.php is missing".to_string());
         }
-    } else if template.id == "drupal" && database.is_some() {
-        if !public
+    } else if template.id == "drupal"
+        && database.is_some()
+        && !public
             .join("sites")
             .join("default")
             .join("settings.php")
             .is_file()
-        {
-            issues.push("sites/default/settings.php is missing".to_string());
-        }
+    {
+        issues.push("sites/default/settings.php is missing".to_string());
     }
     if issues.is_empty() {
         Ok(())

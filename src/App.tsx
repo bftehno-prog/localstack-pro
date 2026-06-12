@@ -1,23 +1,23 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Shell } from "./components/Shell";
 import { TrayPanel } from "./components/TrayPanel";
 import { Button } from "./components/Button";
 import { useAppState } from "./stores/useAppState";
 import type { HostInfo, PageKey, ServiceInfo } from "./ui/types";
-import { OverviewPage } from "./pages/Overview";
-import { HostsPage } from "./pages/Hosts";
-import { HostEditorPage } from "./pages/HostEditor";
-import { ServicesPage } from "./pages/Services";
-import { PhpPage } from "./pages/Php";
-import { DatabasePage } from "./pages/Database";
-import { CmsPage } from "./pages/Cms";
-import { SslPage } from "./pages/Ssl";
-import { LogsPage } from "./pages/Logs";
-import { SettingsPage } from "./pages/Settings";
 import { I18nProvider, useT } from "./ui/i18n";
 import { api } from "./ui/api";
 
+const OverviewPage = lazy(() => import("./pages/Overview").then((module) => ({ default: module.OverviewPage })));
+const HostsPage = lazy(() => import("./pages/Hosts").then((module) => ({ default: module.HostsPage })));
+const HostEditorPage = lazy(() => import("./pages/HostEditor").then((module) => ({ default: module.HostEditorPage })));
+const ServicesPage = lazy(() => import("./pages/Services").then((module) => ({ default: module.ServicesPage })));
+const PhpPage = lazy(() => import("./pages/Php").then((module) => ({ default: module.PhpPage })));
+const DatabasePage = lazy(() => import("./pages/Database").then((module) => ({ default: module.DatabasePage })));
+const CmsPage = lazy(() => import("./pages/Cms").then((module) => ({ default: module.CmsPage })));
+const SslPage = lazy(() => import("./pages/Ssl").then((module) => ({ default: module.SslPage })));
+const LogsPage = lazy(() => import("./pages/Logs").then((module) => ({ default: module.LogsPage })));
+const SettingsPage = lazy(() => import("./pages/Settings").then((module) => ({ default: module.SettingsPage })));
 const FilesPage = lazy(() => import("./pages/Files").then((module) => ({ default: module.FilesPage })));
 
 export default function App() {
@@ -27,6 +27,11 @@ export default function App() {
   const [editingHost, setEditingHost] = useState<HostInfo | undefined>();
   const [selectedService, setSelectedService] = useState<ServiceInfo | undefined>();
   const [showFirstRun, setShowFirstRun] = useState(() => localStorage.getItem("localstack.firstRunDone") !== "true");
+  const setPage = useCallback((next: PageKey) => {
+    setPageState(next);
+    const hash = `#${next}`;
+    if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
+  }, []);
 
   useEffect(() => {
     const handleHash = () => setPageState(pageFromHash());
@@ -48,12 +53,7 @@ export default function App() {
       unsubscribe = value;
     });
     return () => unsubscribe?.();
-  }, []);
-  const setPage = (next: PageKey) => {
-    setPageState(next);
-    const hash = `#${next}`;
-    if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
-  };
+  }, [setPage]);
 
   if (loading || !state) return <div className="boot-screen">LocalStack Pro</div>;
   if (window.location.hash.replace(/^#/, "") === "tray") {
@@ -174,7 +174,7 @@ function AppContent({
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, []);
+  }, [run, setPage]);
   const commands = useMemo(() => [
     ...pageKeys.filter((key) => key !== "host-editor").map((key) => ({
       label: key === "php" ? "PHP" : key.charAt(0).toUpperCase() + key.slice(1),
@@ -210,18 +210,20 @@ function AppContent({
           close={() => setPaletteOpen(false)}
         />
       )}
-      {showFirstRun && <FirstRunWizard setPage={setPage} run={run} finish={finishFirstRun} />}
-      {page === "overview" && <OverviewPage state={state} run={run} selectedHost={selectedHost} selectHost={setSelectedHost} editHost={editHost} />}
-      {page === "hosts" && <HostsPage state={state} run={run} selected={selectedHost} setSelected={setSelectedHost} editHost={editHost} />}
-      {page === "host-editor" && <HostEditorPage state={state} initial={editingHost} run={run} back={() => setPage("hosts")} />}
-      {page === "services" && <ServicesPage state={state} run={run} selected={selectedService} setSelected={setSelectedService} />}
-      {page === "php" && <PhpPage state={state} run={run} />}
-      {page === "database" && <DatabasePage state={state} run={run} />}
-      {page === "cms" && <CmsPage state={state} run={run} />}
-      {page === "ssl" && <SslPage state={state} run={run} />}
-      {page === "logs" && <LogsPage state={state} run={run} />}
-      {page === "files" && <Suspense fallback={<div className="boot-screen">File Manager</div>}><FilesPage state={state} run={run} /></Suspense>}
-      {page === "settings" && <SettingsPage state={state} run={run} />}
+      <Suspense fallback={<div className="boot-screen">LocalStack Pro</div>}>
+        {showFirstRun && <FirstRunWizard setPage={setPage} run={run} finish={finishFirstRun} />}
+        {page === "overview" && <OverviewPage state={state} run={run} selectedHost={selectedHost} selectHost={setSelectedHost} editHost={editHost} />}
+        {page === "hosts" && <HostsPage state={state} run={run} selected={selectedHost} setSelected={setSelectedHost} editHost={editHost} />}
+        {page === "host-editor" && <HostEditorPage state={state} initial={editingHost} run={run} back={() => setPage("hosts")} />}
+        {page === "services" && <ServicesPage state={state} run={run} selected={selectedService} setSelected={setSelectedService} />}
+        {page === "php" && <PhpPage state={state} run={run} />}
+        {page === "database" && <DatabasePage state={state} run={run} />}
+        {page === "cms" && <CmsPage state={state} run={run} />}
+        {page === "ssl" && <SslPage state={state} run={run} />}
+        {page === "logs" && <LogsPage state={state} run={run} />}
+        {page === "files" && <FilesPage state={state} run={run} />}
+        {page === "settings" && <SettingsPage state={state} run={run} />}
+      </Suspense>
     </Shell>
   );
 }
@@ -344,9 +346,10 @@ function errorHelp(message: string) {
 
 function useNativeTooltips(t: (value: string) => string | number | null | undefined, page: PageKey) {
   useEffect(() => {
+    const root = document.querySelector(".app-frame") ?? document.body;
     const apply = () => {
-      document.querySelectorAll<HTMLElement>("button, a, input, select, textarea, [role='button']").forEach((element) => {
-        if (element.title && element.dataset.autoTooltip !== "1") return;
+      root.querySelectorAll<HTMLElement>("button, a, input, select, textarea, [role='button']").forEach((element) => {
+        if (element.title) return;
         const aria = element.getAttribute("aria-label")?.trim();
         const placeholder = element.getAttribute("placeholder")?.trim();
         const text = element.textContent?.replace(/\s+/g, " ").trim();
@@ -357,9 +360,22 @@ function useNativeTooltips(t: (value: string) => string | number | null | undefi
         }
       });
     };
-    apply();
-    const observer = new MutationObserver(apply);
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
+    let scheduled = false;
+    let frame = 0;
+    const scheduleApply = () => {
+      if (scheduled) return;
+      scheduled = true;
+      frame = window.requestAnimationFrame(() => {
+        scheduled = false;
+        apply();
+      });
+    };
+    scheduleApply();
+    const observer = new MutationObserver(scheduleApply);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+    };
   }, [page, t]);
 }

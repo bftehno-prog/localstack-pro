@@ -299,10 +299,10 @@ export function SettingsPage({
             </div>
             <div className="content-results compact-results">
               {uiIssues.map((issue, index) => (
-                <button key={`${issue.type}-${index}`}>
+                <div className="content-result" key={`${issue.type}-${index}`}>
                   <strong>{issue.type}: {issue.target}</strong>
                   <span>{issue.detail}</span>
-                </button>
+                </div>
               ))}
               {!uiIssues.length && <div className="empty-row">Run UI Health to check current screen.</div>}
             </div>

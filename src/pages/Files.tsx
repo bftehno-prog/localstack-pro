@@ -1,10 +1,4 @@
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { markdown } from "@codemirror/lang-markdown";
-import { php } from "@codemirror/lang-php";
-import { sql } from "@codemirror/lang-sql";
+import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -33,7 +27,7 @@ import {
   Undo2,
   Upload
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { api } from "../ui/api";
@@ -158,12 +152,13 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const [previewPath, setPreviewPath] = useState("");
   const cancelledOperations = useRef(new Set<string>());
   const folderCache = useRef(new Map<string, { time: number; entries: FileEntry[] }>());
+  const saveFileRef = useRef<() => Promise<void>>(async () => undefined);
+  const initialFoldersLoaded = useRef(false);
 
   const dirty = openedFile ? content !== savedContent : false;
   const pane = activePane === "left" ? leftPane : rightPane;
   const otherPane = activePane === "left" ? rightPane : leftPane;
   const selected = pane.selected;
-  const selectedPath = selected?.path ?? openedFile?.path ?? pane.folder;
   const selectedEntries = useMemo(() => {
     const paths = new Set(selectedPaths[activePane]);
     const entries = pane.entries.filter((entry) => paths.has(entry.path));
@@ -175,24 +170,25 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   ], [favorites, roots]);
   const selectedFilesLabel = selectedEntries.length > 1 ? `${selectedEntries.length} files` : selectedEntries[0]?.name ?? "";
   const editorMatches = useMemo(() => countMatches(content, editorSearch, editorRegexp, caseSensitive), [caseSensitive, content, editorRegexp, editorSearch]);
-  const jsonError = useMemo(() => validateJson(content, openedFile?.language ?? openedFile?.path ?? ""), [content, openedFile]);
-  const codeDiagnostics = useMemo(() => quickCodeDiagnostics(content, openedFile?.language ?? openedFile?.path ?? ""), [content, openedFile]);
+  const [jsonError, setJsonError] = useState("");
+  const [codeDiagnostics, setCodeDiagnostics] = useState<string[]>([]);
+  const [languageExtensions, setLanguageExtensions] = useState<Extension[]>([]);
+  const diagnosticsDisabled = content.length > 1_500_000;
 
-  const setPane = (key: PaneKey, next: PaneState | ((current: PaneState) => PaneState)) => {
+  const setPane = useCallback((key: PaneKey, next: PaneState | ((current: PaneState) => PaneState)) => {
     if (key === "left") setLeftPane(next);
     else setRightPane(next);
-  };
+  }, []);
 
-  const setPaneSelectedPaths = (key: PaneKey, paths: string[]) => {
+  const setPaneSelectedPaths = useCallback((key: PaneKey, paths: string[]) => {
     setSelectedPaths((current) => ({ ...current, [key]: paths }));
-  };
+  }, []);
 
   const runFileOperation = async (label: string, total: number, action: (helpers: { isCancelled: () => boolean; progress: (completed: number) => void }) => Promise<void>) => {
     const id = crypto.randomUUID();
     const operation: FileOperation = { id, label, status: "running", completed: 0, total };
     setOperationQueue((current) => [operation, ...current].slice(0, 8));
     try {
-      folderCache.current.clear();
       await action({
         isCancelled: () => cancelledOperations.current.has(id),
         progress: (completed) => setOperationQueue((current) => current.map((item) => item.id === id ? { ...item, completed } : item))
@@ -215,16 +211,16 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     setEditorTabs((current) => current.map((tab) => tab.path === file.path ? { ...tab, ...file, draftContent: nextContent, savedContent: nextSavedContent, encoding } : tab));
   };
 
-  const refresh = async (key: PaneKey = activePane, target?: string, pushHistory = true) => {
+  const refresh = useCallback(async (key: PaneKey = activePane, target?: string, pushHistory = true) => {
     const current = key === "left" ? leftPane : rightPane;
     const folder = target ?? current.folder;
     const cached = folderCache.current.get(folder);
-    if (cached && Date.now() - cached.time < 5000) {
+    if (cached && Date.now() - cached.time < 20000) {
       setPane(key, { ...current, folder, entries: cached.entries, selected: null });
       setPaneSelectedPaths(key, []);
       return;
     }
-    const result = await run(() => api.listFiles(folder), { label: `Reading ${folder}...` });
+    const result = await run(() => api.listFiles(folder), { label: `Reading ${folder}...`, serial: false });
     if (Array.isArray(result)) {
       folderCache.current.set(folder, { time: Date.now(), entries: result as FileEntry[] });
       if (pushHistory && folder !== current.folder) {
@@ -236,7 +232,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       setPane(key, { ...current, folder, entries: result as FileEntry[], selected: null });
       setPaneSelectedPaths(key, []);
     }
-  };
+  }, [activePane, leftPane, rightPane, run, setPane, setPaneSelectedPaths]);
 
   const navigateHistory = async (key: PaneKey, direction: "back" | "forward") => {
     const current = key === "left" ? leftPane : rightPane;
@@ -296,7 +292,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       if (showModal) setEditorOpen(true);
       return;
     }
-    const result = await run(() => api.readFileWithEncoding(path, fileEncoding), { label: `Opening ${fileName(path)}...` });
+    const result = await run(() => api.readFileWithEncoding(path, fileEncoding), { label: `Opening ${fileName(path)}...`, serial: false });
     if (result && typeof result === "object" && "content" in result) {
       const file = result as ConfigFile;
       setOpenedFile(file);
@@ -344,6 +340,13 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     await refresh(activePane);
   };
 
+  const invalidateVisibleFolders = () => {
+    folderCache.current.delete(leftPane.folder);
+    folderCache.current.delete(rightPane.folder);
+    folderCache.current.delete(pane.folder);
+    folderCache.current.delete(otherPane.folder);
+  };
+
   const createFile = async () => {
     const name = nameInput.trim();
     if (!name) return;
@@ -372,6 +375,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const target = targetPath.trim() || (toOtherPane ? otherPane.folder : pane.folder);
     const created: string[] = [];
     await runFileOperation(`Copy ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
         const result = await run(() => api.copyPath(item.path, target, overwrite), { label: `Copying ${item.name}...`, silent: selectedEntries.length > 1 });
@@ -389,6 +393,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const target = targetPath.trim() || (toOtherPane ? otherPane.folder : pane.folder);
     const moved: Array<{ from: string; to: string }> = [];
     await runFileOperation(`Move ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
         const result = await run(() => api.movePath(item.path, target, overwrite), { label: `Moving ${item.name}...`, silent: selectedEntries.length > 1 });
@@ -406,6 +411,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     if (!selectedEntries.length) return;
     const trashed: TrashRecord[] = [];
     await runFileOperation(`Delete ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
         const result = await run(() => api.trashPath(item.path), { label: `Moving ${item.name} to trash...`, silent: selectedEntries.length > 1 });
@@ -429,6 +435,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     setLastUndo(null);
     const total = (action.restoreItems?.length ?? 0) + (action.moveBack?.length ?? 0) + (action.removeCreated?.length ?? 0);
     await runFileOperation(action.label, Math.max(1, total), async ({ progress }) => {
+      invalidateVisibleFolders();
       let completed = 0;
       for (const item of action.restoreItems ?? []) {
         await run(() => api.restoreTrashPath(item.originalPath, item.trashPath, overwrite), { label: `Restoring ${item.name}...`, silent: true });
@@ -464,6 +471,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const emptyTrash = async () => {
     if (!trashItems.length) return;
     await runFileOperation(`Empty trash`, trashItems.length, async ({ progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of trashItems.entries()) {
         await run(() => api.deletePath(item.trashPath), { label: `Deleting ${item.name}...`, silent: true }).catch(() => undefined);
         progress(index + 1);
@@ -477,6 +485,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     if (!selectedEntries.length || !bulkFind) return;
     const moved: Array<{ from: string; to: string }> = [];
     await runFileOperation(`Bulk rename ${selectedEntries.length} item(s)`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
         const nextName = renameWithPattern(item.name, bulkFind, bulkReplace, bulkRegexp);
@@ -511,6 +520,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const destination = key === "left" ? leftPane.folder : rightPane.folder;
     const sourceEntries = paths.map((path) => ({ path, name: fileName(path) }));
     await runFileOperation(`${mode === "copy" ? "Copy" : "Move"} ${paths.length} item(s)`, paths.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of sourceEntries.entries()) {
         if (isCancelled()) break;
         if (mode === "copy") await run(() => api.copyPath(item.path, destination, overwrite), { label: `Copying ${item.name}...`, silent: true });
@@ -526,6 +536,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     if (!selectedEntries.length) return;
     const readOnly = ["400", "440", "444", "500", "550", "555"].includes(chmodMode.trim());
     await runFileOperation(`chmod ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
         await run(() => api.chmodPath(item.path, chmodMode, readOnly), { label: `Changing permissions for ${item.name}...`, silent: selectedEntries.length > 1 });
@@ -541,6 +552,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     const sources = Array.isArray(selectedFiles) ? selectedFiles : selectedFiles ? [selectedFiles] : [];
     if (!sources.length) return;
     await run(() => api.uploadFiles(sources, pane.folder, overwrite), { label: `Uploading ${sources.length} file(s)...` });
+    invalidateVisibleFolders();
     await refresh(activePane);
   };
 
@@ -551,6 +563,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       .filter((path): path is string => Boolean(path));
     if (!sources.length) return;
     await runFileOperation(`Upload ${sources.length} file(s)`, sources.length, async ({ progress }) => {
+      invalidateVisibleFolders();
       await run(() => api.uploadFiles(sources, destination, overwrite), { label: `Uploading ${sources.length} file(s)...` });
       progress(sources.length);
       await refresh(key);
@@ -561,6 +574,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     if (!selectedEntries.length) return;
     const archives = selectedEntries.filter((item) => item.kind === "file");
     await runFileOperation(`Extract ${archives.length} archive(s)`, archives.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of archives.entries()) {
         if (isCancelled()) break;
         await run(() => api.extractArchiveTo(item.path, targetPath.trim() || pane.folder), { label: `Extracting ${item.name}...`, silent: archives.length > 1 });
@@ -582,6 +596,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     }
     const paths = selectedEntries.map((item) => item.path);
     await runFileOperation(`Archive ${selectedFilesLabel}`, selectedEntries.length, async ({ progress }) => {
+      invalidateVisibleFolders();
       await run(() => api.createArchive(paths, target), { label: `Creating archive ${fileName(target)}...` });
       progress(selectedEntries.length);
       setArchivePath(target);
@@ -592,18 +607,21 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const saveFile = async () => {
     if (!openedFile || openedFile.readOnly) return;
     await run(() => api.writeFileWithEncoding(openedFile.path, content, encoding), { label: `Saving ${openedFile.path}...` });
+    invalidateVisibleFolders();
     setSavedContent(content);
     setEditorTabs((current) => current.map((tab) => tab.path === openedFile.path ? { ...tab, draftContent: content, savedContent: content, encoding } : tab));
     setEditorMessage("Saved.");
     await refresh("left");
     await refresh("right");
   };
+  saveFileRef.current = saveFile;
 
   const saveFileAs = async () => {
     if (!openedFile) return;
     const target = await saveDialog({ defaultPath: openedFile.path });
     if (!target) return;
     await run(() => api.writeFileWithEncoding(target, content, encoding), { label: `Saving ${target}...` });
+    invalidateVisibleFolders();
     await openFile(target, encoding, true);
     await refresh("left");
     await refresh("right");
@@ -653,7 +671,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       setContentResults([]);
       return;
     }
-    const result = await run(() => api.searchFileContentsAdvanced(pane.folder, contentSearch, editorRegexp, caseSensitive, includeExtensions, excludeFolders, 1000), { label: `Searching ${pane.folder}...` });
+    const result = await run(() => api.searchFileContentsAdvanced(pane.folder, contentSearch, editorRegexp, caseSensitive, includeExtensions, excludeFolders, 1000), { label: `Searching ${pane.folder}...`, serial: false });
     if (Array.isArray(result)) setContentResults(result as FileSearchResult[]);
   };
 
@@ -713,13 +731,14 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const previewArchive = async () => {
     const entry = selectedEntries[0];
     if (!entry || entry.kind !== "file") return;
-    const result = await run(() => api.listArchiveEntries(entry.path), { label: `Reading archive ${entry.name}...` });
+    const result = await run(() => api.listArchiveEntries(entry.path), { label: `Reading archive ${entry.name}...`, serial: false });
     if (Array.isArray(result)) setArchiveEntries(result as ArchiveEntry[]);
   };
 
   const applyAcl = async () => {
     if (!selectedEntries.length) return;
     await runFileOperation(`ACL ${selectedFilesLabel}`, selectedEntries.length, async ({ isCancelled, progress }) => {
+      invalidateVisibleFolders();
       for (const [index, item] of selectedEntries.entries()) {
         if (isCancelled()) break;
         await run(() => api.applyWindowsAcl(item.path, aclIdentity, aclRights, aclInherit), { label: `Applying ACL to ${item.name}...`, silent: selectedEntries.length > 1 });
@@ -761,9 +780,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   };
 
   useEffect(() => {
+    if (initialFoldersLoaded.current) return;
+    initialFoldersLoaded.current = true;
     void refresh("left", roots[0]?.path ?? state.appDataDir);
     void refresh("right", state.appDataDir);
-  }, [state.appDataDir]);
+  }, [refresh, roots, state.appDataDir]);
 
   useEffect(() => {
     try {
@@ -791,13 +812,37 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   }, [content, encoding, openedFile, savedContent]);
 
   useEffect(() => {
+    let cancelled = false;
+    void loadLanguageExtension(openedFile?.language ?? openedFile?.path ?? "").then((extension) => {
+      if (!cancelled) setLanguageExtensions(extension);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [openedFile?.language, openedFile?.path]);
+
+  useEffect(() => {
+    if (!openedFile || diagnosticsDisabled) {
+      setJsonError("");
+      setCodeDiagnostics(diagnosticsDisabled ? ["Diagnostics disabled for large files."] : []);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const language = openedFile.language ?? openedFile.path;
+      setJsonError(validateJson(content, language));
+      setCodeDiagnostics(quickCodeDiagnostics(content, language));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [content, diagnosticsDisabled, openedFile]);
+
+  useEffect(() => {
     if (!editorOpen) return;
     const handleKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === "s") {
         event.preventDefault();
-        void saveFile();
+        void saveFileRef.current();
       } else if (key === "f") {
         event.preventDefault();
         setShowReplace(false);
@@ -815,7 +860,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   useEffect(() => {
     if (!editorOpen || !openedFile) return;
     const timer = window.setInterval(async () => {
-      if (dirty) return;
+      if (dirty || document.hidden) return;
       try {
         const fresh = await api.readFileWithEncoding(openedFile.path, encoding);
         if (fresh.modified && openedFile.modified && fresh.modified !== openedFile.modified) {
@@ -830,7 +875,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
 
   useEffect(() => {
     if (!autosave || !dirty || !openedFile || openedFile.readOnly) return;
-    const timer = window.setTimeout(() => void saveFile(), Math.max(5, autosaveSeconds) * 1000);
+    const timer = window.setTimeout(() => void saveFileRef.current(), Math.max(5, autosaveSeconds) * 1000);
     return () => window.clearTimeout(timer);
   }, [autosave, autosaveSeconds, dirty, openedFile, content]);
 
@@ -902,10 +947,10 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
           </div>
           <div className="content-results compact-results">
             {compareRows.map((row) => (
-              <button key={`${row.status}-${row.name}`} title={row.name}>
+              <div className="content-result" key={`${row.status}-${row.name}`} title={row.name}>
                 <strong>{row.name}</strong>
                 <span>{row.status} · {row.left ? formatSize(row.left.size) : "-"} / {row.right ? formatSize(row.right.size) : "-"}</span>
-              </button>
+              </div>
             ))}
             {!compareRows.length && <div className="empty-row">{t("No folder comparison yet.")}</div>}
           </div>
@@ -914,11 +959,11 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
         <Panel title="Trash" action={<Button variant="danger" disabled={!trashItems.length} onClick={() => void emptyTrash()}>Empty</Button>}>
           <div className="content-results compact-results">
             {trashItems.slice(0, 20).map((item) => (
-              <button key={item.trashPath} title={item.originalPath}>
+              <div className="content-result" key={item.trashPath} title={item.originalPath}>
                 <strong>{item.name}</strong>
                 <span>{item.kind} · {item.originalPath}</span>
-                <small onClick={(event) => { event.stopPropagation(); void restoreTrashItem(item); }}>{t("Restore")}</small>
-              </button>
+                <button className="inline-action" onClick={(event) => { event.stopPropagation(); void restoreTrashItem(item); }}>{t("Restore")}</button>
+              </div>
             ))}
             {!trashItems.length && <div className="empty-row">{t("Trash is empty.")}</div>}
           </div>
@@ -975,10 +1020,10 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
             </div>
             <div className="content-results">
               {archiveEntries.slice(0, 80).map((entry) => (
-                <button key={`${entry.path}:${entry.size}`} title={entry.path}>
+                <div className="content-result" key={`${entry.path}:${entry.size}`} title={entry.path}>
                   <strong>{entry.path}</strong>
                   <span>{entry.kind} · {formatSize(entry.size)}</span>
-                </button>
+                </div>
               ))}
             </div>
             <div className="content-results">
@@ -1062,7 +1107,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <CodeMirror
                 value={content}
                 height="calc(100vh - 260px)"
-                extensions={[languageExtension(openedFile.language ?? openedFile.path), editorTheme, wrapLines ? EditorView.lineWrapping : []]}
+                extensions={[...languageExtensions, editorTheme, wrapLines ? EditorView.lineWrapping : []]}
                 basicSetup={{ searchKeymap: true, foldGutter: true, highlightActiveLine: true, highlightSelectionMatches: true }}
                 editable={!openedFile.readOnly}
                 onChange={(value) => {
@@ -1440,16 +1485,16 @@ function buildLineDiff(leftName: string, left: string, rightName: string, right:
   return output.length > 2 ? output.join("\n") : "No differences.";
 }
 
-function languageExtension(languageOrPath: string) {
+async function loadLanguageExtension(languageOrPath: string): Promise<Extension[]> {
   const value = languageOrPath.toLowerCase();
-  if (value.includes("php") || value.endsWith(".php") || value.endsWith(".phtml")) return php();
-  if (value.includes("typescript") || value.endsWith(".ts") || value.endsWith(".tsx")) return javascript({ typescript: true, jsx: value.endsWith(".tsx") });
-  if (value.includes("javascript") || value.includes("react") || value.endsWith(".js") || value.endsWith(".jsx")) return javascript({ jsx: true });
-  if (value.includes("html") || value.endsWith(".html") || value.endsWith(".htm")) return html();
-  if (value.includes("css") || value.endsWith(".css") || value.endsWith(".scss")) return css();
-  if (value.includes("json") || value.endsWith(".json")) return json();
-  if (value.includes("markdown") || value.endsWith(".md")) return markdown();
-  if (value.includes("sql") || value.endsWith(".sql")) return sql();
+  if (value.includes("php") || value.endsWith(".php") || value.endsWith(".phtml")) return [(await import("@codemirror/lang-php")).php()];
+  if (value.includes("typescript") || value.endsWith(".ts") || value.endsWith(".tsx")) return [(await import("@codemirror/lang-javascript")).javascript({ typescript: true, jsx: value.endsWith(".tsx") })];
+  if (value.includes("javascript") || value.includes("react") || value.endsWith(".js") || value.endsWith(".jsx")) return [(await import("@codemirror/lang-javascript")).javascript({ jsx: true })];
+  if (value.includes("html") || value.endsWith(".html") || value.endsWith(".htm")) return [(await import("@codemirror/lang-html")).html()];
+  if (value.includes("css") || value.endsWith(".css") || value.endsWith(".scss")) return [(await import("@codemirror/lang-css")).css()];
+  if (value.includes("json") || value.endsWith(".json")) return [(await import("@codemirror/lang-json")).json()];
+  if (value.includes("markdown") || value.endsWith(".md")) return [(await import("@codemirror/lang-markdown")).markdown()];
+  if (value.includes("sql") || value.endsWith(".sql")) return [(await import("@codemirror/lang-sql")).sql()];
   return [];
 }
 
