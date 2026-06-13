@@ -84,6 +84,16 @@ pub fn cms_templates() -> Vec<CmsTemplate> {
             default_database_engine: "MySQL",
         }),
         template(TemplateSpec {
+            id: "meteor-blog-cms",
+            name: "Meteor Blog CMS",
+            description: "Meteor 3 + Blaze blog CMS with admin area and local MongoDB.",
+            category: "Node.js",
+            download_url: "localstack://node/meteor-blog-cms",
+            document_root: ".",
+            requires_database: false,
+            default_database_engine: "MySQL",
+        }),
+        template(TemplateSpec {
             id: "wordpress",
             name: "WordPress",
             description: "Classic PHP CMS for blogs, shops and company sites.",
@@ -242,6 +252,9 @@ pub fn install_cms(request: CmsInstallRequest) -> AppResult<crate::state::AppSna
         updated_at: now.clone(),
     };
     let _ = hosts::save_host(host)?;
+    if template.id == "meteor-blog-cms" {
+        cleanup_meteor_project_after_host_save(&root)?;
+    }
 
     let store = Store::new()?;
     let mut snapshot = store.load_static()?;
@@ -330,7 +343,10 @@ fn template(spec: TemplateSpec<'_>) -> CmsTemplate {
 }
 
 fn is_node_template(template_id: &str) -> bool {
-    matches!(template_id, "nextjs" | "node-express" | "vite-react")
+    matches!(
+        template_id,
+        "nextjs" | "node-express" | "vite-react" | "meteor-blog-cms"
+    )
 }
 
 fn install_node_project(
@@ -358,7 +374,15 @@ fn install_node_project(
     fs::create_dir_all(&root)
         .map_err(|err| format!("Cannot create Node.js project folder: {err}"))?;
     if request.overwrite || !root.join("package.json").is_file() {
-        write_node_template_files(&template.id, &template.name, &root, &request)?;
+        if template.id == "meteor-blog-cms" {
+            copy_bundled_meteor_project(&root, request.overwrite)?;
+        } else {
+            write_node_template_files(&template.id, &template.name, &root, &request)?;
+        }
+    }
+    if template.id == "meteor-blog-cms" {
+        prepare_meteor_project(&root)?;
+        ensure_meteor_runtime()?;
     }
     ensure_node_runtime(&snapshot)?;
     npm_install(&root)?;
@@ -370,7 +394,25 @@ fn install_node_project(
     env.insert("APP_URL".to_string(), format!("http://{}", request.domain));
     env.insert("LOCALSTACK_NODE_PORT".to_string(), port.to_string());
     env.insert("LOCALSTACK_NODE_SCRIPT".to_string(), "dev".to_string());
-    env.insert("LOCALSTACK_NODE_KIND".to_string(), template.id.clone());
+    env.insert(
+        "LOCALSTACK_NODE_KIND".to_string(),
+        if template.id == "meteor-blog-cms" {
+            "meteor".to_string()
+        } else {
+            template.id.clone()
+        },
+    );
+    if template.id == "meteor-blog-cms" {
+        env.insert("ROOT_URL".to_string(), format!("http://{}", request.domain));
+        env.insert(
+            "TOOL_NODE_FLAGS".to_string(),
+            "--max-old-space-size=8192".to_string(),
+        );
+        env.insert(
+            "METEOR_SETTINGS".to_string(),
+            root.join("settings.json").display().to_string(),
+        );
+    }
 
     let host = HostInfo {
         id: request.domain.clone(),
@@ -389,7 +431,15 @@ fn install_node_project(
         rewrite_rules: String::new(),
         notes: format!("{} installed by LocalStack Pro.", template.name),
         status: ServiceStatus::Stopped,
-        tags: vec!["node".to_string(), template.id.clone()],
+        tags: if template.id == "meteor-blog-cms" {
+            vec![
+                "node".to_string(),
+                "meteor".to_string(),
+                template.id.clone(),
+            ]
+        } else {
+            vec!["node".to_string(), template.id.clone()]
+        },
         created_at: existing_host
             .as_ref()
             .map(|host| host.created_at.clone())
@@ -443,6 +493,260 @@ fn install_node_project(
             template.name
         )
     })
+}
+
+fn copy_bundled_meteor_project(root: &Path, overwrite: bool) -> AppResult<()> {
+    let archive = bundled_cms_archive("meteor-blog-cms.zip")?;
+    let store = Store::new()?;
+    let temp = store
+        .dir
+        .join("temp")
+        .join(format!("cms-meteor-{}", Uuid::new_v4()));
+    fs::create_dir_all(&temp)
+        .map_err(|err| format!("Cannot create Meteor CMS temp folder: {err}"))?;
+    extract_zip_archive(&archive, &temp)?;
+    let source = extracted_content_root(&temp)?;
+    copy_dir_all(&source, root, overwrite)?;
+    let _ = fs::remove_dir_all(&temp);
+    Ok(())
+}
+
+fn bundled_cms_archive(name: &str) -> AppResult<PathBuf> {
+    let exe_parent = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut candidates = Vec::new();
+    if let Some(parent) = exe_parent {
+        candidates.push(parent.join("bundled-services").join("cms").join(name));
+        candidates.push(
+            parent
+                .join("resources")
+                .join("bundled-services")
+                .join("cms")
+                .join(name),
+        );
+        candidates.push(
+            parent
+                .join("_up_")
+                .join("bundled-services")
+                .join("cms")
+                .join(name),
+        );
+    }
+    candidates.push(manifest_dir.join("bundled-services").join("cms").join(name));
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| format!("Bundled CMS archive {name} was not found."))
+}
+
+fn extract_zip_archive(archive: &Path, destination: &Path) -> AppResult<()> {
+    let file = fs::File::open(archive).map_err(|err| {
+        format!(
+            "Cannot open bundled CMS archive {}: {err}",
+            archive.display()
+        )
+    })?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|err| {
+        format!(
+            "Cannot read bundled CMS archive {}: {err}",
+            archive.display()
+        )
+    })?;
+    for index in 0..zip.len() {
+        let mut entry = zip
+            .by_index(index)
+            .map_err(|err| format!("Cannot read CMS archive entry: {err}"))?;
+        let Some(path) = entry.enclosed_name() else {
+            continue;
+        };
+        let target = destination.join(path);
+        if entry.is_dir() {
+            fs::create_dir_all(&target)
+                .map_err(|err| format!("Cannot create CMS folder {}: {err}", target.display()))?;
+        } else {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|err| {
+                    format!("Cannot create CMS folder {}: {err}", parent.display())
+                })?;
+            }
+            let mut output = fs::File::create(&target)
+                .map_err(|err| format!("Cannot create CMS file {}: {err}", target.display()))?;
+            std::io::copy(&mut entry, &mut output)
+                .map_err(|err| format!("Cannot extract CMS file {}: {err}", target.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_meteor_runtime() -> AppResult<()> {
+    let meteor_home = std::env::var("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .map(|path| path.join(".meteor"))
+        .map_err(|err| format!("Cannot resolve LOCALAPPDATA for Meteor: {err}"))?;
+    if !meteor_home.join("meteor.bat").is_file() {
+        let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
+        let output = Command::new(npx)
+            .arg("meteor")
+            .env("TOOL_NODE_FLAGS", "--max-old-space-size=8192")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|err| format!("Cannot install Meteor runtime with npx: {err}"))?;
+        if !output.status.success() {
+            let detail = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return Err(format!("Meteor runtime installation failed. {detail}"));
+        }
+    }
+    patch_meteor_tool(&meteor_home)
+}
+
+fn prepare_meteor_project(root: &Path) -> AppResult<()> {
+    let packages_path = root.join(".meteor").join("packages");
+    if packages_path.is_file() {
+        let packages = fs::read_to_string(&packages_path)
+            .map_err(|err| format!("Cannot read Meteor packages file: {err}"))?;
+        let mut lines = packages
+            .lines()
+            .filter(|line| !matches!(line.trim(), "rspack" | "hot-module-replacement"))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if !lines.iter().any(|line| line.trim() == "jquery") {
+            if let Some(position) = lines
+                .iter()
+                .position(|line| line.trim() == "blaze-html-templates")
+            {
+                lines.insert(position, "jquery".to_string());
+            } else {
+                lines.push("jquery".to_string());
+            }
+        }
+        let cleaned = lines.join("\n");
+        fs::write(&packages_path, format!("{cleaned}\n"))
+            .map_err(|err| format!("Cannot write Meteor packages file: {err}"))?;
+    }
+    let package_path = root.join("package.json");
+    let text = fs::read_to_string(&package_path)
+        .map_err(|err| format!("Cannot read Meteor package.json: {err}"))?;
+    let mut package: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|err| format!("Cannot parse Meteor package.json: {err}"))?;
+    if let Some(meteor) = package
+        .get_mut("meteor")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        meteor.remove("mainModule");
+    }
+    remove_json_dependency(&mut package, "dependencies", "@swc/helpers");
+    remove_json_dependency(&mut package, "devDependencies", "@meteorjs/rspack");
+    remove_json_dependency(&mut package, "devDependencies", "@rsdoctor/rspack-plugin");
+    remove_json_dependency(&mut package, "devDependencies", "@rspack/cli");
+    remove_json_dependency(&mut package, "devDependencies", "@rspack/core");
+    ensure_json_dependency(&mut package, "dependencies", "jquery", "^3.7.1");
+    let formatted = serde_json::to_string_pretty(&package)
+        .map_err(|err| format!("Cannot serialize Meteor package.json: {err}"))?;
+    fs::write(package_path, format!("{formatted}\n"))
+        .map_err(|err| format!("Cannot write Meteor package.json: {err}"))
+}
+
+fn remove_json_dependency(package: &mut serde_json::Value, section: &str, name: &str) {
+    if let Some(map) = package
+        .get_mut(section)
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        map.remove(name);
+    }
+}
+
+fn ensure_json_dependency(
+    package: &mut serde_json::Value,
+    section: &str,
+    name: &str,
+    version: &str,
+) {
+    if package.get(section).is_none() {
+        package[section] = serde_json::json!({});
+    }
+    if let Some(map) = package
+        .get_mut(section)
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        map.insert(name.to_string(), serde_json::json!(version));
+    }
+}
+
+fn cleanup_meteor_project_after_host_save(root: &Path) -> AppResult<()> {
+    for relative in ["index.html", "rspack.config.js"] {
+        let path = root.join(relative);
+        if path.is_file() {
+            fs::remove_file(&path).map_err(|err| {
+                format!(
+                    "Cannot remove Meteor-incompatible file {}: {err}",
+                    path.display()
+                )
+            })?;
+        }
+    }
+    for relative in ["_build", ".rsdoctor"] {
+        let path = root.join(relative);
+        if path.is_dir() {
+            fs::remove_dir_all(&path).map_err(|err| {
+                format!(
+                    "Cannot remove Meteor build folder {}: {err}",
+                    path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn patch_meteor_tool(meteor_home: &Path) -> AppResult<()> {
+    let tool_root = meteor_home.join("packages").join("meteor-tool");
+    if !tool_root.is_dir() {
+        return Ok(());
+    }
+    patch_meteor_tool_dir(&tool_root)
+}
+
+fn patch_meteor_tool_dir(path: &Path) -> AppResult<()> {
+    for entry in
+        fs::read_dir(path).map_err(|err| format!("Cannot read Meteor tool folder: {err}"))?
+    {
+        let entry = entry.map_err(|err| format!("Cannot read Meteor tool entry: {err}"))?;
+        let path = entry.path();
+        if path.is_dir() {
+            patch_meteor_tool_dir(&path)?;
+        } else if path.extension().and_then(|value| value.to_str()) == Some("js") {
+            patch_meteor_tool_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn patch_meteor_tool_file(path: &Path) -> AppResult<()> {
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("Cannot read Meteor tool file {}: {err}", path.display()))?;
+    let patched = text
+        .replace(
+            "LRUCache = v;",
+            "LRUCache = v && (v.default || v.LRUCache || v);",
+        )
+        .replace(
+            "sourcemapConsumer.destroy();",
+            "if (typeof sourcemapConsumer.destroy === \"function\") sourcemapConsumer.destroy();",
+        );
+    if patched != text {
+        fs::write(path, patched)
+            .map_err(|err| format!("Cannot patch Meteor tool file {}: {err}", path.display()))?;
+    }
+    Ok(())
 }
 
 fn allocate_node_port(snapshot: &crate::state::AppSnapshot, domain: &str) -> u16 {

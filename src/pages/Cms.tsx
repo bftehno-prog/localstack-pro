@@ -252,7 +252,7 @@ export function CmsPage({
         <section className="stack-left">
           <Panel title="Preset Marketplace">
             <div className="preset-grid">
-              {["WordPress", "Laravel", "Symfony", "Next.js", "Nuxt", "Astro", "Vite", "Express", "NestJS", "Custom PHP"].map((preset) => (
+              {["WordPress", "Laravel", "Symfony", "Next.js", "Meteor", "Nuxt", "Astro", "Vite", "Express", "NestJS", "Custom PHP"].map((preset) => (
                 <button key={preset} onClick={() => {
                   const template = templates.find((item) => item.name.toLowerCase().includes(preset.toLowerCase()) || item.id.toLowerCase().includes(preset.toLowerCase().replace(".", "")));
                   if (template) {
@@ -268,7 +268,7 @@ export function CmsPage({
                 }}>
                   <PackagePlus size={16} />
                   <strong>{preset}</strong>
-                  <small>{preset.includes("js") || ["Nuxt", "Astro", "Vite", "Express", "NestJS"].includes(preset) ? "Node.js" : "PHP"}</small>
+                  <small>{preset.includes("js") || ["Meteor", "Nuxt", "Astro", "Vite", "Express", "NestJS"].includes(preset) ? "Node.js" : "PHP"}</small>
                 </button>
               ))}
             </div>

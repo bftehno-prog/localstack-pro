@@ -1341,7 +1341,7 @@ fn is_node_host(host: &crate::state::HostInfo) -> bool {
     host.tags.iter().any(|tag| {
         matches!(
             tag.as_str(),
-            "node" | "nextjs" | "node-express" | "vite-react"
+            "node" | "nextjs" | "node-express" | "vite-react" | "meteor" | "meteor-blog-cms"
         )
     }) || host.env_variables.contains_key("LOCALSTACK_NODE_PORT")
 }
@@ -1534,7 +1534,8 @@ function loadApps() {
         domain: String(host.domain || '').toLowerCase(),
         root: host.rootFolder,
         port: Number(host.envVariables.LOCALSTACK_NODE_PORT),
-        script: host.envVariables.LOCALSTACK_NODE_SCRIPT || 'dev'
+        script: host.envVariables.LOCALSTACK_NODE_SCRIPT || 'dev',
+        env: Object.fromEntries(Object.entries(host.envVariables || {}).map(([key, value]) => [key, String(value)]))
       }));
   } catch {
     return [];
@@ -1549,9 +1550,12 @@ function appForHost(hostHeader) {
 function ensureApp(app) {
   if (!app || processes.has(app.domain)) return;
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+  const meteorPath = process.platform === 'win32' && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, '.meteor') : '';
+  const mergedPath = [meteorPath, app.env[pathKey], app.env.PATH, process.env[pathKey], process.env.PATH].filter(Boolean).join(path.delimiter);
   const child = spawn(npm, ['run', app.script, '--', '--port', String(app.port)], {
     cwd: app.root,
-    env: { ...process.env, PORT: String(app.port), LOCALSTACK_NODE_PORT: String(app.port), BROWSER: 'none' },
+    env: { ...process.env, ...app.env, [pathKey]: mergedPath, PATH: mergedPath, PORT: String(app.port), LOCALSTACK_NODE_PORT: String(app.port), BROWSER: 'none' },
     shell: process.platform === 'win32',
     windowsHide: true,
     stdio: 'ignore'
