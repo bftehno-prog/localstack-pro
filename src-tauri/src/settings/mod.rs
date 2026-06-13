@@ -563,10 +563,17 @@ fn ensure_node_proxy_service(
             host.domain
         ));
     };
-    if service.status == crate::state::ServiceStatus::Running {
+    if service.status == crate::state::ServiceStatus::Running
+        && !node_proxy_runtime_needs_refresh(store)
+    {
         return Ok(());
     }
-    crate::services::start_service("node-proxy".to_string()).map_err(|err| {
+    let action = if service.status == crate::state::ServiceStatus::Running {
+        crate::services::restart_service
+    } else {
+        crate::services::start_service
+    };
+    action("node-proxy".to_string()).map_err(|err| {
         format!(
             "{} requires Node.js Proxy, but it could not be started: {err}",
             host.domain
@@ -584,6 +591,12 @@ fn ensure_node_proxy_service(
     Ok(())
 }
 
+fn node_proxy_runtime_needs_refresh(store: &Store) -> bool {
+    fs::read_to_string(store.dir.join("configs").join("node-proxy.js"))
+        .map(|text| !text.contains("startConfiguredApps") || !text.contains("proxyBuffered"))
+        .unwrap_or(true)
+}
+
 fn is_node_host(host: &crate::state::HostInfo) -> bool {
     host.tags.iter().any(|tag| {
         matches!(
@@ -591,6 +604,13 @@ fn is_node_host(host: &crate::state::HostInfo) -> bool {
             "node" | "nextjs" | "node-express" | "vite-react"
         )
     }) || host.env_variables.contains_key("LOCALSTACK_NODE_PORT")
+}
+
+fn node_host_port(host: &crate::state::HostInfo) -> u16 {
+    host.env_variables
+        .get("LOCALSTACK_NODE_PORT")
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(3000)
 }
 
 fn database_service_id(engine: &str) -> &'static str {
@@ -665,7 +685,11 @@ fn web_runtime_needs_refresh(store: &Store, service_id: &str, domain: &str) -> b
                 .trim()
                 .eq_ignore_ascii_case(&format!("server_name {domain};"))
     });
-    missing_host || (service_id == "apache" && apache_runtime_text_needs_refresh(&text))
+    let stale_node_proxy =
+        service_id == "apache" && apache_node_runtime_needs_refresh(store, domain, &text);
+    missing_host
+        || stale_node_proxy
+        || (service_id == "apache" && apache_runtime_text_needs_refresh(&text))
 }
 
 fn apache_runtime_needs_refresh(store: &Store) -> bool {
@@ -684,6 +708,22 @@ fn apache_runtime_text_needs_refresh(text: &str) -> bool {
         || !text.contains("SetEnv PHPRC")
         || !text.contains("SetEnv TMP")
         || !text.contains("Alias /localstack-tools/")
+}
+
+fn apache_node_runtime_needs_refresh(store: &Store, domain: &str, text: &str) -> bool {
+    let Ok(snapshot) = store.load_static() else {
+        return false;
+    };
+    let Some(host) = snapshot
+        .hosts
+        .iter()
+        .find(|host| host.domain.eq_ignore_ascii_case(domain))
+        .filter(|host| is_node_host(host))
+    else {
+        return false;
+    };
+    let expected = format!("ProxyPass / http://127.0.0.1:{}/", node_host_port(host));
+    !text.contains(&expected)
 }
 
 pub fn open_database_admin(kind: String) -> AppResult<()> {

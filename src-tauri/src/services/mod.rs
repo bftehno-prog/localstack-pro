@@ -1348,20 +1348,29 @@ fn is_node_host(host: &crate::state::HostInfo) -> bool {
 
 fn apache_node_vhost(host: &crate::state::HostInfo) -> String {
     let logs = slash(&PathBuf::from(&host.root_folder).join("logs"));
+    let port = node_host_port(host);
     format!(
         r#"
 <VirtualHost *:80>
     ServerName {domain}
     ProxyPreserveHost On
-    ProxyPass / http://127.0.0.1:3000/
-    ProxyPassReverse / http://127.0.0.1:3000/
+    ProxyPass / http://127.0.0.1:{port}/
+    ProxyPassReverse / http://127.0.0.1:{port}/
     ErrorLog "{logs}/{domain}-error.log"
     CustomLog "{logs}/{domain}-access.log" common
 </VirtualHost>
 "#,
         domain = host.domain,
+        port = port,
         logs = logs
     )
+}
+
+fn node_host_port(host: &crate::state::HostInfo) -> u16 {
+    host.env_variables
+        .get("LOCALSTACK_NODE_PORT")
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(3000)
 }
 
 fn ensure_apache_host_certificate(host: &crate::state::HostInfo) -> AppResult<(PathBuf, PathBuf)> {
@@ -1552,26 +1561,51 @@ function ensureApp(app) {
   child.on('exit', () => processes.delete(app.domain));
 }
 
-const server = http.createServer((req, res) => {
-  const app = appForHost(req.headers.host);
-  const targetPort = app ? app.port : Number(process.env.LOCALSTACK_PROXY_TARGET || 3000);
-  if (app) ensureApp(app);
+function startConfiguredApps() {
+  loadApps().forEach(ensureApp);
+}
+
+function proxyBuffered(req, res, targetPort, app, body, startedAt) {
+  const headers = { ...req.headers, host: req.headers.host || 'localhost' };
+  if (body.length > 0) headers['content-length'] = String(body.length);
   const proxy = http.request({
     hostname: '127.0.0.1',
     port: targetPort,
     path: req.url,
     method: req.method,
-    headers: { ...req.headers, host: req.headers.host || 'localhost' }
+    headers
   }, (upstream) => {
     res.writeHead(upstream.statusCode || 502, upstream.headers);
     upstream.pipe(res);
   });
   proxy.on('error', (err) => {
-    res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
-    res.end(`LocalStack Pro Node proxy is starting ${app ? app.domain : 'the app'} on 127.0.0.1:${targetPort}\nRefresh in a few seconds.\n${err.message}`);
+    if (Date.now() - startedAt < 45000 && !res.writableEnded) {
+      setTimeout(() => proxyBuffered(req, res, targetPort, app, body, startedAt), 500);
+      return;
+    }
+    if (!res.headersSent) {
+      res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
+    }
+    res.end(`LocalStack Pro could not reach ${app ? app.domain : 'the app'} on 127.0.0.1:${targetPort}\n${err.message}`);
   });
-  req.pipe(proxy);
+  if (body.length > 0) proxy.write(body);
+  proxy.end();
+}
+
+const server = http.createServer((req, res) => {
+  const app = appForHost(req.headers.host);
+  const targetPort = app ? app.port : Number(process.env.LOCALSTACK_PROXY_TARGET || 3000);
+  if (app) ensureApp(app);
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('end', () => proxyBuffered(req, res, targetPort, app, Buffer.concat(chunks), Date.now()));
+  req.on('error', (err) => {
+    if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+    res.end(err.message);
+  });
 });
+startConfiguredApps();
+setInterval(startConfiguredApps, 10000);
 server.listen(3000, '127.0.0.1');
 "#
 }

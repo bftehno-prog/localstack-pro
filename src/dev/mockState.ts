@@ -33,7 +33,7 @@ export function createMockState(): AppSnapshot {
       service("redis", "Redis", "7.2.4", [6379], "C:\\LocalStack\\services\\redis\\redis-server.exe"),
       service("mailpit", "Mailpit", "1.20.1", [1025, 8025], "C:\\LocalStack\\services\\mailpit\\mailpit.exe"),
       service("node-proxy", "Node.js Proxy", "20.11.1", [3000], "C:\\Program Files\\nodejs\\node.exe"),
-      service("dns-helper", "DNS Helper", "1.0.0", [5353], "C:\\LocalStack\\services\\dns-helper\\dns-helper.exe")
+      service("dns-helper", "DNS Helper", "1.0.1", [5353], "C:\\LocalStack\\services\\dns-helper\\dns-helper.exe")
     ],
     hosts: [
       host("shop.test", "C:\\Projects\\shop", "8.1.23", true, "Production", "running", ["ecommerce", "main"]),

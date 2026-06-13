@@ -528,7 +528,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: #f1f5fa;
   font-weight: 600;
 }
-.nav button:hover { background: var(--hover); color: var(--nav-active-text, var(--blue)); }
+.nav button:hover {
+  background: var(--control-hover);
+  color: var(--control-text);
+}
+.nav button.active:hover {
+  background: var(--selected);
+  color: var(--nav-active-text, var(--control-text));
+}
 .nav button.active::before {
   content: "";
   position: absolute;
