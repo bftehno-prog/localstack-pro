@@ -1,6 +1,6 @@
 {
   "name": "localstack-pro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Local Windows virtual server and environment manager for web development.",
   "type": "module",
   "scripts": {

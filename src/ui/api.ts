@@ -1,4 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
+import { TAURI_COMMANDS as C } from "./commands";
+import {
+  createMockState,
+  mockConfigFile,
+  mockDatabaseReport,
+  mockEnvironmentSnapshot,
+  mockFiles,
+  mockHealthReport,
+  mockHostReport,
+  mockLogTail,
+  mockProjectInspection,
+  mockReleaseInfo,
+  mockSitePreview,
+  mockSslDiagnostic
+} from "../dev/mockState";
 import type {
   AppSettings,
   AppSnapshot,
@@ -29,245 +44,53 @@ import type {
   TrashRecord
 } from "./types";
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function createMockState(): AppSnapshot {
-  return {
-    appDataDir: "Tauri AppData",
-    system: { appVersion: "1.0.0", os: "Windows 11 Pro 23H2", uptimeSeconds: 8040, cpu: 12, memoryGb: 2.1, diskGb: 127 },
-    services: [
-      service("apache", "Apache", "2.4.58", [80, 443], "C:\\LocalStack\\services\\apache\\bin\\httpd.exe"),
-      service("nginx", "Nginx", "1.25.4", [8080, 8443], "C:\\LocalStack\\services\\nginx\\nginx.exe"),
-      service("mysql", "MySQL", "8.0.36", [3306], "C:\\LocalStack\\services\\mysql\\bin\\mysqld.exe"),
-      service("mariadb", "MariaDB", "10.11.6", [3307], "C:\\LocalStack\\services\\mariadb\\bin\\mariadbd.exe"),
-      service("postgresql", "PostgreSQL", "15.3", [5432], "C:\\LocalStack\\services\\postgresql\\bin\\postgres.exe"),
-      service("redis", "Redis", "7.2.4", [6379], "C:\\LocalStack\\services\\redis\\redis-server.exe"),
-      service("mailpit", "Mailpit", "1.20.1", [1025, 8025], "C:\\LocalStack\\services\\mailpit\\mailpit.exe"),
-      service("node-proxy", "Node.js Proxy", "20.11.1", [3000], "C:\\Program Files\\nodejs\\node.exe"),
-      service("dns-helper", "DNS Helper", "1.0.0", [5353], "C:\\LocalStack\\services\\dns-helper\\dns-helper.exe"),
-      service("mongodb", "MongoDB", "7.0", [27017], "C:\\LocalStack\\services\\mongodb\\bin\\mongod.exe"),
-      service("memcached", "Memcached", "1.6", [11211], "C:\\LocalStack\\services\\memcached\\memcached.exe"),
-      service("minio", "MinIO", "latest", [9000, 9001], "C:\\LocalStack\\services\\minio\\minio.exe"),
-      service("elasticsearch", "Elasticsearch", "8.x", [9200], "C:\\LocalStack\\services\\elasticsearch\\bin\\elasticsearch.bat"),
-      service("rabbitmq", "RabbitMQ", "3.x", [5672, 15672], "C:\\LocalStack\\services\\rabbitmq\\sbin\\rabbitmq-server.bat"),
-      service("caddy", "Caddy", "2.x", [2019, 8081, 8444], "C:\\LocalStack\\services\\caddy\\caddy.exe")
-    ],
-    hosts: [
-      host("shop.test", "C:\\Projects\\shop", "8.1.23", true, "Production", "running", ["ecommerce", "main"]),
-      host("acme.test", "C:\\Projects\\acme", "8.2.10", true, "Production", "running", ["corporate", "primary"]),
-      host("blog.test", "C:\\Projects\\blog", "8.3.6", true, "Staging", "running", ["blog", "headless"]),
-      host("api.test", "C:\\Projects\\api", "8.2.10", false, "Development", "stopped", ["api"]),
-      host("crm.test", "C:\\Projects\\crm", "7.4.33", true, "Production", "running", ["internal"]),
-      host("legacy.test", "C:\\Projects\\legacy", "7.3.31", false, "Development", "stopped", ["legacy"])
-    ],
-    phpVersions: ["8.1.23", "8.2.10", "8.3.6", "7.4.33", "7.3.31", "7.2.34"].map((version, index) => ({
-      version,
-      label: version.slice(0, 3),
-      status: index === 0 ? "active" : "installed",
-      default: index === 0,
-      cliPath: `C:\\tools\\php\\${version}\\php.exe`,
-      sapiMode: index < 3 ? "FPM" : "Apache",
-      compatibility: index < 3 ? "Full" : "Legacy",
-      extensions: ["xdebug", "intl", "gd", "imagick", "opcache", "pdo_mysql", "redis", "soap", "zip"].map((name, extIndex) => ({
-        name,
-        version: name === "xdebug" ? "3.2.1" : version,
-        enabled: extIndex !== 3 || index === 0,
-        category: extIndex < 2 ? "Debug" : extIndex < 5 ? "Core" : "Database"
-      })),
-      ini: {
-        memory_limit: "512M",
-        upload_max_filesize: "64M",
-        post_max_size: "64M",
-        max_execution_time: "120",
-        max_input_time: "120",
-        display_errors: "On",
-        display_startup_errors: "On",
-        log_errors: "On",
-        error_reporting: "E_ALL",
-        date_timezone: "UTC",
-        "xdebug.mode": "develop,debug",
-        "opcache.enable": "On",
-        "opcache.memory_consumption": "128"
-      }
-    })),
-    databases: [
-      db("shop", "Main e-commerce DB", "MySQL", "8.0.36", "shop_user", 3306, "running", 128.6),
-      db("blog", "Blog application DB", "MySQL", "8.0.36", "blog_user", 3306, "running", 64.2),
-      db("cms", "CMS application DB", "MariaDB", "10.6.18", "cms_user", 3307, "running", 93.1),
-      db("test", "Testing & development", "MySQL", "8.0.36", "test_user", 3306, "stopped", 12.4),
-      db("analytics", "Analytics reporting", "PostgreSQL", "15.3", "analytics_user", 5432, "running", 256.7)
-    ],
-    certificates: ["shop.test", "api.test", "crm.test", "blog.test", "legacy.test", "internal.test"].map((domain, index) => ({
-      id: domain,
-      domain,
-      status: index === 3 ? "Expiring Soon" : "Valid",
-      trusted: index !== 4,
-      expiresAt: new Date(Date.now() + (80 + index * 8) * 86400000).toISOString(),
-      issuer: "LocalStack CA",
-      sanDomains: [domain, `www.${domain}`],
-      autoRenew: index !== 4,
-      certPath: `C:\\LocalStack\\certs\\${domain}.crt`,
-      keyPath: `C:\\LocalStack\\keys\\${domain}.key`,
-      pemPath: `C:\\LocalStack\\certs\\${domain}.pem`,
-      fingerprint: "A3:6F:2B:9C:8D:33:1E:4A:7F:1C:6D:2E:9B:7E:77:2F:6C:4E:5F:8B:2A:09:3D:8F:5A:1B:2C:7D:9E:3F"
-    })),
-    cmsInstallations: [],
-    logs: [
-      log("INFO", "Apache", "Apache/2.4.58 (Win64) PHP/8.1.23 started"),
-      log("INFO", "MySQL", "MySQL 8.0.36 Community Server started on port 3306"),
-      log("DEBUG", "Nginx", "127.0.0.1 - GET /assets/app.css HTTP/1.1 304"),
-      log("WARNING", "PHP", "Undefined variable $user in /var/www/html/login.php on line 42"),
-      log("ERROR", "PHP", "Uncaught Exception: Invalid credentials in /var/www/html/auth.php:88"),
-      log("INFO", "Mailpit", "Email queued to test@example.com")
-    ],
-    settings: {
-      language: "English (US)",
-      preferredBrowser: "Default System Browser",
-      minimizeToTray: true,
-      closeToTray: true,
-      launchOnStartup: false,
-      showNotifications: true,
-      playSound: false,
-      checkUpdatesOnStartup: true,
-      telemetry: false,
-      uiDensity: "Comfortable",
-      theme: "Wet Asphalt",
-      logLevel: "Information",
-      maxLogFileSize: "50 MB",
-      retainLogsDays: 30,
-      showTimestamps: true,
-      projectsFolder: "C:\\Projects",
-      servicesFolder: "C:\\LocalStack\\services",
-      backupsFolder: "C:\\LocalStack\\backups",
-      httpPortStart: 80,
-      httpPortEnd: 8999,
-      proxyEnabled: false,
-      backupRetentionDays: 30
-    }
-  };
-}
-
-function service(id: string, name: string, version: string, ports: number[], executablePath: string): ServiceInfo {
-  return {
-    id,
-    name,
-    version,
-    executablePath,
-    configPath: executablePath.replace(/\\[^\\]+$/, "\\conf\\service.conf"),
-    logPath: executablePath.replace(/\\[^\\]+$/, "\\logs\\service.log"),
-    ports,
-    status: "stopped",
-    uptimeSeconds: 0,
-    cpu: 0,
-    memoryMb: 0,
-    autostart: true
-  };
-}
-
-function host(domain: string, rootFolder: string, phpVersion: string, ssl: boolean, environment: string, status: ServiceInfo["status"], tags: string[]): HostInfo {
-  const now = nowIso();
-  return {
-    id: domain,
-    domain,
-    rootFolder,
-    documentRoot: "public",
-    phpVersion,
-    webServer: "Apache",
-    ssl,
-    environment,
-    httpPort: 80,
-    httpsPort: 443,
-    database: domain.split(".")[0],
-    mailService: "Mailpit",
-    envVariables: { APP_ENV: "local", APP_DEBUG: "true", APP_URL: `${ssl ? "https" : "http"}://${domain}` },
-    rewriteRules: "",
-    notes: `Primary ${environment.toLowerCase()} environment.`,
-    status,
-    tags,
-    createdAt: now,
-    updatedAt: now
-  };
-}
-
-function db(name: string, description: string, engine: DatabaseInfo["engine"], version: string, user: string, port: number, status: ServiceInfo["status"], sizeMb: number): DatabaseInfo {
-  return { id: name, name, description, engine, version, schemas: 4, user, password: "localstack", port, status, sizeMb, createdAt: nowIso() };
-}
-
-function log(level: "INFO" | "WARNING" | "ERROR" | "DEBUG", service: string, message: string) {
-  return { id: crypto.randomUUID(), timestamp: nowIso(), level, service, host: "shop.test", processId: 1234, source: `${service.toLowerCase()}.log`, line: 88, message };
-}
-
-function mockFiles(path: string): FileEntry[] {
-  const base = path.replace(/[\\/]+$/, "");
-  const now = nowIso();
-  return [
-    { name: "public", path: `${base}\\public`, kind: "folder", size: 0, modified: now },
-    { name: "index.php", path: `${base}\\index.php`, kind: "file", size: 68, modified: now },
-    { name: ".env", path: `${base}\\.env`, kind: "file", size: 86, modified: now },
-    { name: "package.json", path: `${base}\\package.json`, kind: "file", size: 128, modified: now }
-  ];
-}
-
-function mockConfigFile(path: string): ConfigFile {
-  return {
-    path,
-    content: "<?php\n// LocalStack Pro preview file\necho 'LocalStack Pro';\n",
-    size: 58,
-    modified: nowIso(),
-    language: path.endsWith(".json") ? "JSON" : path.endsWith(".env") ? "Environment" : "PHP",
-    readOnly: false,
-    encoding: "utf-8"
-  };
-}
+const isTauriRuntime = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 function readFallback<T>(fallback: T | (() => T)): T {
   return typeof fallback === "function" ? (fallback as () => T)() : fallback;
 }
 
-async function call<T>(command: string, args?: Record<string, unknown>, fallback?: T | (() => T)): Promise<T> {
-  try {
-    return await invoke<T>(command, args);
-  } catch (error) {
-    if (fallback !== undefined && !("__TAURI_INTERNALS__" in window)) return readFallback(fallback);
-    throw error instanceof Error ? error : new Error(String(error));
+async function safeInvoke<T>(command: string, args?: Record<string, unknown>, fallback?: T | (() => T)): Promise<T> {
+  if (!isTauriRuntime()) {
+    if (fallback !== undefined) return readFallback(fallback);
+    throw new Error(`Tauri command "${command}" is unavailable in browser preview`);
   }
+  return invoke<T>(command, args);
 }
 
 export const api = {
-  getState: () => call<AppSnapshot>("get_app_state", undefined, createMockState),
-  startAll: () => call<AppSnapshot>("start_all"),
-  stopAll: () => call<AppSnapshot>("stop_all"),
-  restartAll: () => call<AppSnapshot>("restart_all"),
-  startService: (serviceId: string) => call<AppSnapshot>("start_service", { serviceId }),
-  startServiceProfile: (serviceIds: string[]) => call<AppSnapshot>("start_service_profile", { serviceIds }),
-  stopService: (serviceId: string) => call<AppSnapshot>("stop_service", { serviceId }),
-  restartService: (serviceId: string) => call<AppSnapshot>("restart_service", { serviceId }),
-  saveService: (service: ServiceInfo) => call<AppSnapshot>("save_service", { service }),
-  installServiceDependency: (serviceId: string) => call<AppSnapshot>("install_service_dependency", { serviceId }),
-  installAllMissingDependencies: () => call<AppSnapshot>("install_all_missing_dependencies"),
-  detectDependencies: () => call<AppSnapshot>("detect_dependencies"),
-  runHealthCheck: () => call<HealthReport>("run_health_check"),
-  repairEnvironment: () => call<HealthReport>("repair_environment"),
-  saveHost: (host: HostInfo) => call<AppSnapshot>("save_host", { host }),
-  deleteHost: (hostId: string) => call<AppSnapshot>("delete_host", { hostId }),
-  duplicateHost: (hostId: string) => call<AppSnapshot>("duplicate_host", { hostId }),
-  syncHostsFile: () => call<AppSnapshot>("sync_hosts_file"),
-  diagnoseHost: (hostId: string) => call<HostDiagnosticReport>("diagnose_host", { hostId }),
-  repairHost: (hostId: string) => call<HostDiagnosticReport>("repair_host", { hostId }),
-  importHosts: (path: string) => call<AppSnapshot>("import_hosts", { path }),
-  exportHosts: (path: string) => call<string>("export_hosts", { path }),
-  savePhpVersion: (php: PhpVersion) => call<AppSnapshot>("save_php_version", { php }),
-  installPhpVersion: (version: string) => call<AppSnapshot>("install_php_version", { version }),
-  removePhpVersion: (version: string) => call<AppSnapshot>("remove_php_version", { version }),
-  setDefaultPhp: (version: string) => call<AppSnapshot>("set_default_php", { version }),
-  createDatabase: (database: DatabaseInfo) => call<AppSnapshot>("create_database", { database }),
-  deleteDatabase: (databaseId: string) => call<AppSnapshot>("delete_database", { databaseId }),
-  backupDatabase: (databaseId: string) => call<string>("backup_database", { databaseId }),
-  importDatabaseSql: (databaseId: string, path = "") => call<string>("import_database_sql", { databaseId, path }),
-  testDatabaseConnection: (databaseId: string) => call<DatabaseDiagnosticReport>("test_database_connection", { databaseId }),
-  getCmsTemplates: () => call<CmsTemplate[]>("get_cms_templates", undefined, [
+  getState: () => safeInvoke<AppSnapshot>(C.getState, undefined, createMockState),
+  startAll: () => safeInvoke<AppSnapshot>(C.startAll, undefined, createMockState),
+  stopAll: () => safeInvoke<AppSnapshot>(C.stopAll, undefined, createMockState),
+  restartAll: () => safeInvoke<AppSnapshot>(C.restartAll, undefined, createMockState),
+  startService: (serviceId: string) => safeInvoke<AppSnapshot>(C.startService, { serviceId }, createMockState),
+  startServiceProfile: (serviceIds: string[]) => safeInvoke<AppSnapshot>(C.startServiceProfile, { serviceIds }, createMockState),
+  stopService: (serviceId: string) => safeInvoke<AppSnapshot>(C.stopService, { serviceId }, createMockState),
+  restartService: (serviceId: string) => safeInvoke<AppSnapshot>(C.restartService, { serviceId }, createMockState),
+  saveService: (service: ServiceInfo) => safeInvoke<AppSnapshot>(C.saveService, { service }, createMockState),
+  installServiceDependency: (serviceId: string) => safeInvoke<AppSnapshot>(C.installServiceDependency, { serviceId }, createMockState),
+  installAllMissingDependencies: () => safeInvoke<AppSnapshot>(C.installAllMissingDependencies, undefined, createMockState),
+  detectDependencies: () => safeInvoke<AppSnapshot>(C.detectDependencies, undefined, createMockState),
+  runHealthCheck: () => safeInvoke<HealthReport>(C.runHealthCheck, undefined, mockHealthReport),
+  repairEnvironment: () => safeInvoke<HealthReport>(C.repairEnvironment, undefined, () => mockHealthReport("Browser preview repair completed.")),
+  saveHost: (host: HostInfo) => safeInvoke<AppSnapshot>(C.saveHost, { host }, createMockState),
+  deleteHost: (hostId: string) => safeInvoke<AppSnapshot>(C.deleteHost, { hostId }, createMockState),
+  duplicateHost: (hostId: string) => safeInvoke<AppSnapshot>(C.duplicateHost, { hostId }, createMockState),
+  syncHostsFile: () => safeInvoke<AppSnapshot>(C.syncHostsFile, undefined, createMockState),
+  diagnoseHost: (hostId: string) => safeInvoke<HostDiagnosticReport>(C.diagnoseHost, { hostId }, () => mockHostReport(hostId)),
+  repairHost: (hostId: string) => safeInvoke<HostDiagnosticReport>(C.repairHost, { hostId }, () => mockHostReport(hostId)),
+  importHosts: (path: string) => safeInvoke<AppSnapshot>(C.importHosts, { path }, createMockState),
+  exportHosts: (path: string) => safeInvoke<string>(C.exportHosts, { path }, path),
+  savePhpVersion: (php: PhpVersion) => safeInvoke<AppSnapshot>(C.savePhpVersion, { php }, createMockState),
+  installPhpVersion: (version: string) => safeInvoke<AppSnapshot>(C.installPhpVersion, { version }, createMockState),
+  removePhpVersion: (version: string) => safeInvoke<AppSnapshot>(C.removePhpVersion, { version }, createMockState),
+  setDefaultPhp: (version: string) => safeInvoke<AppSnapshot>(C.setDefaultPhp, { version }, createMockState),
+  createDatabase: (database: DatabaseInfo) => safeInvoke<AppSnapshot>(C.createDatabase, { database }, createMockState),
+  deleteDatabase: (databaseId: string) => safeInvoke<AppSnapshot>(C.deleteDatabase, { databaseId }, createMockState),
+  backupDatabase: (databaseId: string) => safeInvoke<string>(C.backupDatabase, { databaseId }, `${databaseId}.sql`),
+  importDatabaseSql: (databaseId: string, path = "") => safeInvoke<string>(C.importDatabaseSql, { databaseId, path }, path),
+  testDatabaseConnection: (databaseId: string) => safeInvoke<DatabaseDiagnosticReport>(C.testDatabaseConnection, { databaseId }, () => mockDatabaseReport(databaseId)),
+  getCmsTemplates: () => safeInvoke<CmsTemplate[]>(C.getCmsTemplates, undefined, () => [
     {
       id: "nextjs",
       name: "Next.js",
@@ -309,75 +132,75 @@ export const api = {
       defaultDatabaseEngine: "MySQL"
     }
   ]),
-  installCms: (request: CmsInstallRequest) => call<AppSnapshot>("install_cms", { request }),
-  generateCertificate: (domain: string, sanDomains: string[]) => call<AppSnapshot>("generate_certificate", { domain, sanDomains }),
-  trustCertificate: (certificateId: string) => call<AppSnapshot>("trust_certificate", { certificateId }),
-  revokeCertificate: (certificateId: string) => call<AppSnapshot>("revoke_certificate", { certificateId }),
-  saveCertificate: (certificate: CertificateInfo) => call<AppSnapshot>("save_certificate", { certificate }),
-  exportCertificate: (certificateId: string, folder: string) => call<string>("export_certificate", { certificateId, folder }),
-  clearLogs: () => call<AppSnapshot>("clear_logs"),
-  exportLogs: (path: string) => call<string>("export_logs", { path }),
-  tailLogFile: (source: string, lines = 200) => call<LogFileTail>("tail_log_file", { source, lines }),
-  saveSettings: (settings: AppSettings) => call<AppSnapshot>("save_settings", { settings }),
-  exportSettings: (path: string) => call<string>("export_settings", { path }),
-  importSettings: (path: string) => call<AppSnapshot>("import_settings", { path }),
-  resetSettings: () => call<AppSnapshot>("reset_settings"),
-  createAppBackup: (path: string) => call<string>("create_app_backup", { path }),
-  restoreAppBackup: (path: string) => call<AppSnapshot>("restore_app_backup", { path }),
-  openCertificateStore: () => call<void>("open_certificate_store"),
-  openDocumentation: () => call<void>("open_documentation"),
-  openPath: (path: string) => call<void>("open_path", { path }),
-  openUrl: (url: string) => call<void>("open_url", { url }),
-  openTerminal: (path: string) => call<void>("open_terminal", { path }),
-  openHost: (hostId: string) => call<AppSnapshot>("open_host", { hostId }),
-  openDatabaseAdmin: (kind: "phpmyadmin" | "adminer") => call<void>("open_database_admin", { kind }),
-  scanPorts: () => call<PortInspection[]>("scan_ports"),
-  runProjectCommand: (path: string, commandKey: string) => call<string>("run_project_command", { path, commandKey }),
-  cloneProjectRepository: (url: string, folder: string) => call<string>("clone_project_repository", { url, folder }),
-  inspectProject: (path: string) => call<ProjectInspection>("inspect_project", { path }),
-  generateEnvTemplate: (path: string, kind: string, database: string, user: string, password: string, domain: string) => call<string>("generate_env_template", { path, kind, database, user, password, domain }),
-  previewHost: (hostId: string) => call<SitePreview>("preview_host", { hostId }),
-  exportPortableHost: (hostId: string, target: string) => call<string>("export_portable_host", { hostId, target }),
-  backupHost: (hostId: string, target: string) => call<string>("backup_host", { hostId, target }),
-  restoreHostBackup: (path: string) => call<AppSnapshot>("restore_host_backup", { path }),
-  checkLatestRelease: () => call<ReleaseInfo>("check_latest_release"),
-  downloadLatestReleaseInstaller: () => call<string>("download_latest_release_installer"),
-  installDownloadedUpdate: (path: string) => call<string>("install_downloaded_update", { path }),
-  readConfigFile: (path: string) => call<ConfigFile>("read_config_file", { path }),
-  saveConfigFile: (path: string, content: string) => call<string>("save_config_file", { path, content }),
-  createDiagnosticBundle: (target: string) => call<string>("create_diagnostic_bundle", { target }),
-  diagnoseSsl: (domain: string) => call<SslDiagnostic>("diagnose_ssl", { domain }),
-  inspectInstalledTools: () => call<InstalledTool[]>("inspect_installed_tools"),
-  listFiles: (path: string) => call<FileEntry[]>("list_files", { path }, () => mockFiles(path)),
-  readFile: (path: string) => call<ConfigFile>("read_file", { path }, () => mockConfigFile(path)),
-  readFileWithEncoding: (path: string, encoding: string) => call<ConfigFile>("read_file_with_encoding", { path, encoding }, () => ({ ...mockConfigFile(path), encoding })),
-  writeFile: (path: string, content: string) => call<string>("write_file", { path, content }, path),
-  writeFileWithEncoding: (path: string, content: string, encoding: string) => call<string>("write_file_with_encoding", { path, content, encoding }, path),
-  createFile: (path: string) => call<string>("create_file", { path }, path),
-  createFolder: (path: string) => call<string>("create_folder", { path }, path),
-  deletePath: (path: string) => call<string>("delete_path", { path }, path),
-  trashPath: (path: string) => call<TrashRecord>("trash_path", { path }, { originalPath: path, trashPath: path, name: path.split(/[\\/]/).pop() ?? path, kind: "file" }),
-  restoreTrashPath: (originalPath: string, trashPath: string, overwrite: boolean) => call<string>("restore_trash_path", { originalPath, trashPath, overwrite }, originalPath),
-  renamePath: (path: string, newName: string) => call<string>("rename_path", { path, newName }, path.replace(/[^\\/]+$/, newName)),
-  duplicatePath: (path: string) => call<string>("duplicate_path", { path }, `${path}.copy`),
-  copyPath: (source: string, target: string, overwrite: boolean) => call<string>("copy_path", { source, target, overwrite }, target),
-  movePath: (source: string, target: string, overwrite: boolean) => call<string>("move_path", { source, target, overwrite }, target),
-  chmodPath: (path: string, mode: string, readOnly: boolean) => call<string>("chmod_path", { path, mode, readOnly }, path),
-  uploadFiles: (sources: string[], destination: string, overwrite: boolean) => call<string[]>("upload_files", { sources, destination, overwrite }, () => sources.map((source) => `${destination}\\${source.split(/[\\/]/).pop() ?? "file"}`)),
-  extractArchiveTo: (path: string, destination: string) => call<string>("extract_archive_to", { path, destination }, destination),
-  createArchive: (paths: string[], target: string) => call<string>("create_archive", { paths, target }, target),
-  searchFileContents: (root: string, query: string, regexp: boolean, caseSensitive: boolean) => call<FileSearchResult[]>("search_file_contents", { root, query, regexp, caseSensitive }, []),
-  searchFileContentsAdvanced: (root: string, query: string, regexp: boolean, caseSensitive: boolean, includeExtensions: string, excludeFolders: string, limit: number) => call<FileSearchResult[]>("search_file_contents_advanced", { root, query, regexp, caseSensitive, includeExtensions, excludeFolders, limit }, []),
-  listArchiveEntries: (path: string) => call<ArchiveEntry[]>("list_archive_entries", { path }, []),
-  applyWindowsAcl: (path: string, identity: string, rights: string, inherit: boolean) => call<string>("apply_windows_acl", { path, identity, rights, inherit }, path),
-  listEnvironmentSnapshots: () => call<EnvironmentSnapshotInfo[]>("list_environment_snapshots"),
-  createEnvironmentSnapshot: (name: string) => call<EnvironmentSnapshotInfo>("create_environment_snapshot", { name }),
-  restoreEnvironmentSnapshot: (id: string) => call<AppSnapshot>("restore_environment_snapshot", { id }),
-  listNodeScripts: (path: string) => call<NodeScript[]>("list_node_scripts", { path }),
-  runNodeScript: (path: string, script: string) => call<string>("run_node_script", { path, script }),
-  resourceMonitor: () => call<ResourceProcess[]>("resource_monitor"),
-  killProcess: (pid: number) => call<string>("kill_process", { pid }),
-  hideTrayPanel: () => call<void>("hide_tray_panel"),
-  openMainPage: (page?: string) => call<void>("open_main_page", { page }),
-  quit: () => call<void>("quit_app")
+  installCms: (request: CmsInstallRequest) => safeInvoke<AppSnapshot>(C.installCms, { request }, createMockState),
+  generateCertificate: (domain: string, sanDomains: string[]) => safeInvoke<AppSnapshot>(C.generateCertificate, { domain, sanDomains }, createMockState),
+  trustCertificate: (certificateId: string) => safeInvoke<AppSnapshot>(C.trustCertificate, { certificateId }, createMockState),
+  revokeCertificate: (certificateId: string) => safeInvoke<AppSnapshot>(C.revokeCertificate, { certificateId }, createMockState),
+  saveCertificate: (certificate: CertificateInfo) => safeInvoke<AppSnapshot>(C.saveCertificate, { certificate }, createMockState),
+  exportCertificate: (certificateId: string, folder: string) => safeInvoke<string>(C.exportCertificate, { certificateId, folder }, `${folder}\\${certificateId}.pem`),
+  clearLogs: () => safeInvoke<AppSnapshot>(C.clearLogs, undefined, createMockState),
+  exportLogs: (path: string) => safeInvoke<string>(C.exportLogs, { path }, path),
+  tailLogFile: (source: string, lines = 200) => safeInvoke<LogFileTail>(C.tailLogFile, { source, lines }, () => mockLogTail(source)),
+  saveSettings: (settings: AppSettings) => safeInvoke<AppSnapshot>(C.saveSettings, { settings }, createMockState),
+  exportSettings: (path: string) => safeInvoke<string>(C.exportSettings, { path }, path),
+  importSettings: (path: string) => safeInvoke<AppSnapshot>(C.importSettings, { path }, createMockState),
+  resetSettings: () => safeInvoke<AppSnapshot>(C.resetSettings, undefined, createMockState),
+  createAppBackup: (path: string) => safeInvoke<string>(C.createAppBackup, { path }, path),
+  restoreAppBackup: (path: string) => safeInvoke<AppSnapshot>(C.restoreAppBackup, { path }, createMockState),
+  openCertificateStore: () => safeInvoke<void>(C.openCertificateStore, undefined, () => undefined),
+  openDocumentation: () => safeInvoke<void>(C.openDocumentation, undefined, () => undefined),
+  openPath: (path: string) => safeInvoke<void>(C.openPath, { path }, () => undefined),
+  openUrl: (url: string) => safeInvoke<void>(C.openUrl, { url }, () => undefined),
+  openTerminal: (path: string) => safeInvoke<void>(C.openTerminal, { path }, () => undefined),
+  openHost: (hostId: string) => safeInvoke<AppSnapshot>(C.openHost, { hostId }, createMockState),
+  openDatabaseAdmin: (kind: "phpmyadmin" | "adminer") => safeInvoke<void>(C.openDatabaseAdmin, { kind }, () => undefined),
+  scanPorts: () => safeInvoke<PortInspection[]>(C.scanPorts, undefined, []),
+  runProjectCommand: (path: string, commandKey: string) => safeInvoke<string>(C.runProjectCommand, { path, commandKey }, "Browser preview command skipped."),
+  cloneProjectRepository: (url: string, folder: string) => safeInvoke<string>(C.cloneProjectRepository, { url, folder }, folder),
+  inspectProject: (path: string) => safeInvoke<ProjectInspection>(C.inspectProject, { path }, () => mockProjectInspection(path)),
+  generateEnvTemplate: (path: string, kind: string, database: string, user: string, password: string, domain: string) => safeInvoke<string>(C.generateEnvTemplate, { path, kind, database, user, password, domain }, ""),
+  previewHost: (hostId: string) => safeInvoke<SitePreview>(C.previewHost, { hostId }, () => mockSitePreview(hostId)),
+  exportPortableHost: (hostId: string, target: string) => safeInvoke<string>(C.exportPortableHost, { hostId, target }, target),
+  backupHost: (hostId: string, target: string) => safeInvoke<string>(C.backupHost, { hostId, target }, target),
+  restoreHostBackup: (path: string) => safeInvoke<AppSnapshot>(C.restoreHostBackup, { path }, createMockState),
+  checkLatestRelease: () => safeInvoke<ReleaseInfo>(C.checkLatestRelease, undefined, mockReleaseInfo),
+  downloadLatestReleaseInstaller: () => safeInvoke<string>(C.downloadLatestReleaseInstaller, undefined, ""),
+  installDownloadedUpdate: (path: string) => safeInvoke<string>(C.installDownloadedUpdate, { path }, path),
+  readConfigFile: (path: string) => safeInvoke<ConfigFile>(C.readConfigFile, { path }, () => mockConfigFile(path)),
+  saveConfigFile: (path: string, content: string) => safeInvoke<string>(C.saveConfigFile, { path, content }, path),
+  createDiagnosticBundle: (target: string) => safeInvoke<string>(C.createDiagnosticBundle, { target }, target),
+  diagnoseSsl: (domain: string) => safeInvoke<SslDiagnostic>(C.diagnoseSsl, { domain }, () => mockSslDiagnostic(domain)),
+  inspectInstalledTools: () => safeInvoke<InstalledTool[]>(C.inspectInstalledTools, undefined, []),
+  listFiles: (path: string) => safeInvoke<FileEntry[]>(C.listFiles, { path }, () => mockFiles(path)),
+  readFile: (path: string) => safeInvoke<ConfigFile>(C.readFile, { path }, () => mockConfigFile(path)),
+  readFileWithEncoding: (path: string, encoding: string) => safeInvoke<ConfigFile>(C.readFileWithEncoding, { path, encoding }, () => ({ ...mockConfigFile(path), encoding })),
+  writeFile: (path: string, content: string) => safeInvoke<string>(C.writeFile, { path, content }, path),
+  writeFileWithEncoding: (path: string, content: string, encoding: string) => safeInvoke<string>(C.writeFileWithEncoding, { path, content, encoding }, path),
+  createFile: (path: string) => safeInvoke<string>(C.createFile, { path }, path),
+  createFolder: (path: string) => safeInvoke<string>(C.createFolder, { path }, path),
+  deletePath: (path: string) => safeInvoke<string>(C.deletePath, { path }, path),
+  trashPath: (path: string) => safeInvoke<TrashRecord>(C.trashPath, { path }, { originalPath: path, trashPath: path, name: path.split(/[\\/]/).pop() ?? path, kind: "file" }),
+  restoreTrashPath: (originalPath: string, trashPath: string, overwrite: boolean) => safeInvoke<string>(C.restoreTrashPath, { originalPath, trashPath, overwrite }, originalPath),
+  renamePath: (path: string, newName: string) => safeInvoke<string>(C.renamePath, { path, newName }, path.replace(/[^\\/]+$/, newName)),
+  duplicatePath: (path: string) => safeInvoke<string>(C.duplicatePath, { path }, `${path}.copy`),
+  copyPath: (source: string, target: string, overwrite: boolean) => safeInvoke<string>(C.copyPath, { source, target, overwrite }, target),
+  movePath: (source: string, target: string, overwrite: boolean) => safeInvoke<string>(C.movePath, { source, target, overwrite }, target),
+  chmodPath: (path: string, mode: string, readOnly: boolean) => safeInvoke<string>(C.chmodPath, { path, mode, readOnly }, path),
+  uploadFiles: (sources: string[], destination: string, overwrite: boolean) => safeInvoke<string[]>(C.uploadFiles, { sources, destination, overwrite }, () => sources.map((source) => `${destination}\\${source.split(/[\\/]/).pop() ?? "file"}`)),
+  extractArchiveTo: (path: string, destination: string) => safeInvoke<string>(C.extractArchiveTo, { path, destination }, destination),
+  createArchive: (paths: string[], target: string) => safeInvoke<string>(C.createArchive, { paths, target }, target),
+  searchFileContents: (root: string, query: string, regexp: boolean, caseSensitive: boolean) => safeInvoke<FileSearchResult[]>(C.searchFileContents, { root, query, regexp, caseSensitive }, []),
+  searchFileContentsAdvanced: (root: string, query: string, regexp: boolean, caseSensitive: boolean, includeExtensions: string, excludeFolders: string, limit: number) => safeInvoke<FileSearchResult[]>(C.searchFileContentsAdvanced, { root, query, regexp, caseSensitive, includeExtensions, excludeFolders, limit }, []),
+  listArchiveEntries: (path: string) => safeInvoke<ArchiveEntry[]>(C.listArchiveEntries, { path }, []),
+  applyWindowsAcl: (path: string, identity: string, rights: string, inherit: boolean) => safeInvoke<string>(C.applyWindowsAcl, { path, identity, rights, inherit }, path),
+  listEnvironmentSnapshots: () => safeInvoke<EnvironmentSnapshotInfo[]>(C.listEnvironmentSnapshots, undefined, []),
+  createEnvironmentSnapshot: (name: string) => safeInvoke<EnvironmentSnapshotInfo>(C.createEnvironmentSnapshot, { name }, () => mockEnvironmentSnapshot(name)),
+  restoreEnvironmentSnapshot: (id: string) => safeInvoke<AppSnapshot>(C.restoreEnvironmentSnapshot, { id }, createMockState),
+  listNodeScripts: (path: string) => safeInvoke<NodeScript[]>(C.listNodeScripts, { path }, []),
+  runNodeScript: (path: string, script: string) => safeInvoke<string>(C.runNodeScript, { path, script }, "Browser preview script skipped."),
+  resourceMonitor: () => safeInvoke<ResourceProcess[]>(C.resourceMonitor, undefined, []),
+  killProcess: (pid: number) => safeInvoke<string>(C.killProcess, { pid }, String(pid)),
+  hideTrayPanel: () => safeInvoke<void>(C.hideTrayPanel, undefined, () => undefined),
+  openMainPage: (page?: string) => safeInvoke<void>(C.openMainPage, { page }, () => undefined),
+  quit: () => safeInvoke<void>(C.quitApp, undefined, () => undefined)
 };

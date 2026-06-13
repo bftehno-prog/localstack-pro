@@ -57,7 +57,7 @@ fn create_tray_panel(app: &AppHandle) -> tauri::Result<()> {
         .resizable(false)
         .skip_taskbar(true)
         .always_on_top(true)
-        .shadow(true)
+        .shadow(false)
         .transparent(true)
         .build()?;
     Ok(())

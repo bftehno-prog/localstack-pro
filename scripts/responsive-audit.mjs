@@ -17,6 +17,7 @@ const pages = [
   ["cms", "#cms"],
   ["ssl", "#ssl"],
   ["logs", "#logs"],
+  ["files", "#files"],
   ["settings", "#settings"]
 ];
 
@@ -171,11 +172,12 @@ function runDomAudit() {
     .filter((element) => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && isActuallyVisible(element, rect);
     });
 
   const clipped = visibleElements
     .filter((element) => {
+      if (element.matches("input, textarea")) return false;
       const style = getComputedStyle(element);
       if (style.overflow === "visible") return false;
       return element.scrollWidth - element.clientWidth > 2 || element.scrollHeight - element.clientHeight > 2;
@@ -224,6 +226,13 @@ function runDomAudit() {
       .replace(/\s+/g, " ")
       .trim();
     return text.slice(0, 44) || element.tagName.toLowerCase();
+  }
+
+  function isActuallyVisible(element, rect) {
+    const x = Math.min(Math.max(rect.left + Math.min(rect.width / 2, 8), 0), window.innerWidth - 1);
+    const y = Math.min(Math.max(rect.top + Math.min(rect.height / 2, 8), 0), window.innerHeight - 1);
+    const top = document.elementFromPoint(x, y);
+    return !!top && (top === element || element.contains(top) || top.contains(element));
   }
 }
 

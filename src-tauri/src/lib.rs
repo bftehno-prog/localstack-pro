@@ -33,13 +33,42 @@ fn cache_snapshot(snapshot: AppSnapshot) -> AppSnapshot {
 }
 
 fn with_snapshot_cache(result: AppResult<AppSnapshot>) -> AppResult<AppSnapshot> {
-    result.map(cache_snapshot)
+    result.map(|snapshot| {
+        invalidate_state_cache();
+        cache_snapshot(snapshot)
+    })
 }
 
-fn invalidate_snapshot_cache() {
+fn invalidate_state_cache() {
     let cache = STATE_CACHE.get_or_init(|| Mutex::new(None));
     if let Ok(mut guard) = cache.lock() {
         *guard = None;
+    }
+}
+
+fn with_cache_invalidation<T>(result: AppResult<T>) -> AppResult<T> {
+    if result.is_ok() {
+        invalidate_state_cache();
+    }
+    result
+}
+
+fn handle_close_to_tray(app: &tauri::AppHandle, window_label: &str) -> AppResult<bool> {
+    let close_to_tray = Store::new()
+        .and_then(|store| store.load_static())
+        .map(|snapshot| snapshot.settings.close_to_tray)
+        .unwrap_or(false);
+    if close_to_tray {
+        let window = app
+            .get_webview_window(window_label)
+            .ok_or_else(|| format!("Window {window_label} was not found."))?;
+        window
+            .hide()
+            .map_err(|err| format!("Cannot hide window to tray: {err}"))?;
+        Ok(true)
+    } else {
+        app.exit(0);
+        Ok(false)
     }
 }
 
@@ -252,35 +281,35 @@ pub fn current_state() -> AppResult<AppSnapshot> {
 
 #[tauri::command]
 fn start_all() -> AppResult<AppSnapshot> {
-    services::start_all().map(cache_snapshot)
+    with_snapshot_cache(services::start_all())
 }
 #[tauri::command]
 fn stop_all() -> AppResult<AppSnapshot> {
-    services::stop_all().map(cache_snapshot)
+    with_snapshot_cache(services::stop_all())
 }
 #[tauri::command]
 fn restart_all() -> AppResult<AppSnapshot> {
-    services::restart_all().map(cache_snapshot)
+    with_snapshot_cache(services::restart_all())
 }
 #[tauri::command]
 fn start_service(service_id: String) -> AppResult<AppSnapshot> {
-    services::start_service(service_id).map(cache_snapshot)
+    with_snapshot_cache(services::start_service(service_id))
 }
 #[tauri::command]
 fn start_service_profile(service_ids: Vec<String>) -> AppResult<AppSnapshot> {
-    services::start_service_profile(service_ids).map(cache_snapshot)
+    with_snapshot_cache(services::start_service_profile(service_ids))
 }
 #[tauri::command]
 fn stop_service(service_id: String) -> AppResult<AppSnapshot> {
-    services::stop_service(service_id).map(cache_snapshot)
+    with_snapshot_cache(services::stop_service(service_id))
 }
 #[tauri::command]
 fn restart_service(service_id: String) -> AppResult<AppSnapshot> {
-    services::restart_service(service_id).map(cache_snapshot)
+    with_snapshot_cache(services::restart_service(service_id))
 }
 #[tauri::command]
 fn save_service(service: ServiceInfo) -> AppResult<AppSnapshot> {
-    services::save_service(service).map(cache_snapshot)
+    with_snapshot_cache(services::save_service(service))
 }
 #[tauri::command]
 fn install_service_dependency(service_id: String) -> AppResult<AppSnapshot> {
@@ -300,11 +329,7 @@ fn run_health_check() -> AppResult<health::HealthReport> {
 }
 #[tauri::command]
 fn repair_environment() -> AppResult<health::HealthReport> {
-    let result = health::repair_environment();
-    if result.is_ok() {
-        invalidate_snapshot_cache();
-    }
-    result
+    with_cache_invalidation(health::repair_environment())
 }
 
 #[tauri::command]
@@ -337,11 +362,7 @@ fn diagnose_host(host_id: String) -> AppResult<hosts::HostDiagnosticReport> {
 }
 #[tauri::command]
 fn repair_host(host_id: String) -> AppResult<hosts::HostDiagnosticReport> {
-    let result = hosts::repair_host(host_id);
-    if result.is_ok() {
-        invalidate_snapshot_cache();
-    }
-    result
+    with_cache_invalidation(hosts::repair_host(host_id))
 }
 
 #[tauri::command]
@@ -371,11 +392,11 @@ fn delete_database(database_id: String) -> AppResult<AppSnapshot> {
 }
 #[tauri::command]
 fn backup_database(database_id: String) -> AppResult<String> {
-    database::backup_database(database_id)
+    with_cache_invalidation(database::backup_database(database_id))
 }
 #[tauri::command]
 fn import_database_sql(database_id: String, path: String) -> AppResult<String> {
-    database::import_database_sql(database_id, path)
+    with_cache_invalidation(database::import_database_sql(database_id, path))
 }
 #[tauri::command]
 fn test_database_connection(database_id: String) -> AppResult<database::DatabaseDiagnosticReport> {
@@ -443,7 +464,7 @@ fn reset_settings() -> AppResult<AppSnapshot> {
 }
 #[tauri::command]
 fn create_app_backup(path: String) -> AppResult<String> {
-    settings::create_app_backup(path)
+    with_cache_invalidation(settings::create_app_backup(path))
 }
 #[tauri::command]
 fn restore_app_backup(path: String) -> AppResult<AppSnapshot> {
@@ -518,7 +539,7 @@ fn backup_host(host_id: String, target: String) -> AppResult<String> {
 }
 #[tauri::command]
 fn restore_host_backup(path: String) -> AppResult<AppSnapshot> {
-    tools::restore_host_backup(path).map(cache_snapshot)
+    with_snapshot_cache(tools::restore_host_backup(path))
 }
 #[tauri::command]
 fn check_latest_release() -> AppResult<tools::ReleaseInfo> {
@@ -530,7 +551,7 @@ fn download_latest_release_installer() -> AppResult<String> {
 }
 #[tauri::command]
 fn install_downloaded_update(path: String) -> AppResult<String> {
-    tools::install_downloaded_update(path)
+    with_cache_invalidation(tools::install_downloaded_update(path))
 }
 #[tauri::command]
 fn read_config_file(path: String) -> AppResult<tools::ConfigFile> {
@@ -538,7 +559,7 @@ fn read_config_file(path: String) -> AppResult<tools::ConfigFile> {
 }
 #[tauri::command]
 fn save_config_file(path: String, content: String) -> AppResult<String> {
-    tools::save_config_file(path, content)
+    with_cache_invalidation(tools::save_config_file(path, content))
 }
 #[tauri::command]
 fn create_diagnostic_bundle(target: String) -> AppResult<String> {
@@ -566,27 +587,27 @@ fn read_file_with_encoding(path: String, encoding: String) -> AppResult<tools::C
 }
 #[tauri::command]
 fn write_file(path: String, content: String) -> AppResult<String> {
-    tools::write_file(path, content)
+    with_cache_invalidation(tools::write_file(path, content))
 }
 #[tauri::command]
 fn write_file_with_encoding(path: String, content: String, encoding: String) -> AppResult<String> {
-    tools::write_file_with_encoding(path, content, encoding)
+    with_cache_invalidation(tools::write_file_with_encoding(path, content, encoding))
 }
 #[tauri::command]
 fn create_file(path: String) -> AppResult<String> {
-    tools::create_file(path)
+    with_cache_invalidation(tools::create_file(path))
 }
 #[tauri::command]
 fn create_folder(path: String) -> AppResult<String> {
-    tools::create_folder(path)
+    with_cache_invalidation(tools::create_folder(path))
 }
 #[tauri::command]
 fn delete_path(path: String) -> AppResult<String> {
-    tools::delete_path(path)
+    with_cache_invalidation(tools::delete_path(path))
 }
 #[tauri::command]
 fn trash_path(path: String) -> AppResult<tools::TrashRecord> {
-    tools::trash_path(path)
+    with_cache_invalidation(tools::trash_path(path))
 }
 #[tauri::command]
 fn restore_trash_path(
@@ -594,27 +615,31 @@ fn restore_trash_path(
     trash_path: String,
     overwrite: bool,
 ) -> AppResult<String> {
-    tools::restore_trash_path(original_path, trash_path, overwrite)
+    with_cache_invalidation(tools::restore_trash_path(
+        original_path,
+        trash_path,
+        overwrite,
+    ))
 }
 #[tauri::command]
 fn rename_path(path: String, new_name: String) -> AppResult<String> {
-    tools::rename_path(path, new_name)
+    with_cache_invalidation(tools::rename_path(path, new_name))
 }
 #[tauri::command]
 fn duplicate_path(path: String) -> AppResult<String> {
-    tools::duplicate_path(path)
+    with_cache_invalidation(tools::duplicate_path(path))
 }
 #[tauri::command]
 fn copy_path(source: String, target: String, overwrite: bool) -> AppResult<String> {
-    tools::copy_path(source, target, overwrite)
+    with_cache_invalidation(tools::copy_path(source, target, overwrite))
 }
 #[tauri::command]
 fn move_path(source: String, target: String, overwrite: bool) -> AppResult<String> {
-    tools::move_path(source, target, overwrite)
+    with_cache_invalidation(tools::move_path(source, target, overwrite))
 }
 #[tauri::command]
 fn chmod_path(path: String, mode: String, read_only: bool) -> AppResult<String> {
-    tools::chmod_path(path, mode, read_only)
+    with_cache_invalidation(tools::chmod_path(path, mode, read_only))
 }
 #[tauri::command]
 fn upload_files(
@@ -622,15 +647,15 @@ fn upload_files(
     destination: String,
     overwrite: bool,
 ) -> AppResult<Vec<String>> {
-    tools::upload_files(sources, destination, overwrite)
+    with_cache_invalidation(tools::upload_files(sources, destination, overwrite))
 }
 #[tauri::command]
 fn extract_archive_to(path: String, destination: String) -> AppResult<String> {
-    tools::extract_archive_to(path, destination)
+    with_cache_invalidation(tools::extract_archive_to(path, destination))
 }
 #[tauri::command]
 fn create_archive(paths: Vec<String>, target: String) -> AppResult<String> {
-    tools::create_archive(paths, target)
+    with_cache_invalidation(tools::create_archive(paths, target))
 }
 #[tauri::command]
 fn search_file_contents(
@@ -684,7 +709,7 @@ fn create_environment_snapshot(name: String) -> AppResult<tools::EnvironmentSnap
 }
 #[tauri::command]
 fn restore_environment_snapshot(id: String) -> AppResult<AppSnapshot> {
-    tools::restore_environment_snapshot(id).map(cache_snapshot)
+    with_snapshot_cache(tools::restore_environment_snapshot(id))
 }
 #[tauri::command]
 fn list_node_scripts(path: String) -> AppResult<Vec<tools::NodeScript>> {
@@ -757,21 +782,7 @@ fn toggle_window_maximize(app: tauri::AppHandle) -> AppResult<()> {
 
 #[tauri::command]
 fn request_window_close(app: tauri::AppHandle) -> AppResult<()> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "Main window was not found.".to_string())?;
-    let close_to_tray = Store::new()
-        .and_then(|store| store.load_static())
-        .map(|snapshot| snapshot.settings.close_to_tray)
-        .unwrap_or(false);
-    if close_to_tray {
-        window
-            .hide()
-            .map_err(|err| format!("Cannot hide window to tray: {err}"))
-    } else {
-        app.exit(0);
-        Ok(())
-    }
+    handle_close_to_tray(&app, "main").map(|_| ())
 }
 
 pub fn run() {
@@ -797,11 +808,8 @@ pub fn run() {
                 return;
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if let Ok(snapshot) = Store::new().and_then(|store| store.load_static()) {
-                    if snapshot.settings.close_to_tray {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    }
+                if let Ok(true) = handle_close_to_tray(window.app_handle(), window.label()) {
+                    api.prevent_close();
                 }
             }
         })

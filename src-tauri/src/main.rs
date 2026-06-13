@@ -1,10 +1,27 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+fn arg_after(args: &[String], flag: &str) -> Option<String> {
+    args.windows(2)
+        .find(|window| window[0] == flag)
+        .map(|window| window[1].clone())
+}
+
+fn args_after_3(args: &[String], flag: &str) -> Option<(String, String, String)> {
+    args.windows(4)
+        .find(|window| window[0] == flag)
+        .map(|window| (window[1].clone(), window[2].clone(), window[3].clone()))
+}
+
+fn has_arg(args: &[String], flag: &str) -> bool {
+    args.iter().any(|arg| arg == flag)
+}
+
 fn main() {
     if localstack_pro_lib::try_run_service_helper() {
         return;
     }
-    if std::env::args().any(|arg| arg == "--localstack-start-all") {
+    let args: Vec<String> = std::env::args().collect();
+    if has_arg(&args, "--localstack-start-all") {
         match localstack_pro_lib::start_all_for_cli() {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -14,7 +31,7 @@ fn main() {
         }
         return;
     }
-    if std::env::args().any(|arg| arg == "--localstack-stop-all") {
+    if has_arg(&args, "--localstack-stop-all") {
         match localstack_pro_lib::stop_all_for_cli() {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -24,12 +41,7 @@ fn main() {
         }
         return;
     }
-    if let Some(service_id) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-restart-service")
-        .map(|window| window[1].clone())
-    {
+    if let Some(service_id) = arg_after(&args, "--localstack-restart-service") {
         match localstack_pro_lib::restart_service_for_cli(service_id) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -39,12 +51,7 @@ fn main() {
         }
         return;
     }
-    if let Some(service_id) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-check-service")
-        .map(|window| window[1].clone())
-    {
+    if let Some(service_id) = arg_after(&args, "--localstack-check-service") {
         match localstack_pro_lib::check_service_for_cli(service_id) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -54,12 +61,7 @@ fn main() {
         }
         return;
     }
-    if let Some(host_id) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-diagnose-host")
-        .map(|window| window[1].clone())
-    {
+    if let Some(host_id) = arg_after(&args, "--localstack-diagnose-host") {
         match localstack_pro_lib::diagnose_host_for_cli(host_id) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -69,12 +71,7 @@ fn main() {
         }
         return;
     }
-    if let Some(host_id) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-repair-host")
-        .map(|window| window[1].clone())
-    {
+    if let Some(host_id) = arg_after(&args, "--localstack-repair-host") {
         match localstack_pro_lib::repair_host_for_cli(host_id) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -84,12 +81,7 @@ fn main() {
         }
         return;
     }
-    if let Some(kind) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-install-db-tool")
-        .map(|window| window[1].clone())
-    {
+    if let Some(kind) = arg_after(&args, "--localstack-install-db-tool") {
         match localstack_pro_lib::install_db_tool_for_cli(kind) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -99,12 +91,7 @@ fn main() {
         }
         return;
     }
-    if let Some(service_id) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-install-service")
-        .map(|window| window[1].clone())
-    {
+    if let Some(service_id) = arg_after(&args, "--localstack-install-service") {
         match localstack_pro_lib::install_service_dependency_for_cli(service_id) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -114,12 +101,7 @@ fn main() {
         }
         return;
     }
-    if let Some(database_id) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-test-database")
-        .map(|window| window[1].clone())
-    {
+    if let Some(database_id) = arg_after(&args, "--localstack-test-database") {
         match localstack_pro_lib::test_database_for_cli(database_id) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -129,12 +111,7 @@ fn main() {
         }
         return;
     }
-    if let Some(path) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-create-backup")
-        .map(|window| window[1].clone())
-    {
+    if let Some(path) = arg_after(&args, "--localstack-create-backup") {
         match localstack_pro_lib::create_backup_for_cli(path) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -144,12 +121,7 @@ fn main() {
         }
         return;
     }
-    if let Some(source) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|window| window[0] == "--localstack-tail-log")
-        .map(|window| window[1].clone())
-    {
+    if let Some(source) = arg_after(&args, "--localstack-tail-log") {
         match localstack_pro_lib::tail_log_for_cli(source) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -159,13 +131,8 @@ fn main() {
         }
         return;
     }
-    if let Some(args) = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(4)
-        .find(|window| window[0] == "--localstack-install-cms")
-        .map(|window| (window[1].clone(), window[2].clone(), window[3].clone()))
-    {
-        match localstack_pro_lib::install_cms_for_cli(args.0, args.1, args.2) {
+    if let Some(cms_args) = args_after_3(&args, "--localstack-install-cms") {
+        match localstack_pro_lib::install_cms_for_cli(cms_args.0, cms_args.1, cms_args.2) {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
                 eprintln!("{err}");
@@ -174,7 +141,7 @@ fn main() {
         }
         return;
     }
-    if std::env::args().any(|arg| arg == "--localstack-detect-dependencies") {
+    if has_arg(&args, "--localstack-detect-dependencies") {
         match localstack_pro_lib::detect_dependencies_for_cli() {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -184,7 +151,7 @@ fn main() {
         }
         return;
     }
-    if std::env::args().any(|arg| arg == "--localstack-health-check") {
+    if has_arg(&args, "--localstack-health-check") {
         match localstack_pro_lib::health_check_for_cli() {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
@@ -194,7 +161,7 @@ fn main() {
         }
         return;
     }
-    if std::env::args().any(|arg| arg == "--localstack-repair-environment") {
+    if has_arg(&args, "--localstack-repair-environment") {
         match localstack_pro_lib::repair_environment_for_cli() {
             Ok(summary) => println!("{summary}"),
             Err(err) => {
