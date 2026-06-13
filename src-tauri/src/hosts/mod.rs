@@ -217,6 +217,28 @@ pub fn diagnose_host(host_id: String) -> AppResult<HostDiagnosticReport> {
         },
     );
 
+    let proxy_bypassed = proxy_bypass_covers_domain(&host.domain);
+    push_check(
+        &mut checks,
+        "proxy-bypass",
+        "Windows proxy bypass",
+        if proxy_bypassed { "ok" } else { "warning" },
+        if proxy_bypassed {
+            format!("{} is excluded from the Windows proxy.", host.domain)
+        } else {
+            format!(
+                "{} is not excluded from the Windows proxy. Browser requests may return 503 from the proxy instead of reaching LocalStack.",
+                host.domain
+            )
+        },
+        read_proxy_override().ok(),
+        if proxy_bypassed {
+            None
+        } else {
+            Some("Open the host once or click Sync Hosts File to update proxy bypass.".to_string())
+        },
+    );
+
     let runtime = runtime_config_path(&store, service_id);
     let runtime_text = fs::read_to_string(&runtime).unwrap_or_default();
     let has_domain = runtime_text
@@ -832,6 +854,52 @@ fn read_proxy_override() -> AppResult<String> {
         }
     }
     Ok(String::new())
+}
+
+fn proxy_bypass_covers_domain(domain: &str) -> bool {
+    if !windows_proxy_enabled() {
+        return true;
+    }
+    let normalized = domain.trim().to_lowercase();
+    if normalized.is_empty() {
+        return true;
+    }
+    let Ok(override_text) = read_proxy_override() else {
+        return false;
+    };
+    override_text
+        .split(';')
+        .map(|entry| entry.trim().to_lowercase())
+        .filter(|entry| !entry.is_empty())
+        .any(|entry| {
+            entry == normalized
+                || (entry == "*.test" && normalized.ends_with(".test"))
+                || (entry == "<local>" && !normalized.contains('.'))
+        })
+}
+
+fn windows_proxy_enabled() -> bool {
+    let Ok(output) = Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            "/v",
+            "ProxyEnable",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.contains("ProxyEnable") && line.split_whitespace().last() == Some("0x1"))
 }
 
 fn write_proxy_override(value: &str) -> AppResult<()> {

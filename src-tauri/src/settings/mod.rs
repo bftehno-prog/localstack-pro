@@ -403,6 +403,12 @@ pub fn open_host(host_id: String) -> AppResult<crate::state::AppSnapshot> {
             }
             endpoint_ready(candidate_scheme, candidate_host, candidate_port)
         };
+    crate::hosts::sync_proxy_bypass_for_hosts(&snapshot).map_err(|err| {
+        format!(
+            "Cannot add {} to Windows proxy bypass list: {err}",
+            host.domain
+        )
+    })?;
     if crate::hosts::hosts_file_maps_domain(&host.domain)
         && !web_runtime_needs_refresh(&store, service_id, &host.domain)
     {
@@ -430,12 +436,6 @@ pub fn open_host(host_id: String) -> AppResult<crate::state::AppSnapshot> {
             ));
         }
     }
-    crate::hosts::sync_proxy_bypass_for_hosts(&snapshot).map_err(|err| {
-        format!(
-            "Cannot add {} to Windows proxy bypass list: {err}",
-            host.domain
-        )
-    })?;
     ensure_node_proxy_service(&store, &snapshot, &host)?;
     if web_runtime_needs_refresh(&store, service_id, &host.domain) {
         crate::services::restart_service(service_id.to_string()).map_err(|err| {
