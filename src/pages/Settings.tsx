@@ -277,6 +277,13 @@ export function SettingsPage({
         </section>
         <aside className="detail-rail">
           <Panel title="About Settings">
+            <div className="about-row">
+              <Link size={17} />
+              <div>
+                <strong>{t("Creator")}</strong>
+                <p><a className="link" href="https://artnext.ru" onClick={(event) => { event.preventDefault(); void run(() => api.openUrl("https://artnext.ru")); }}>Farid Leonov - artnext.ru</a></p>
+              </div>
+            </div>
             {tabs.map((tab) => <div className="about-row" key={tab}>{iconFor(tab)}<div><strong>{t(tab)}</strong><p>{t(descriptionFor(tab))}</p></div></div>)}
           </Panel>
           <Panel title="Need Help?">

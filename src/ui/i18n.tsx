@@ -208,6 +208,7 @@ const dictionary: Record<string, string> = {
   "Need Help?": "Нужна помощь?",
   "Visit documentation for detailed guides and troubleshooting.": "Откройте локальную папку документации и данных приложения.",
   "Open Documentation": "Открыть документацию",
+  Creator: "Создатель",
   "Default System Browser": "Браузер по умолчанию",
   Chrome: "Chrome",
   Edge: "Edge",

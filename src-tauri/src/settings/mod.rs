@@ -306,7 +306,7 @@ fn documentation_html() -> String {
   </style>
 </head>
 <body><main>
-  <header><div><h1>LocalStack Pro Documentation</h1><p>Local virtual server and environment manager for Windows web development.</p></div><code>v1.0.1</code></header>
+  <header><div><h1>LocalStack Pro Documentation</h1><p>Local virtual server and environment manager for Windows web development.</p><p>Creator: <a href="https://artnext.ru">Farid Leonov</a></p></div><code>v1.0.1</code></header>
   <div class="grid">
     <section><div class="lang">Русский</div><h2>Быстрый старт</h2><ol><li>Откройте <b>Сервисы</b> и нажмите <b>Detect</b>, чтобы найти установленные Apache, Nginx, PHP, базы данных и утилиты.</li><li>Если чего-то нет, нажмите <b>Install Missing</b>.</li><li>Запустите нужный web server, синхронизируйте hosts-файл и откройте сайт через <b>Открыть в браузере</b>.</li></ol></section>
     <section><div class="lang">English</div><h2>Quick Start</h2><ol><li>Open <b>Services</b> and click <b>Detect</b> to find installed Apache, Nginx, PHP, database engines and tools.</li><li>If something is missing, click <b>Install Missing</b>.</li><li>Start the required web server, sync the hosts file and open the site with <b>Open in Browser</b>.</li></ol></section>

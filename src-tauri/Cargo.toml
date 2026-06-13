@@ -2,7 +2,7 @@
 name = "localstack-pro"
 version = "1.0.1"
 description = "LocalStack Pro"
-authors = ["LocalStack Pro"]
+authors = ["Farid Leonov <https://artnext.ru>"]
 edition = "2021"
 
 [lib]

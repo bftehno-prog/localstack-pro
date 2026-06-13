@@ -1,5 +1,7 @@
 # LocalStack Pro
 
+Creator: [Farid Leonov](https://artnext.ru)
+
 LocalStack Pro is a Windows desktop app built with Tauri, React, TypeScript, and Rust. It manages local web-development environments through the Rust backend: process start/stop/restart for configured native executables, AppData persistence, host config files, Windows hosts-file elevation, certificate generation/trust/revoke requests, database command execution, logs, settings, and system tray actions.
 
 ## Stack

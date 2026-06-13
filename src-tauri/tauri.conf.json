@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "LocalStack Pro",
+    "publisher": "Farid Leonov",
     "resources": [
       "bundled-services"
     ],
