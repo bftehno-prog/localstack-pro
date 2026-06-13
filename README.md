@@ -34,7 +34,7 @@ npm run tauri:build
 Build outputs:
 
 - App executable: `src-tauri\target\release\localstack-pro.exe`
-- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.0_x64-setup.exe`
+- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.1_x64-setup.exe`
 
 ## App Data
 
@@ -325,7 +325,7 @@ The audit starts a local Vite server, opens every main page at desktop, tablet, 
 - overlapping visible controls
 - blank/broken pages
 
-Outputs:
+Outputs are generated locally and ignored by Git:
 
 - HTML report: `reports\responsive\responsive-report.html`
 - JSON report: `reports\responsive\responsive-report.json`

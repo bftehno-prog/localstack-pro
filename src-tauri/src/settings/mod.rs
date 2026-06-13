@@ -306,7 +306,7 @@ fn documentation_html() -> String {
   </style>
 </head>
 <body><main>
-  <header><div><h1>LocalStack Pro Documentation</h1><p>Local virtual server and environment manager for Windows web development.</p></div><code>v1.0.0</code></header>
+  <header><div><h1>LocalStack Pro Documentation</h1><p>Local virtual server and environment manager for Windows web development.</p></div><code>v1.0.1</code></header>
   <div class="grid">
     <section><div class="lang">Русский</div><h2>Быстрый старт</h2><ol><li>Откройте <b>Сервисы</b> и нажмите <b>Detect</b>, чтобы найти установленные Apache, Nginx, PHP, базы данных и утилиты.</li><li>Если чего-то нет, нажмите <b>Install Missing</b>.</li><li>Запустите нужный web server, синхронизируйте hosts-файл и откройте сайт через <b>Открыть в браузере</b>.</li></ol></section>
     <section><div class="lang">English</div><h2>Quick Start</h2><ol><li>Open <b>Services</b> and click <b>Detect</b> to find installed Apache, Nginx, PHP, database engines and tools.</li><li>If something is missing, click <b>Install Missing</b>.</li><li>Start the required web server, sync the hosts file and open the site with <b>Open in Browser</b>.</li></ol></section>
@@ -393,15 +393,23 @@ pub fn open_host(host_id: String) -> AppResult<crate::state::AppSnapshot> {
             service_name, service_name, host.domain
         ));
     }
+    ensure_node_proxy_service(&store, &snapshot, &host)?;
     let cert_ready = !host.ssl || host_certificate_files_ready(&store, &snapshot, &host.domain);
     let candidates = host_open_candidates(&host, cert_ready);
+    let candidate_ready =
+        |candidate_scheme: &str, candidate_host: &str, candidate_port: u16| -> bool {
+            if is_node_host(&host) && candidate_scheme == "https" {
+                return endpoint_ready("http", candidate_host, host.http_port);
+            }
+            endpoint_ready(candidate_scheme, candidate_host, candidate_port)
+        };
     if crate::hosts::hosts_file_maps_domain(&host.domain)
         && !web_runtime_needs_refresh(&store, service_id, &host.domain)
     {
         if let Some((scheme, browser_host, port)) = candidates
             .iter()
             .find(|(candidate_scheme, candidate_host, candidate_port)| {
-                endpoint_ready(candidate_scheme, candidate_host, *candidate_port)
+                candidate_ready(candidate_scheme, candidate_host, *candidate_port)
             })
             .cloned()
         {
@@ -428,6 +436,7 @@ pub fn open_host(host_id: String) -> AppResult<crate::state::AppSnapshot> {
             host.domain
         )
     })?;
+    ensure_node_proxy_service(&store, &snapshot, &host)?;
     if web_runtime_needs_refresh(&store, service_id, &host.domain) {
         crate::services::restart_service(service_id.to_string()).map_err(|err| {
             format!(
@@ -440,7 +449,7 @@ pub fn open_host(host_id: String) -> AppResult<crate::state::AppSnapshot> {
     let Some((scheme, browser_host, port)) = candidates
         .iter()
         .find(|(candidate_scheme, candidate_host, candidate_port)| {
-            endpoint_ready(candidate_scheme, candidate_host, *candidate_port)
+            candidate_ready(candidate_scheme, candidate_host, *candidate_port)
         })
         .cloned()
     else {
@@ -536,6 +545,74 @@ fn ensure_host_database_service(
     Ok(())
 }
 
+fn ensure_node_proxy_service(
+    store: &Store,
+    snapshot: &crate::state::AppSnapshot,
+    host: &crate::state::HostInfo,
+) -> AppResult<()> {
+    if !is_node_host(host) {
+        return Ok(());
+    }
+    let Some(service) = snapshot
+        .services
+        .iter()
+        .find(|service| service.id == "node-proxy")
+    else {
+        return Err(format!(
+            "{} is a Node.js host, but Node.js Proxy service is not configured.",
+            host.domain
+        ));
+    };
+    if service.status == crate::state::ServiceStatus::Running
+        && !node_proxy_runtime_needs_refresh(store)
+    {
+        return Ok(());
+    }
+    let action = if service.status == crate::state::ServiceStatus::Running {
+        crate::services::restart_service
+    } else {
+        crate::services::start_service
+    };
+    action("node-proxy".to_string()).map_err(|err| {
+        format!(
+            "{} requires Node.js Proxy, but it could not be started: {err}",
+            host.domain
+        )
+    })?;
+    let mut snapshot = store.load_static()?;
+    store.log(
+        &mut snapshot,
+        LogLevel::Info,
+        &host.domain,
+        format!("Node.js Proxy was started before opening {}", host.domain),
+        None,
+    );
+    store.save(&snapshot)?;
+    Ok(())
+}
+
+fn node_proxy_runtime_needs_refresh(store: &Store) -> bool {
+    fs::read_to_string(store.dir.join("configs").join("node-proxy.js"))
+        .map(|text| !text.contains("startConfiguredApps") || !text.contains("proxyBuffered"))
+        .unwrap_or(true)
+}
+
+fn is_node_host(host: &crate::state::HostInfo) -> bool {
+    host.tags.iter().any(|tag| {
+        matches!(
+            tag.as_str(),
+            "node" | "nextjs" | "node-express" | "vite-react"
+        )
+    }) || host.env_variables.contains_key("LOCALSTACK_NODE_PORT")
+}
+
+fn node_host_port(host: &crate::state::HostInfo) -> u16 {
+    host.env_variables
+        .get("LOCALSTACK_NODE_PORT")
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(3000)
+}
+
 fn database_service_id(engine: &str) -> &'static str {
     match engine.to_lowercase().as_str() {
         "mariadb" => "mariadb",
@@ -608,7 +685,11 @@ fn web_runtime_needs_refresh(store: &Store, service_id: &str, domain: &str) -> b
                 .trim()
                 .eq_ignore_ascii_case(&format!("server_name {domain};"))
     });
-    missing_host || (service_id == "apache" && apache_runtime_text_needs_refresh(&text))
+    let stale_node_proxy =
+        service_id == "apache" && apache_node_runtime_needs_refresh(store, domain, &text);
+    missing_host
+        || stale_node_proxy
+        || (service_id == "apache" && apache_runtime_text_needs_refresh(&text))
 }
 
 fn apache_runtime_needs_refresh(store: &Store) -> bool {
@@ -627,6 +708,22 @@ fn apache_runtime_text_needs_refresh(text: &str) -> bool {
         || !text.contains("SetEnv PHPRC")
         || !text.contains("SetEnv TMP")
         || !text.contains("Alias /localstack-tools/")
+}
+
+fn apache_node_runtime_needs_refresh(store: &Store, domain: &str, text: &str) -> bool {
+    let Ok(snapshot) = store.load_static() else {
+        return false;
+    };
+    let Some(host) = snapshot
+        .hosts
+        .iter()
+        .find(|host| host.domain.eq_ignore_ascii_case(domain))
+        .filter(|host| is_node_host(host))
+    else {
+        return false;
+    };
+    let expected = format!("ProxyPass / http://127.0.0.1:{}/", node_host_port(host));
+    !text.contains(&expected)
 }
 
 pub fn open_database_admin(kind: String) -> AppResult<()> {
@@ -1190,40 +1287,37 @@ fn http_endpoint_ready(host: &str, port: u16) -> bool {
         return false;
     };
     let addresses = addresses.collect::<Vec<_>>();
-    for path in ["/check.php", "/install.php", "/"] {
-        let request = format!(
-            "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nUser-Agent: LocalStackPro/1.0\r\n\r\n"
-        );
-        for address in &addresses {
-            let Ok(mut stream) = TcpStream::connect_timeout(address, Duration::from_millis(250))
-            else {
-                continue;
-            };
-            let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
-            let _ = stream.set_write_timeout(Some(Duration::from_millis(250)));
-            if std::io::Write::write_all(&mut stream, request.as_bytes()).is_err() {
-                continue;
-            }
-            let mut buffer = [0_u8; 128];
-            let Ok(size) = std::io::Read::read(&mut stream, &mut buffer) else {
-                continue;
-            };
-            let head = String::from_utf8_lossy(&buffer[..size]);
-            if head.starts_with("HTTP/")
-                && !head.contains(" 502 ")
-                && !head.contains(" 503 ")
-                && !head.contains(" 504 ")
-            {
-                return true;
+    for _ in 0..35 {
+        for path in ["/check.php", "/install.php", "/"] {
+            let request = format!(
+                "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nUser-Agent: LocalStackPro/1.0\r\n\r\n"
+            );
+            for address in &addresses {
+                let Ok(mut stream) =
+                    TcpStream::connect_timeout(address, Duration::from_millis(350))
+                else {
+                    continue;
+                };
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(1200)));
+                let _ = stream.set_write_timeout(Some(Duration::from_millis(350)));
+                if std::io::Write::write_all(&mut stream, request.as_bytes()).is_err() {
+                    continue;
+                }
+                let mut buffer = [0_u8; 256];
+                let Ok(size) = std::io::Read::read(&mut stream, &mut buffer) else {
+                    continue;
+                };
+                let head = String::from_utf8_lossy(&buffer[..size]);
+                if head.starts_with("HTTP/")
+                    && !head.contains(" 502 ")
+                    && !head.contains(" 503 ")
+                    && !head.contains(" 504 ")
+                {
+                    return true;
+                }
             }
         }
-    }
-    for address in addresses {
-        let Ok(stream) = TcpStream::connect_timeout(&address, Duration::from_millis(250)) else {
-            continue;
-        };
-        let _ = stream.shutdown(std::net::Shutdown::Both);
-        return true;
+        thread::sleep(Duration::from_millis(400));
     }
     false
 }
