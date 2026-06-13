@@ -197,7 +197,6 @@ export function SettingsPage({
               <Switch label="Minimize to System Tray" checked={settings.minimizeToTray} onChange={(value) => update("minimizeToTray", value)} />
               <Switch label="Close to System Tray" checked={settings.closeToTray} onChange={(value) => update("closeToTray", value)} />
               <Switch label="Enable Telemetry" checked={settings.telemetry} onChange={(value) => update("telemetry", value)} />
-              <Button onClick={() => window.dispatchEvent(new Event("localstack:first-run"))}>Open First Run Wizard</Button>
             </Panel></>}
           {activeTab === "Paths" && <Panel title="Paths">
             <SettingInput label="Projects Folder" value={settings.projectsFolder} onChange={(value) => update("projectsFolder", value)} />

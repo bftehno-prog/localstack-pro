@@ -21,12 +21,11 @@ const SettingsPage = lazy(() => import("./pages/Settings").then((module) => ({ d
 const FilesPage = lazy(() => import("./pages/Files").then((module) => ({ default: module.FilesPage })));
 
 export default function App() {
-  const { state, loading, error, notice, busy, actionLabel, operations, run, retryLast, refresh } = useAppState();
+  const { state, loading, error, notice, busy, actionLabel, run, refresh } = useAppState();
   const [page, setPageState] = useState<PageKey>(() => pageFromHash());
   const [selectedHost, setSelectedHost] = useState<HostInfo | undefined>();
   const [editingHost, setEditingHost] = useState<HostInfo | undefined>();
   const [selectedService, setSelectedService] = useState<ServiceInfo | undefined>();
-  const [showFirstRun, setShowFirstRun] = useState(() => localStorage.getItem("localstack.firstRunDone") !== "true");
   const setPage = useCallback((next: PageKey) => {
     setPageState(next);
     const hash = `#${next}`;
@@ -35,12 +34,9 @@ export default function App() {
 
   useEffect(() => {
     const handleHash = () => setPageState(pageFromHash());
-    const handleFirstRun = () => setShowFirstRun(true);
     window.addEventListener("hashchange", handleHash);
-    window.addEventListener("localstack:first-run", handleFirstRun);
     return () => {
       window.removeEventListener("hashchange", handleHash);
-      window.removeEventListener("localstack:first-run", handleFirstRun);
     };
   }, []);
   useEffect(() => {
@@ -82,8 +78,6 @@ export default function App() {
         notice={notice}
         busy={busy}
         actionLabel={actionLabel}
-        operations={operations}
-        retryLast={retryLast}
         run={run}
         selectedHost={selectedHost}
         setSelectedHost={setSelectedHost}
@@ -91,11 +85,6 @@ export default function App() {
         selectedService={selectedService}
         setSelectedService={setSelectedService}
         editHost={editHost}
-        showFirstRun={showFirstRun}
-        finishFirstRun={() => {
-          localStorage.setItem("localstack.firstRunDone", "true");
-          setShowFirstRun(false);
-        }}
       />
     </I18nProvider>
   );
@@ -116,17 +105,13 @@ function AppContent({
   notice,
   busy,
   actionLabel,
-  operations,
-  retryLast,
   run,
   selectedHost,
   setSelectedHost,
   editingHost,
   selectedService,
   setSelectedService,
-  editHost,
-  showFirstRun,
-  finishFirstRun
+  editHost
 }: {
   page: PageKey;
   setPage: (page: PageKey) => void;
@@ -135,8 +120,6 @@ function AppContent({
   notice: string | null;
   busy: boolean;
   actionLabel: string | null;
-  operations: ReturnType<typeof useAppState>["operations"];
-  retryLast: ReturnType<typeof useAppState>["retryLast"];
   run: ReturnType<typeof useAppState>["run"];
   selectedHost?: HostInfo;
   setSelectedHost: (host?: HostInfo) => void;
@@ -144,8 +127,6 @@ function AppContent({
   selectedService?: ServiceInfo;
   setSelectedService: (service: ServiceInfo) => void;
   editHost: (host?: HostInfo) => void;
-  showFirstRun: boolean;
-  finishFirstRun: () => void;
 }) {
   const t = useT();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -201,7 +182,6 @@ function AppContent({
       )}
       {notice && <div className="success-banner">{t(notice)}</div>}
       {error && <SmartError message={error} run={run} />}
-      {operations.length > 0 && <OperationCenter operations={operations} retryLast={retryLast} />}
       {paletteOpen && (
         <CommandPalette
           query={paletteQuery}
@@ -211,7 +191,6 @@ function AppContent({
         />
       )}
       <Suspense fallback={<div className="boot-screen">LocalStack Pro</div>}>
-        {showFirstRun && <FirstRunWizard setPage={setPage} run={run} finish={finishFirstRun} />}
         {page === "overview" && <OverviewPage state={state} run={run} selectedHost={selectedHost} selectHost={setSelectedHost} editHost={editHost} />}
         {page === "hosts" && <HostsPage state={state} run={run} selected={selectedHost} setSelected={setSelectedHost} editHost={editHost} />}
         {page === "host-editor" && <HostEditorPage state={state} initial={editingHost} run={run} back={() => setPage("hosts")} />}
@@ -267,43 +246,6 @@ function CommandPalette({
           ))}
           {!commands.length && <small>{t("No matches found.")}</small>}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function FirstRunWizard({ setPage, run, finish }: { setPage: (page: PageKey) => void; run: ReturnType<typeof useAppState>["run"]; finish: () => void }) {
-  const t = useT();
-  return (
-    <div className="first-run">
-      <div>
-        <strong>{t("First Run Wizard")}</strong>
-        <span>{t("Choose project folders, check ports, trust SSL, and start base services.")}</span>
-      </div>
-      <Button onClick={() => { setPage("settings"); }}>{t("Open Settings")}</Button>
-      <Button onClick={() => void run(() => api.repairEnvironment(), { label: "Repairing environment..." })}>{t("Prepare Environment")}</Button>
-      <Button variant="primary" onClick={finish}>{t("Done")}</Button>
-    </div>
-  );
-}
-
-function OperationCenter({ operations, retryLast }: { operations: ReturnType<typeof useAppState>["operations"]; retryLast: ReturnType<typeof useAppState>["retryLast"] }) {
-  const t = useT();
-  return (
-    <div className="operation-center" title={String(t("Recent actions"))}>
-      <div className="operation-title">
-        <strong>{t("Action Center")}</strong>
-        <button onClick={() => void retryLast()}>{t("Retry")}</button>
-        <span>{operations.filter((item) => item.status === "running").length} {t("active")}</span>
-      </div>
-      <div className="operation-list">
-        {operations.slice(0, 3).map((item) => (
-          <div className={`operation-item operation-${item.status}`} key={item.id} title={item.message ? String(t(item.message)) : String(t(item.label))}>
-            <i />
-            <strong>{t(item.label)}</strong>
-            <small>{item.status === "running" ? t("Running") : item.durationMs ? `${Math.max(1, Math.round(item.durationMs / 1000))}s` : t(item.status)}</small>
-          </div>
-        ))}
       </div>
     </div>
   );

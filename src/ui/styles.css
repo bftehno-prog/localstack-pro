@@ -2056,69 +2056,12 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   margin-bottom: 12px;
   font-size: 13px;
 }
-.operation-center {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card);
-  padding: 9px 10px;
-  margin-bottom: 12px;
-  display: grid;
-  gap: 8px;
-}
-.operation-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 12px;
-}
-.operation-title button {
-  min-height: 24px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--control);
-  color: var(--control-text);
-  padding: 0 8px;
-}
-.operation-title strong { color: var(--text); font-size: 13px; }
-.operation-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-.operation-item {
-  min-width: 0;
-  min-height: 32px;
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.operation-item strong {
-  min-width: 0;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.operation-item small { color: var(--muted); }
-.operation-item i,
 .issue-card i {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--muted);
 }
-.operation-running i { background: var(--orange); }
-.operation-success i { background: var(--green); }
-.operation-error i { background: var(--red); }
 
 .command-backdrop {
   position: fixed;
@@ -2215,24 +2158,6 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   overflow-wrap: anywhere;
 }
 .smart-error small { color: var(--muted); }
-.first-run {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card);
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.first-run div {
-  min-width: 220px;
-  flex: 1;
-  display: grid;
-  gap: 3px;
-}
-.first-run span { color: var(--muted); font-size: 12px; }
 .release-card,
 .preview-result {
   border: 1px solid var(--line);
@@ -2907,7 +2832,6 @@ body:has(.tray-shell) {
 }
 .panel,
 .system-card,
-.operation-center,
 .cms-card,
 .extension-card,
 .port-card {
@@ -2920,8 +2844,6 @@ h2,
 .data-table td strong,
 .service-metrics strong,
 .stat strong,
-.operation-title strong,
-.operation-item strong,
 .cms-card strong,
 .extension-card strong {
   color: var(--text-strong);
@@ -2934,9 +2856,6 @@ p,
 .data-table td small,
 .service-name small,
 .extension-card small,
-.operation-title,
-.operation-item,
-.operation-item small,
 .donut small,
 .table-foot,
 .stat {
@@ -3121,7 +3040,6 @@ textarea:hover,
   .main { padding: 12px 10px; }
   .action-progress { margin-left: -10px; margin-right: -10px; }
   .hosts-table th:nth-child(6), .hosts-table td:nth-child(6) { display: none; }
-  .operation-list { grid-template-columns: 1fr; }
   .dual-file-manager,
   .file-tools-grid { grid-template-columns: 1fr; }
   .editor-findbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
