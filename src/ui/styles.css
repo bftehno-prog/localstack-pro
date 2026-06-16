@@ -329,6 +329,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   --red: #ff6b66;
   --orange: #d9b44a;
   --line: #3a4248;
+  --hover: #263138;
   --muted: #aab4b9;
   --card: #161d21;
   --body: #0d1114;
@@ -2193,7 +2194,15 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
   text-align: left;
   cursor: pointer;
 }
-.issue-card:hover { background: var(--hover); border-color: var(--blue); }
+.issue-card:hover {
+  background: var(--control-hover);
+  border-color: var(--blue);
+  color: var(--control-text);
+}
+.issue-card:hover span,
+.issue-card:hover svg {
+  color: var(--control-text);
+}
 .issue-card strong { color: var(--orange); }
 .issue-card span {
   min-width: 0;

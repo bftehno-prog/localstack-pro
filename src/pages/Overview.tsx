@@ -7,6 +7,7 @@ import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { TopServices } from "../components/TopServices";
+import { useT } from "../ui/i18n";
 import { hostReadinessScore, readinessClass, readinessLabel } from "../ui/readiness";
 import { useStoredList } from "../ui/preferences";
 
@@ -23,6 +24,7 @@ export function OverviewPage({
   selectHost: (host: HostInfo) => void;
   editHost: (host?: HostInfo) => void;
 }) {
+  const t = useT();
   const selected = state.hosts.find((host) => host.id === selectedHost?.id) ?? state.hosts.find((host) => host.domain === "shop.test") ?? state.hosts[0];
   const [query, setQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
@@ -154,7 +156,7 @@ export function OverviewPage({
               <button key={issue.key} className="issue-card" onClick={() => void issue.action()}>
                 <Wrench size={16} />
                 <strong>{issue.count}</strong>
-                <span>{issue.label}</span>
+                <span>{t(issue.label)}</span>
               </button>
             ))}
           </div>
