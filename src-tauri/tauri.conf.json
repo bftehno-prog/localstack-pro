@@ -40,15 +40,23 @@
       "icons/128x128.png",
       "icons/256x256.png",
       "icons/512x512.png",
-      "icons/icon.ico"
+      "icons/app.ico"
     ],
     "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
       "nsis": {
         "displayLanguageSelector": true,
-        "installerIcon": "icons/icon.ico",
+        "installerIcon": "icons/app.ico",
+        "headerImage": "installer-assets/header.bmp",
+        "sidebarImage": "installer-assets/wizard-left.bmp",
         "installerHooks": "installer-hooks.nsh",
         "installMode": "currentUser",
-        "languages": ["English", "Russian"]
+        "languages": ["English", "Russian"],
+        "customLanguageFiles": {
+          "English": "installer-languages/English.nsh",
+          "Russian": "installer-languages/Russian.nsh"
+        }
       }
     }
   }

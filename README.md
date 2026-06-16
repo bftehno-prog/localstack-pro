@@ -13,7 +13,7 @@ LocalStack Pro — Windows desktop-приложение для локально�
 Основные изменения версии `1.0.1`:
 
 - приложение открывается сразу развернутым на весь экран;
-- установщик создает ярлык на рабочем столе с lime-иконкой;
+- установщик NSIS использует lime `app.ico`, branded `header.bmp`, `wizard-left.bmp`, кастомную welcome-страницу и такой же стиль в деинсталляторе;
 - вся документация доступна на русском и английском;
 - расширены переводы интерфейса при переключении языка на русский;
 - обновлен lime-логотип для приложения, установщика и tray-состояний.
@@ -51,9 +51,46 @@ Build outputs:
 
 - App executable: `src-tauri\target\release\localstack-pro.exe`
 - Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.1_x64-setup.exe`
-- Convenience copy: `release\LocalStack Pro_1.0.1_x64-setup.exe`
+- Signed convenience copy: `release\LocalStack Pro_1.0.1_x64-setup.exe`
 
-The installer uses `src-tauri\icons\icon.ico` for both the installer and the installed desktop shortcut. The shortcut is created by `src-tauri\installer-hooks.nsh`.
+The installer uses these branded NSIS assets:
+
+- `src-tauri\icons\app.ico`
+- `src-tauri\installer-assets\header.bmp`
+- `src-tauri\installer-assets\wizard-left.bmp`
+- `src-tauri\installer-hooks.nsh`
+- `src-tauri\installer-languages\English.nsh`
+- `src-tauri\installer-languages\Russian.nsh`
+
+To build and sign the Windows installer:
+
+```powershell
+npm run install:signtool
+npm run release:windows
+```
+
+For production SmartScreen reputation, sign with a trusted code-signing certificate:
+
+```powershell
+$env:LOCALSTACK_SIGN_PFX="C:\secure\localstack-pro-code-signing.pfx"
+$env:LOCALSTACK_SIGN_PASSWORD="pfx-password"
+npm run release:windows
+```
+
+You can also sign with an installed certificate thumbprint:
+
+```powershell
+$env:LOCALSTACK_SIGN_THUMBPRINT="CERTIFICATE_SHA1_THUMBPRINT"
+npm run sign:windows
+```
+
+If no certificate is configured, `scripts\sign-windows.ps1` uses the local development code-signing certificate named `Farid Leonov LocalStack Pro Dev Signing`. This is useful for local verification; SmartScreen trust still requires a trusted public code-signing certificate.
+
+For local development only, trust the generated certificate for the current Windows user:
+
+```powershell
+npm run trust:dev-signing
+```
 
 ## App Data
 

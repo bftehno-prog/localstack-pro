@@ -17,6 +17,10 @@
     "tauri:clippy": "cd src-tauri && cargo clippy --all-targets -- -D warnings",
     "tauri:test": "cd src-tauri && cargo test",
     "services:bundle": "powershell -ExecutionPolicy Bypass -File scripts/prepare-bundled-services.ps1",
+    "install:signtool": "powershell -ExecutionPolicy Bypass -File scripts/install-signtool.ps1",
+    "sign:windows": "powershell -ExecutionPolicy Bypass -File scripts/sign-windows.ps1",
+    "trust:dev-signing": "powershell -ExecutionPolicy Bypass -File scripts/trust-dev-signing-cert.ps1",
+    "release:windows": "npm run tauri:build && npm run sign:windows",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

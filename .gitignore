@@ -16,6 +16,10 @@ reports/
 reports/tmp/
 reports/generated/
 release/*.exe
+*.pfx
+*.p12
+*.cer
+!certs/localstack-pro-dev-signing.cer
 test-results/
 playwright-report/
 .vscode/
