@@ -797,6 +797,10 @@ pub fn run() {
                 let _ = state::bootstrap_bundled_services();
             });
             tray::setup(app.handle())?;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.maximize();
+                let _ = window.set_focus();
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

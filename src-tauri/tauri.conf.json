@@ -17,6 +17,7 @@
         "height": 1024,
         "minWidth": 1120,
         "minHeight": 760,
+        "maximized": true,
         "decorations": false,
         "resizable": true
       }
@@ -45,6 +46,7 @@
       "nsis": {
         "displayLanguageSelector": true,
         "installerIcon": "icons/icon.ico",
+        "installerHooks": "installer-hooks.nsh",
         "installMode": "currentUser",
         "languages": ["English", "Russian"]
       }

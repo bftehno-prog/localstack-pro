@@ -4,6 +4,20 @@ Creator: [Farid Leonov](https://artnext.ru)
 
 LocalStack Pro is a Windows desktop app built with Tauri, React, TypeScript, and Rust. It manages local web-development environments through the Rust backend: process start/stop/restart for configured native executables, AppData persistence, host config files, Windows hosts-file elevation, certificate generation/trust/revoke requests, database command execution, logs, settings, and system tray actions.
 
+The default visual mode is the Wet Asphalt theme with a lime LocalStack Pro logo. The desktop window starts maximized, and the NSIS installer creates a current-user desktop shortcut with the same lime application icon.
+
+## Кратко по-русски
+
+LocalStack Pro — Windows desktop-приложение для локальной веб-разработки. Оно управляет реальными сервисами Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy и DNS Helper, создает хосты `.test`, синхронизирует Windows hosts-файл, генерирует SSL-сертификаты, устанавливает CMS и дает двухпанельный файловый менеджер с редактором кода.
+
+Основные изменения версии `1.0.1`:
+
+- приложение открывается сразу развернутым на весь экран;
+- установщик создает ярлык на рабочем столе с lime-иконкой;
+- вся документация доступна на русском и английском;
+- расширены переводы интерфейса при переключении языка на русский;
+- обновлен lime-логотип для приложения, установщика и tray-состояний.
+
 ## Stack
 
 - Tauri 2
@@ -37,6 +51,9 @@ Build outputs:
 
 - App executable: `src-tauri\target\release\localstack-pro.exe`
 - Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.1_x64-setup.exe`
+- Convenience copy: `release\LocalStack Pro_1.0.1_x64-setup.exe`
+
+The installer uses `src-tauri\icons\icon.ico` for both the installer and the installed desktop shortcut. The shortcut is created by `src-tauri\installer-hooks.nsh`.
 
 ## App Data
 
@@ -55,6 +72,26 @@ It contains:
 - `backups`
 - `certs`
 - `keys`
+
+## Documentation
+
+In the app, open `Settings -> Need Help? -> Open Documentation`. LocalStack Pro writes a bilingual HTML guide to:
+
+```text
+%APPDATA%\LocalStack\LocalStack Pro\data\documentation\LocalStack Pro Documentation.html
+```
+
+The bundled documentation covers:
+
+- first launch and service detection
+- hosts and Windows hosts-file sync
+- Apache/Nginx/PHP runtime behavior
+- database creation, import, export and backups
+- SSL certificate generation and trust repair
+- CMS installation
+- Node.js, Next.js, Vite and Express hosting
+- the two-pane file manager and code editor
+- themes, tray behavior, backups and diagnostics
 
 ## Service Management
 

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LocalStack Pro Documentation</title>
+  <style>
+    body{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#0f1718;color:#eef5ef}
+    main{max-width:1180px;margin:0 auto;padding:28px}
+    header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:0 0 18px}
+    section{background:#151f20;border:1px solid #2b3a3c;border-radius:8px;padding:18px;margin:0 0 12px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    h1{font-size:28px;margin:0} h2{font-size:18px;margin:0 0 10px} h3{font-size:15px;margin:12px 0 6px}
+    p{line-height:1.45;margin:0 0 8px;color:#c7d1ce} li{margin:5px 0;line-height:1.4;color:#d7e0dd}
+    code{background:#223033;color:#b7ff38;padding:2px 6px;border-radius:4px}
+    a{color:#b7ff38}.lang{font-size:12px;color:#9db0ab;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+    .brand{display:flex;gap:12px;align-items:center}.mark{width:42px;height:42px;position:relative}.mark span{position:absolute;left:7px;width:28px;height:10px;border-radius:3px;background:#b7ff38;transform:skewY(-28deg)}.mark span:nth-child(2){top:13px;background:#92df23}.mark span:nth-child(3){top:24px;background:#6dac18}.mark span:first-child{top:2px}
+    @media(max-width:860px){main{padding:16px}.grid{grid-template-columns:1fr}header{display:block}}
+  </style>
+</head>
+<body><main>
+  <header><div class="brand"><div class="mark"><span></span><span></span><span></span></div><div><h1>LocalStack Pro Documentation</h1><p>Windows local server, host manager, CMS installer and file manager.</p><p>Creator: <a href="https://artnext.ru">Farid Leonov</a></p></div></div><code>v1.0.1</code></header>
+  <div class="grid">
+    <section><div class="lang">Русский</div><h2>Быстрый старт</h2><ol><li>Откройте <b>Сервисы</b> и нажмите <b>Найти</b>.</li><li>Установите отсутствующие компоненты через <b>Установить отсутствующие</b>.</li><li>Запустите Apache/MySQL/Node proxy, синхронизируйте hosts и откройте сайт.</li></ol></section>
+    <section><div class="lang">English</div><h2>Quick start</h2><ol><li>Open <b>Services</b> and click <b>Detect</b>.</li><li>Install missing components with <b>Install Missing</b>.</li><li>Start Apache/MySQL/Node proxy, sync hosts and open the site.</li></ol></section>
+    <section><div class="lang">Русский</div><h2>Окно и ярлык</h2><p>Приложение стартует развернутым на весь экран. Установщик создает ярлык <code>LocalStack Pro.lnk</code> на рабочем столе текущего пользователя и использует lime-иконку приложения.</p></section>
+    <section><div class="lang">English</div><h2>Window and shortcut</h2><p>The app starts maximized. The installer creates a <code>LocalStack Pro.lnk</code> desktop shortcut for the current user and uses the lime application icon.</p></section>
+    <section><div class="lang">Русский</div><h2>Сервисы</h2><p>Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy и DNS Helper управляются через настоящий Rust backend. Статусы, PID, порты, ошибки и логи берутся из runtime, а не из макета.</p></section>
+    <section><div class="lang">English</div><h2>Services</h2><p>Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy and DNS Helper are controlled by the Rust backend. Status, PID, ports, errors and logs come from runtime state.</p></section>
+    <section><div class="lang">Русский</div><h2>Хосты</h2><p>Хост хранит домен, root folder, document root, PHP-версию, web server, SSL, порты, БД, почту, env-переменные и заметки. <b>Sync Hosts File</b> добавляет домены в Windows hosts с повышением прав.</p></section>
+    <section><div class="lang">English</div><h2>Hosts</h2><p>A host stores domain, root folder, document root, PHP version, web server, SSL, ports, database, mail service, env variables and notes. <b>Sync Hosts File</b> updates the Windows hosts file with elevation.</p></section>
+    <section><div class="lang">Русский</div><h2>CMS</h2><p>WordPress, Joomla, Drupal, Grav, Meteor Blog CMS, Node/Next/Vite шаблоны и пользовательские PHP CMS устанавливаются в выбранную папку проекта. При включенной опции создается реальная база данных и записываются доступы.</p></section>
+    <section><div class="lang">English</div><h2>CMS</h2><p>WordPress, Joomla, Drupal, Grav, Meteor Blog CMS, Node/Next/Vite templates and custom PHP CMS projects install into the selected project folder. When enabled, LocalStack creates a real database and saves credentials.</p></section>
+    <section><div class="lang">Русский</div><h2>Node.js / Next.js</h2><ol><li>Проект должен иметь <code>package.json</code>.</li><li>Для хоста укажите <code>documentRoot=.</code>.</li><li>Добавьте <code>LOCALSTACK_NODE_PORT</code>, <code>LOCALSTACK_NODE_SCRIPT</code> и <code>LOCALSTACK_NODE_KIND</code>.</li><li>Запустите Apache и Node.js Proxy.</li></ol></section>
+    <section><div class="lang">English</div><h2>Node.js / Next.js</h2><ol><li>The project must have <code>package.json</code>.</li><li>Use <code>documentRoot=.</code> for the host.</li><li>Add <code>LOCALSTACK_NODE_PORT</code>, <code>LOCALSTACK_NODE_SCRIPT</code> and <code>LOCALSTACK_NODE_KIND</code>.</li><li>Start Apache and Node.js Proxy.</li></ol></section>
+    <section><div class="lang">Русский</div><h2>Базы данных</h2><p>Создание, удаление, импорт, экспорт и backup выполняются через mysql/psql/mysqldump/pg_dump. Если клиент или сервис отсутствует, приложение показывает понятную ошибку и не создает фейковое состояние.</p></section>
+    <section><div class="lang">English</div><h2>Database</h2><p>Create, delete, import, export and backup actions use mysql/psql/mysqldump/pg_dump. If the client or service is missing, the app shows a clear error and does not create fake state.</p></section>
+    <section><div class="lang">Русский</div><h2>SSL</h2><p>Сертификаты создаются в AppData, SAN-домены сохраняются в состоянии. Trust/Repair Trust работает через Windows Certificate Store и может запросить права администратора.</p></section>
+    <section><div class="lang">English</div><h2>SSL</h2><p>Certificates are generated in AppData, SAN domains are stored in state. Trust/Repair Trust uses the Windows Certificate Store and may require administrator approval.</p></section>
+    <section><div class="lang">Русский</div><h2>Файловый менеджер</h2><p>Двухпанельный режим поддерживает создание, переименование, копирование, перемещение, chmod/ACL, загрузку файлов, архивы, поиск по содержимому и редактор кода с подсветкой синтаксиса.</p></section>
+    <section><div class="lang">English</div><h2>File manager</h2><p>The dual-pane manager supports create, rename, copy, move, chmod/ACL, upload, archives, content search and a code editor with syntax highlighting.</p></section>
+    <section><div class="lang">Русский</div><h2>Настройки и темы</h2><p>Язык, тема, плотность, автозапуск, трей, папки, порты, уведомления, backups и logs сохраняются локально. Тема <b>Мокрый асфальт</b> с lime-акцентом используется как основной визуальный режим.</p></section>
+    <section><div class="lang">English</div><h2>Settings and themes</h2><p>Language, theme, density, startup, tray, folders, ports, notifications, backups and logs are stored locally. The <b>Wet Asphalt</b> lime-accent theme is the main visual mode.</p></section>
+    <section><div class="lang">Русский</div><h2>Диагностика</h2><ul><li>503/502: проверьте Apache/Node proxy и логи хоста.</li><li>ERR_CERT_AUTHORITY_INVALID: выполните SSL Repair Trust.</li><li>Domain not mapped: нажмите Sync Hosts File.</li><li>MySQL access denied: проверьте сервис, native client и пароль пользователя.</li></ul></section>
+    <section><div class="lang">English</div><h2>Troubleshooting</h2><ul><li>503/502: check Apache/Node proxy and host logs.</li><li>ERR_CERT_AUTHORITY_INVALID: run SSL Repair Trust.</li><li>Domain not mapped: click Sync Hosts File.</li><li>MySQL access denied: check the service, native client and user password.</li></ul></section>
+  </div>
+</main></body></html>

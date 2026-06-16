@@ -15,6 +15,7 @@ Thumbs.db
 reports/
 reports/tmp/
 reports/generated/
+release/*.exe
 test-results/
 playwright-report/
 .vscode/
