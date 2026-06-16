@@ -140,7 +140,7 @@ export function useAppState() {
     void refresh();
     const timer = window.setInterval(() => {
       if (!document.hidden && !busyRef.current) void refresh(true);
-    }, 300000);
+    }, window.location.hash.replace(/^#/, "") === "tray" ? 3000 : 5000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 

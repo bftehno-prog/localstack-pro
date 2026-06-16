@@ -63,12 +63,10 @@ export function TrayPanel({
     if ("__TAURI_INTERNALS__" in window) void api.hideTrayPanel();
   };
   const openHost = (host?: HostInfo) => {
-    if (host) {
-      void run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` }).finally(closeTray);
-    }
+    if (host) void run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` });
   };
   const openDatabaseTool = () => {
-    void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." }).finally(closeTray);
+    void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." });
   };
 
   return (
@@ -147,7 +145,7 @@ export function TrayPanel({
                 <span>{service.version}</span>
                 <button
                   className={`tray-toggle ${service.status === "running" ? "on" : ""}`}
-                  aria-label={service.status === "running" ? `Stop ${service.name}` : `Start ${service.name}`}
+                  aria-label={service.status === "running" ? `${t("Stop")} ${service.name}` : `${t("Start")} ${service.name}`}
                   onClick={() => void run(
                     service.status === "running" ? () => api.stopService(service.id) : () => api.startService(service.id),
                     { label: `${service.status === "running" ? "Stopping" : "Starting"} ${service.name}...` }

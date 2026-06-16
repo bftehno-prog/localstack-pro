@@ -93,7 +93,7 @@ export function Shell({
             <div className="metrics">
               <span>
                 <small>CPU</small>
-                {state.system.cpu}%
+                {state.system.cpu.toFixed(0)}%
               </span>
               <span>
                 <small>{t("Memory")}</small>

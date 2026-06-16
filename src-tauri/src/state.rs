@@ -10,7 +10,7 @@ use std::{
     sync::Mutex,
     time::Duration,
 };
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{Disks, Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -19,6 +19,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 static BUNDLE_EXTRACTION_LOCK: Mutex<()> = Mutex::new(());
+static SYSTEM_METRICS: Mutex<Option<System>> = Mutex::new(None);
 
 pub type AppResult<T> = Result<T, String>;
 
@@ -957,14 +958,7 @@ impl Store {
             };
         }
         let previous_system = snapshot.system.clone();
-        let total_memory = system
-            .as_ref()
-            .map(|system| system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0)
-            .unwrap_or(previous_system.memory_gb);
-        let used_memory = system
-            .as_ref()
-            .map(|system| system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0)
-            .unwrap_or(previous_system.memory_gb);
+        let (system_cpu, used_memory, disk_used) = current_system_metrics(&previous_system);
         snapshot.system = SystemInfo {
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             os: if previous_system.os.trim().is_empty() {
@@ -973,13 +967,9 @@ impl Store {
                 previous_system.os
             },
             uptime_seconds: System::uptime(),
-            cpu: previous_system.cpu,
-            memory_gb: if pids.is_empty() {
-                previous_system.memory_gb
-            } else {
-                used_memory.min(total_memory)
-            },
-            disk_gb: 127.0,
+            cpu: system_cpu,
+            memory_gb: used_memory,
+            disk_gb: disk_used,
         };
         snapshot
     }
@@ -1162,6 +1152,37 @@ impl Store {
             },
         }
     }
+}
+
+fn current_system_metrics(previous: &SystemInfo) -> (f32, f64, f64) {
+    let (cpu, memory_gb) = if let Ok(mut guard) = SYSTEM_METRICS.lock() {
+        let system = guard.get_or_insert_with(System::new_all);
+        system.refresh_memory();
+        system.refresh_cpu_usage();
+        let used_memory = system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+        let total_memory = system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+        (
+            system.global_cpu_usage().clamp(0.0, 100.0),
+            if total_memory > 0.0 {
+                used_memory.min(total_memory)
+            } else {
+                previous.memory_gb
+            },
+        )
+    } else {
+        (previous.cpu, previous.memory_gb)
+    };
+
+    let disks = Disks::new_with_refreshed_list();
+    let total_disk: u64 = disks.iter().map(|disk| disk.total_space()).sum();
+    let available_disk: u64 = disks.iter().map(|disk| disk.available_space()).sum();
+    let disk_gb = if total_disk > 0 && total_disk >= available_disk {
+        (total_disk - available_disk) as f64 / 1024.0 / 1024.0 / 1024.0
+    } else {
+        previous.disk_gb
+    };
+
+    (cpu, memory_gb, disk_gb)
 }
 
 pub fn bootstrap_bundled_services() -> AppResult<()> {

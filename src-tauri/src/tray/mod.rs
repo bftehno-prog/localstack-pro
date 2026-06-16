@@ -24,7 +24,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             } = event
             {
                 if matches!(button, MouseButton::Left | MouseButton::Right) {
-                    toggle_tray_panel(tray.app_handle());
+                    show_tray_panel(tray.app_handle());
                 }
             }
         });
@@ -77,17 +77,6 @@ fn show_tray_panel(app: &AppHandle) {
     let _ = window.show();
     let _ = window.set_focus();
     let _ = window.emit("tray-panel-opened", ());
-}
-
-fn toggle_tray_panel(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("tray-panel") else {
-        return;
-    };
-    if window.is_visible().unwrap_or(false) {
-        let _ = window.hide();
-    } else {
-        show_tray_panel(app);
-    }
 }
 
 fn position_tray_panel(app: &AppHandle, window: &tauri::WebviewWindow) {

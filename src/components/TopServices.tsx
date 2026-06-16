@@ -52,16 +52,16 @@ export function TopServices({
       </Panel>
       <div className="command-stack">
         <Button variant="primary" onClick={onStartAll} icon={<Play size={20} />}>
-          Start All
+          {t("Start All")}
         </Button>
         <Button onClick={onStopAll} icon={<Square size={16} />}>
-          Stop
+          {t("Stop")}
         </Button>
         <Button onClick={onRestartAll} icon={<RefreshCw size={17} />}>
-          Restart
+          {t("Restart")}
         </Button>
         <Button onClick={onOpenSite} icon={<Globe2 size={18} />}>
-          Open Site
+          {t("Open Site")}
         </Button>
       </div>
       <Panel title="System Info" className="system-info">
