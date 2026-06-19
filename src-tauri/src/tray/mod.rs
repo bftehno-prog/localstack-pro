@@ -1,10 +1,14 @@
-use std::sync::OnceLock;
+use std::{
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 use tauri::{
-    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, LogicalPosition, Manager, Position, WebviewUrl, WebviewWindowBuilder,
 };
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+static LAST_TRAY_CLICK: OnceLock<Mutex<Instant>> = OnceLock::new();
 
 const TRAY_PANEL_WIDTH: f64 = 340.0;
 const TRAY_PANEL_HEIGHT: f64 = 360.0;
@@ -19,11 +23,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button,
-                button_state: _,
+                button_state,
                 ..
             } = event
             {
-                if matches!(button, MouseButton::Left | MouseButton::Right) {
+                if matches!(button, MouseButton::Left | MouseButton::Right)
+                    && matches!(button_state, MouseButtonState::Up)
+                    && tray_click_allowed()
+                {
                     toggle_tray_panel(tray.app_handle());
                 }
             }
@@ -33,6 +40,19 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     }
     builder.build(app)?;
     Ok(())
+}
+
+fn tray_click_allowed() -> bool {
+    let now = Instant::now();
+    let lock = LAST_TRAY_CLICK.get_or_init(|| Mutex::new(now - Duration::from_millis(600)));
+    let Ok(mut last_click) = lock.lock() else {
+        return true;
+    };
+    if now.duration_since(*last_click) < Duration::from_millis(280) {
+        return false;
+    }
+    *last_click = now;
+    true
 }
 
 pub fn rebuild_menu_for_settings_change() {

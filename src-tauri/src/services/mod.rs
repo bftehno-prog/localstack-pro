@@ -499,6 +499,13 @@ fn wait_for_spawned_service_ports(
             return Ok(());
         }
         if let Ok(Some(status)) = child.try_wait() {
+            if service_id == "apache" {
+                if ports.iter().all(|port| port_accepting(*port)) {
+                    return Ok(());
+                }
+                thread::sleep(pause);
+                continue;
+            }
             return Err(format!(
                 "process exited before opening port(s) {}. Exit code: {:?}",
                 ports
@@ -534,6 +541,13 @@ fn wait_for_spawned_service_ports_quick(
             return Ok(());
         }
         if let Ok(Some(status)) = child.try_wait() {
+            if service_id == "apache" {
+                if ports.iter().all(|port| port_accepting(*port)) {
+                    return Ok(());
+                }
+                thread::sleep(pause);
+                continue;
+            }
             return Err(format!(
                 "process exited before opening port(s) {}. Exit code: {:?}",
                 ports
@@ -978,6 +992,8 @@ fn prepare_apache_runtime(
         .ok_or_else(|| "Cannot resolve Apache server root.".to_string())?;
     let runtime = store.dir.join("configs").join("apache-runtime");
     fs::create_dir_all(&runtime).map_err(|err| format!("Cannot create Apache runtime: {err}"))?;
+    fs::create_dir_all(server_root.join("logs"))
+        .map_err(|err| format!("Cannot create Apache server logs folder: {err}"))?;
     fs::create_dir_all(store.dir.join("logs"))
         .map_err(|err| format!("Cannot create logs folder: {err}"))?;
     ensure_host_runtime_dirs(snapshot)?;

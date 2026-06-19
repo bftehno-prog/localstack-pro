@@ -68,24 +68,28 @@ export function HostsPage({
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
-      const targets = state.hosts.slice(0, 8);
+      const targets = state.hosts
+        .filter((item) => favorites.items.includes(item.id) || item.id === host?.id)
+        .slice(0, 3);
+      if (targets.length === 0) return;
       const updates: Record<string, SitePreview> = {};
-      for (const item of targets) {
+      await Promise.allSettled(targets.map(async (item) => {
         try {
           updates[item.id] = await api.previewHost(item.id);
         } catch {
           // Live checks are advisory and must stay quiet.
         }
-      }
+      }));
       if (!cancelled) setSitePreviews((current) => ({ ...current, ...updates }));
     };
-    void check();
-    const timer = window.setInterval(check, 90000);
+    const initial = window.setTimeout(() => void check(), 2500);
+    const timer = window.setInterval(check, 300000);
     return () => {
       cancelled = true;
+      window.clearTimeout(initial);
       window.clearInterval(timer);
     };
-  }, [state.hosts]);
+  }, [favorites.items, host?.id, state.hosts]);
   const importHosts = async () => {
     const path = await pickJsonFile();
     if (path) {

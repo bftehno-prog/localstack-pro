@@ -96,6 +96,16 @@ pub fn stop_all_for_cli() -> AppResult<String> {
     Ok(format!("stopped={stopped}/{}", snapshot.services.len()))
 }
 
+pub fn start_service_for_cli(service_id: String) -> AppResult<String> {
+    let snapshot = services::start_service(service_id.clone())?;
+    let service = snapshot
+        .services
+        .iter()
+        .find(|service| service.id == service_id)
+        .ok_or_else(|| format!("Service {service_id} was not found after start."))?;
+    Ok(format!("{}={:?}", service.id, service.status))
+}
+
 pub fn restart_service_for_cli(service_id: String) -> AppResult<String> {
     let snapshot = services::restart_service(service_id.clone())?;
     let service = snapshot

@@ -41,6 +41,16 @@ fn main() {
         }
         return;
     }
+    if let Some(service_id) = arg_after(&args, "--localstack-start-service") {
+        match localstack_pro_lib::start_service_for_cli(service_id) {
+            Ok(summary) => println!("{summary}"),
+            Err(err) => {
+                eprintln!("{err}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if let Some(service_id) = arg_after(&args, "--localstack-restart-service") {
         match localstack_pro_lib::restart_service_for_cli(service_id) {
             Ok(summary) => println!("{summary}"),

@@ -132,6 +132,13 @@ pub fn diagnose_host(host_id: String) -> AppResult<HostDiagnosticReport> {
         .ok_or_else(|| "Host not found.".to_string())?;
     let mut checks = Vec::new();
     let doc_root = document_root(&host);
+    let is_node_host = host.env_variables.contains_key("LOCALSTACK_NODE_PORT")
+        || host.tags.iter().any(|tag| {
+            matches!(
+                tag.as_str(),
+                "node" | "nextjs" | "node-express" | "vite-react" | "meteor" | "meteor-blog-cms"
+            )
+        });
 
     push_check(
         &mut checks,
@@ -151,18 +158,30 @@ pub fn diagnose_host(host_id: String) -> AppResult<HostDiagnosticReport> {
         },
     );
 
-    let index_ok = ["index.php", "index.html"]
-        .iter()
-        .any(|name| doc_root.join(name).is_file());
+    let index_ok = if is_node_host {
+        doc_root.join("package.json").is_file()
+    } else {
+        ["index.php", "index.html"]
+            .iter()
+            .any(|name| doc_root.join(name).is_file())
+    };
     push_check(
         &mut checks,
         "index-file",
         "Index file",
         if index_ok { "ok" } else { "warning" },
         if index_ok {
-            "index.php or index.html was found.".to_string()
+            if is_node_host {
+                "package.json was found for the Node host.".to_string()
+            } else {
+                "index.php or index.html was found.".to_string()
+            }
         } else {
-            "No index.php or index.html was found in document root.".to_string()
+            if is_node_host {
+                "No package.json was found in the Node host root.".to_string()
+            } else {
+                "No index.php or index.html was found in document root.".to_string()
+            }
         },
         None,
         if index_ok {
@@ -245,29 +264,46 @@ pub fn diagnose_host(host_id: String) -> AppResult<HostDiagnosticReport> {
         .lines()
         .any(|line| line.to_lowercase().contains(&host.domain.to_lowercase()));
     let has_doc_root = runtime_text.contains(&slash(&doc_root));
+    let node_proxy_target = host
+        .env_variables
+        .get("LOCALSTACK_NODE_PORT")
+        .map(|port| format!("127.0.0.1:{port}"));
+    let runtime_ok = if let Some(target) = &node_proxy_target {
+        has_domain && runtime_text.contains(target)
+    } else {
+        has_domain && has_doc_root
+    };
     push_check(
         &mut checks,
         "runtime-config",
         "Runtime vhost config",
-        if has_domain && has_doc_root {
+        if runtime_ok {
             "ok"
         } else {
             "error"
         },
-        if has_domain && has_doc_root {
-            format!(
-                "Runtime config contains {} and its document root.",
-                host.domain
-            )
+        if runtime_ok {
+            if let Some(target) = &node_proxy_target {
+                format!("Runtime config contains {} and proxy target {}.", host.domain, target)
+            } else {
+                format!(
+                    "Runtime config contains {} and its document root.",
+                    host.domain
+                )
+            }
         } else {
-            format!(
-                "Runtime config is missing {} or {}.",
-                host.domain,
-                doc_root.display()
-            )
+            if let Some(target) = &node_proxy_target {
+                format!("Runtime config is missing {} or proxy target {}.", host.domain, target)
+            } else {
+                format!(
+                    "Runtime config is missing {} or {}.",
+                    host.domain,
+                    doc_root.display()
+                )
+            }
         },
         Some(runtime.display().to_string()),
-        if has_domain && has_doc_root {
+        if runtime_ok {
             None
         } else {
             Some(format!(
