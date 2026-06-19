@@ -165,7 +165,7 @@ export function OverviewPage({
       <Panel title="Workday">
         <div className="workday-row">
           <select value={workdayHostId} onChange={(event) => setWorkdayHostId(event.target.value)}>
-            <option value="">Last opened project</option>
+            <option value="">{t("Last opened project")}</option>
             {state.hosts.map((host) => <option key={host.id} value={host.id}>{host.domain}</option>)}
           </select>
           <Button variant="primary" icon={<Play size={16} />} onClick={() => void startWorkday()}>Start Workday</Button>
@@ -212,12 +212,12 @@ export function OverviewPage({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Domain</th>
-                  <th>Root Folder</th>
-                  <th>PHP Version</th>
+                  <th>{t("Domain")}</th>
+                  <th>{t("Root Folder")}</th>
+                  <th>{t("PHP Version")}</th>
                   <th>SSL</th>
-                  <th>Readiness</th>
-                  <th>Status</th>
+                  <th>{t("Readiness")}</th>
+                  <th>{t("Status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -232,7 +232,7 @@ export function OverviewPage({
                     </td>
                     <td>{host.rootFolder}</td>
                     <td>{host.phpVersion}</td>
-                    <td><span className={host.ssl ? "green-text" : "muted"}>{host.ssl ? "Valid" : "Disabled"}</span></td>
+                    <td><span className={host.ssl ? "green-text" : "muted"}>{t(host.ssl ? "Valid" : "Disabled")}</span></td>
                     <td><span className={`score-pill ${readinessClass(score)}`}>{score}%</span></td>
                     <td>
                       <StatusDot status={host.status} />
@@ -243,7 +243,7 @@ export function OverviewPage({
               </tbody>
             </table>
             <div className="table-foot">
-              <span>{visibleHosts.length} hosts</span>
+              <span>{visibleHosts.length} {t("Hosts")}</span>
               <div className="segmented">
                 <Button variant="icon" icon={<List size={16} />} onClick={() => void run(() => api.openPath(`${state.appDataDir}\\hosts`))} />
                 <Button variant="icon" icon={<Database size={16} />} onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"))} />
@@ -302,20 +302,20 @@ export function OverviewPage({
             >
               <div className="readiness-block">
                 <span className={`score-pill ${readinessClass(hostReadinessScore(state, selected))}`}>{hostReadinessScore(state, selected)}%</span>
-                <strong>{readinessLabel(hostReadinessScore(state, selected))}</strong>
+                <strong>{t(readinessLabel(hostReadinessScore(state, selected)))}</strong>
               </div>
               <div className="kv form-kv">
-                <span>Root Folder</span>
+                <span>{t("Root Folder")}</span>
                 <button onClick={() => void run(() => api.openPath(selected.rootFolder))}>{selected.rootFolder}<Folder size={16} /></button>
                 <span>URL</span>
                 <button onClick={() => void run(() => api.openHost(selected.id))}>{hostUrl(selected)}<ExternalLink size={16} /></button>
-                <span>PHP Version</span>
+                <span>{t("PHP Version")}</span>
                 <strong>{selected.phpVersion}</strong>
-                <span>Web Server</span>
+                <span>{t("Web Server")}</span>
                 <strong>{selected.webServer}</strong>
-                <span>Document Root</span>
+                <span>{t("Document Root")}</span>
                 <strong>{selected.documentRoot}</strong>
-                <span>Error Log</span>
+                <span>{t("Error Log")}</span>
                 <button onClick={() => void run(() => api.openPath(`${selected.rootFolder}\\logs\\error.log`))}>{selected.rootFolder}\\logs\\error.log</button>
               </div>
             </Panel>

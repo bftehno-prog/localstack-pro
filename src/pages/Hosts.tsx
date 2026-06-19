@@ -9,6 +9,7 @@ import { StatusDot } from "../components/StatusDot";
 import { hostUrl } from "./Overview";
 import { hostReadinessScore, readinessClass, readinessLabel } from "../ui/readiness";
 import { useStoredBoolean, useStoredList } from "../ui/preferences";
+import { useT } from "../ui/i18n";
 
 type HostHistoryEntry = {
   id: string;
@@ -30,6 +31,7 @@ export function HostsPage({
   setSelected: (host?: HostInfo) => void;
   editHost: (host?: HostInfo) => void;
 }) {
+  const t = useT();
   const host = selected ?? state.hosts[0];
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All Status");
@@ -245,42 +247,42 @@ export function HostsPage({
     <div className="page-grid">
       <section>
         <div className="page-title">
-          <h1>Hosts <small>{state.hosts.length}</small></h1>
+          <h1>{t("Hosts")} <small>{state.hosts.length}</small></h1>
           <div className="toolbar">
             <Button variant="primary" icon={<Plus size={16} />} onClick={() => editHost()}>
-              New Host
+              {t("New Host")}
             </Button>
             <Button icon={<Copy size={16} />} disabled={!host} onClick={() => host && void run(() => api.duplicateHost(host.id), { label: `Duplicating ${host.domain}...` })}>
-              Duplicate
+              {t("Duplicate")}
             </Button>
-            <Button icon={<Download size={16} />} onClick={() => void importHosts()}>Import</Button>
+            <Button icon={<Download size={16} />} onClick={() => void importHosts()}>{t("Import")}</Button>
             <Button icon={<Upload size={16} />} onClick={() => void exportHosts()}>
-              Export
+              {t("Export")}
             </Button>
             <Button icon={<Upload size={16} />} disabled={!host} onClick={() => host && void backupHost(host)}>
-              Backup Host
+              {t("Backup Host")}
             </Button>
             <Button icon={<Download size={16} />} onClick={() => void restoreHost()}>
-              Restore Host
+              {t("Restore Host")}
             </Button>
             <Button icon={<ShieldCheck size={16} />} disabled={!host} onClick={() => host && void diagnose(host)}>
-              Diagnose
+              {t("Diagnose")}
             </Button>
             <Button icon={<Wrench size={16} />} disabled={!host} onClick={() => host && void repair(host)}>
-              Repair Host
+              {t("Repair Host")}
             </Button>
               <Button variant="danger" icon={<Trash2 size={16} />} disabled={!host} onClick={() => host && void deleteSelected(host)}>
-              Delete
+              {t("Delete")}
             </Button>
             <Button icon={<ShieldCheck size={16} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>
-              Sync Hosts File
+              {t("Sync Hosts File")}
             </Button>
             <Button icon={<Star size={16} />} onClick={() => host && favorites.toggle(host.id)} disabled={!host}>
-              {host && favorites.items.includes(host.id) ? "Unpin" : "Pin"}
+              {host && favorites.items.includes(host.id) ? t("Unpin") : t("Pin")}
             </Button>
           </div>
         </div>
-        <Panel title="Host Wizard">
+        <Panel title={t("Host Wizard")}>
           <div className="wizard-inline">
             <select value={wizardType} onChange={(event) => setWizardType(event.target.value)}>{["WordPress", "Laravel", "Symfony", "Custom PHP", "Static", "Node.js", "Next.js"].map((item) => <option key={item}>{item}</option>)}</select>
             <input value={wizardDomain} onChange={(event) => {
@@ -293,45 +295,45 @@ export function HostsPage({
             <input value={wizardFolder} onChange={(event) => setWizardFolder(event.target.value)} />
             <input value={wizardDatabase} onChange={(event) => setWizardDatabase(event.target.value)} />
             <label className="inline-toggle"><span className={`toggle ${wizardSsl ? "on" : ""}`} onClick={() => setWizardSsl((value) => !value)} />SSL</label>
-            <Button variant="primary" icon={<Plus size={16} />} onClick={() => void createWizardHost()}>Create Host</Button>
+            <Button variant="primary" icon={<Plus size={16} />} onClick={() => void createWizardHost()}>{t("Create Host")}</Button>
           </div>
         </Panel>
         <Panel>
           <div className="filters">
             <label className="search">
               <Search size={17} />
-              <input placeholder="Search hosts..." value={query} onChange={(event) => setQuery(event.target.value)} />
+              <input placeholder={t("Search hosts...")} value={query} onChange={(event) => setQuery(event.target.value)} />
             </label>
-            <select value={status} onChange={(event) => setStatus(event.target.value)}><option>All Status</option><option>running</option><option>stopped</option><option>error</option></select>
-            <select value={environment} onChange={(event) => setEnvironment(event.target.value)}><option>All Environments</option>{Array.from(new Set(state.hosts.map((item) => item.environment))).map((item) => <option key={item}>{item}</option>)}</select>
-            <select value={phpVersion} onChange={(event) => setPhpVersion(event.target.value)}><option>All PHP Versions</option>{state.phpVersions.map((item) => <option key={item.version}>{item.version}</option>)}</select>
-            <select value={ssl} onChange={(event) => setSsl(event.target.value)}><option>SSL: All</option><option>SSL: Enabled</option><option>SSL: Disabled</option></select>
+            <select value={status} onChange={(event) => setStatus(event.target.value)}><option value="All Status">{t("All Status")}</option><option value="running">{t("running")}</option><option value="stopped">{t("stopped")}</option><option value="error">{t("error")}</option></select>
+            <select value={environment} onChange={(event) => setEnvironment(event.target.value)}><option value="All Environments">{t("All Environments")}</option>{Array.from(new Set(state.hosts.map((item) => item.environment))).map((item) => <option key={item} value={item}>{t(item)}</option>)}</select>
+            <select value={phpVersion} onChange={(event) => setPhpVersion(event.target.value)}><option value="All PHP Versions">{t("All PHP Versions")}</option>{state.phpVersions.map((item) => <option key={item.version}>{item.version}</option>)}</select>
+            <select value={ssl} onChange={(event) => setSsl(event.target.value)}><option value="SSL: All">{t("SSL: All")}</option><option value="SSL: Enabled">{t("SSL: Enabled")}</option><option value="SSL: Disabled">{t("SSL: Disabled")}</option></select>
             <div className="menu-anchor">
-              <Button icon={<Filter size={16} />} aria-label="Open filter presets" onClick={() => setFilterMenuOpen((value) => !value)}>Filters</Button>
+              <Button icon={<Filter size={16} />} aria-label={t("Open filter presets")} onClick={() => setFilterMenuOpen((value) => !value)}>{t("Filters")}</Button>
               {filterMenuOpen && (
                 <div className="action-menu" onMouseLeave={() => setFilterMenuOpen(false)}>
-                  <button onClick={resetFilters}>Reset Filters</button>
-                  <button onClick={() => { setStatus("running"); setFilterMenuOpen(false); }}>Running Hosts</button>
-                  <button onClick={() => { setSsl("SSL: Enabled"); setFilterMenuOpen(false); }}>SSL Enabled</button>
-                  <button onClick={() => { setReadinessFilter("Needs Attention"); setFilterMenuOpen(false); }}>Needs Attention</button>
+                  <button onClick={resetFilters}>{t("Reset Filters")}</button>
+                  <button onClick={() => { setStatus("running"); setFilterMenuOpen(false); }}>{t("Running Hosts")}</button>
+                  <button onClick={() => { setSsl("SSL: Enabled"); setFilterMenuOpen(false); }}>{t("SSL: Enabled")}</button>
+                  <button onClick={() => { setReadinessFilter("Needs Attention"); setFilterMenuOpen(false); }}>{t("Needs Attention")}</button>
                 </div>
               )}
             </div>
-            <Button onClick={() => setCompactRows((value) => !value)}>{compactRows ? "Comfortable Rows" : "Compact Rows"}</Button>
+            <Button onClick={() => setCompactRows((value) => !value)}>{compactRows ? t("Comfortable Rows") : t("Compact Rows")}</Button>
           </div>
           <table className={`data-table hosts-table ${compactRows ? "compact-table" : ""}`}>
             <thead>
               <tr>
                 <th></th>
-                <th>Host</th>
-                <th>Status</th>
-                <th>Environment</th>
-                <th>PHP Version</th>
+                <th>{t("Host")}</th>
+                <th>{t("Status")}</th>
+                <th>{t("Environment")}</th>
+                <th>{t("PHP Version")}</th>
                 <th>SSL</th>
-                <th>Readiness</th>
-                <th>Tags</th>
-                <th>Updated</th>
-                <th>Actions</th>
+                <th>{t("Readiness")}</th>
+                <th>{t("Tags")}</th>
+                <th>{t("Updated")}</th>
+                <th>{t("Actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -342,12 +344,12 @@ export function HostsPage({
                   <td><input type="checkbox" checked={host?.id === row.id} readOnly /></td>
                   <td><button className={`star-button ${favorites.items.includes(row.id) ? "active" : ""}`} onClick={(event) => { event.stopPropagation(); favorites.toggle(row.id); }}><Star size={14} /></button><strong>{row.domain}</strong><small>{hostUrl(row)}</small></td>
                   <td><StatusDot status={row.status} /></td>
-                  <td><span className="pill blue">{row.environment}</span></td>
+                  <td><span className="pill blue">{t(row.environment)}</span></td>
                   <td>{row.phpVersion}</td>
-                  <td><span className={row.ssl ? "green-text" : "muted"}>{row.ssl ? "Valid" : "Disabled"}</span></td>
+                  <td><span className={row.ssl ? "green-text" : "muted"}>{t(row.ssl ? "Valid" : "Disabled")}</span></td>
                   <td><span className={`score-pill ${readinessClass(score)}`}>{score}%</span>{sitePreviews[row.id] && <small>{sitePreviews[row.id].status}</small>}</td>
                   <td>{row.tags.map((tag) => <span className="pill" key={tag}>{tag}</span>)}</td>
-                  <td>2m ago</td>
+                  <td>{t("2m ago")}</td>
                   <td className="row-actions">
                     <Button variant="icon" icon={<Play size={15} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openHost(row.id), { label: `Opening ${row.domain}...` }); }} />
                     <Button variant="icon" icon={<Folder size={15} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(row.rootFolder), { label: `Opening ${row.rootFolder}...` }); }} />
@@ -355,11 +357,11 @@ export function HostsPage({
                       <Button variant="icon" aria-label="More host actions" icon={<MoreVertical size={15} />} onClick={(event) => { event.stopPropagation(); setOpenMenuId(openMenuId === row.id ? null : row.id); }} />
                       {openMenuId === row.id && (
                         <div className="action-menu" onMouseLeave={() => setOpenMenuId(null)}>
-                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); editHost(row); }}>Edit</button>
-                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void run(() => api.duplicateHost(row.id), { label: `Duplicating ${row.domain}...` }); }}>Duplicate</button>
-                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void diagnose(row); }}>Diagnose</button>
-                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void repair(row); }}>Repair Host</button>
-                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void deleteSelected(row); }}>Delete</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); editHost(row); }}>{t("Edit")}</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void run(() => api.duplicateHost(row.id), { label: `Duplicating ${row.domain}...` }); }}>{t("Duplicate")}</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void diagnose(row); }}>{t("Diagnose")}</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void repair(row); }}>{t("Repair Host")}</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void deleteSelected(row); }}>{t("Delete")}</button>
                         </div>
                       )}
                     </div>
@@ -369,7 +371,7 @@ export function HostsPage({
               })}
             </tbody>
           </table>
-          <div className="table-foot"><span>{host ? "1 selected" : "0 selected"}</span><span>Rows: {filteredHosts.length} of {state.hosts.length}</span></div>
+          <div className="table-foot"><span>{host ? `1 ${t("selected")}` : `0 ${t("selected")}`}</span><span>{t("Rows")}: {filteredHosts.length} {t("of")} {state.hosts.length}</span></div>
         </Panel>
       </section>
       {host && (
@@ -377,18 +379,18 @@ export function HostsPage({
           <Panel title={host.domain} action={<><StatusDot status={host.status} /><Button variant="icon" icon={<MoreVertical size={16} />} onClick={() => editHost(host)} /></>}>
             <div className="readiness-block">
               <span className={`score-pill ${readinessClass(hostReadinessScore(state, host))}`}>{hostReadinessScore(state, host)}%</span>
-              <strong>{readinessLabel(hostReadinessScore(state, host))}</strong>
+              <strong>{t(readinessLabel(hostReadinessScore(state, host)))}</strong>
             </div>
-            <div className="tabs">{["General", "Domains", "Paths", "Environment Variables", "Rewrite Rules", "Integrations"].map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</div>
+            <div className="tabs">{["General", "Domains", "Paths", "Environment Variables", "Rewrite Rules", "Integrations"].map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{t(item)}</button>)}</div>
             <div className="kv detail-kv">
-              <span>Domain</span><strong>{host.domain}</strong>
+              <span>{t("Domain")}</span><strong>{host.domain}</strong>
               <span>URL</span><button onClick={() => void run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` })}>{hostUrl(host)}<ExternalLink size={16} /></button>
-              <span>Environment</span><span className="pill blue">{host.environment}</span>
-              <span>PHP Version</span><strong>{host.phpVersion}</strong>
-              <span>Web Server</span><strong>{host.webServer}</strong>
-              <span>Document Root</span><strong>{host.rootFolder}\\{host.documentRoot}</strong>
-              <span>Status</span><StatusDot status={host.status} />
-              <span>Tags</span><div>{host.tags.map((tag) => <span className="pill" key={tag}>{tag}</span>)}</div>
+              <span>{t("Environment")}</span><span className="pill blue">{t(host.environment)}</span>
+              <span>{t("PHP Version")}</span><strong>{host.phpVersion}</strong>
+              <span>{t("Web Server")}</span><strong>{host.webServer}</strong>
+              <span>{t("Document Root")}</span><strong>{host.rootFolder}\\{host.documentRoot}</strong>
+              <span>{t("Status")}</span><StatusDot status={host.status} />
+              <span>{t("Tags")}</span><div>{host.tags.map((tag) => <span className="pill" key={tag}>{tag}</span>)}</div>
             </div>
             <div className="form-grid two quick-host-edit">
               <label>
@@ -398,7 +400,7 @@ export function HostsPage({
                 </select>
               </label>
               <label>
-                Document Root
+                {t("Document Root")}
                 <input key={host.id} defaultValue={host.documentRoot} onBlur={(event) => event.target.value !== host.documentRoot && void quickUpdateHost({ documentRoot: event.target.value })} />
               </label>
               <label className="toggle-line">
@@ -406,39 +408,39 @@ export function HostsPage({
                 <span className={`toggle ${host.ssl ? "on" : ""}`} onClick={() => void quickUpdateHost({ ssl: !host.ssl })} />
               </label>
             </div>
-            {tab !== "General" && <p className="muted">{host.domain} {tab.toLowerCase()} settings are stored in its host configuration and can be edited with the Edit action.</p>}
+            {tab !== "General" && <p className="muted">{host.domain}: {t(tab)} {t("settings are stored in its host configuration and can be edited with the Edit action.")}</p>}
           </Panel>
-          <Panel title="Quick Actions">
+          <Panel title={t("Quick Actions")}>
             <div className="quick-grid">
-              <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` })}>Open in Browser</Button>
-              <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(host.rootFolder), { label: `Opening ${host.rootFolder}...` })}>Open Root Folder</Button>
-              <Button icon={<Trash2 size={17} />} onClick={() => void run(() => api.openPath(`${host.rootFolder}\\logs`), { label: `Opening logs for ${host.domain}...` })}>View Logs</Button>
-              <Button icon={<ShieldCheck size={17} />} onClick={() => void diagnose(host)}>Diagnose</Button>
-              <Button icon={<Wrench size={17} />} onClick={() => void repair(host)}>Repair Host</Button>
-              <Button icon={<Database size={17} />} onClick={() => void testHostDatabase(host)}>Test Database</Button>
-              <Button icon={<Terminal size={17} />} onClick={() => void loadNodeScripts(host)}>Node Scripts</Button>
-              <Button icon={<Play size={17} />} onClick={() => void startRequiredForHost(host)}>Start Required</Button>
-              <Button icon={<Wrench size={17} />} disabled={!hostHistory.some((item) => item.host.id === host.id)} onClick={() => void rollbackHost()}>Rollback Change</Button>
-              <Button icon={<Folder size={17} />} onClick={() => void loadHostLogs(host)}>Host Logs</Button>
-              <Button icon={<Upload size={17} />} onClick={() => void backupHost(host)}>Backup Host</Button>
-              <Button icon={<Download size={17} />} onClick={() => void restoreHost()}>Restore Host</Button>
-              <Button icon={<ShieldCheck size={17} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>Sync Hosts File</Button>
-              <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.openPath(`${state.appDataDir}\\certs`), { label: "Opening certificates folder..." })}>SSL Certificate</Button>
+              <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` })}>{t("Open in Browser")}</Button>
+              <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(host.rootFolder), { label: `Opening ${host.rootFolder}...` })}>{t("Open Root Folder")}</Button>
+              <Button icon={<Trash2 size={17} />} onClick={() => void run(() => api.openPath(`${host.rootFolder}\\logs`), { label: `Opening logs for ${host.domain}...` })}>{t("View Logs")}</Button>
+              <Button icon={<ShieldCheck size={17} />} onClick={() => void diagnose(host)}>{t("Diagnose")}</Button>
+              <Button icon={<Wrench size={17} />} onClick={() => void repair(host)}>{t("Repair Host")}</Button>
+              <Button icon={<Database size={17} />} onClick={() => void testHostDatabase(host)}>{t("Test Database")}</Button>
+              <Button icon={<Terminal size={17} />} onClick={() => void loadNodeScripts(host)}>{t("Node Scripts")}</Button>
+              <Button icon={<Play size={17} />} onClick={() => void startRequiredForHost(host)}>{t("Start Required")}</Button>
+              <Button icon={<Wrench size={17} />} disabled={!hostHistory.some((item) => item.host.id === host.id)} onClick={() => void rollbackHost()}>{t("Rollback Change")}</Button>
+              <Button icon={<Folder size={17} />} onClick={() => void loadHostLogs(host)}>{t("Host Logs")}</Button>
+              <Button icon={<Upload size={17} />} onClick={() => void backupHost(host)}>{t("Backup Host")}</Button>
+              <Button icon={<Download size={17} />} onClick={() => void restoreHost()}>{t("Restore Host")}</Button>
+              <Button icon={<ShieldCheck size={17} />} onClick={() => void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." })}>{t("Sync Hosts File")}</Button>
+              <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.openPath(`${state.appDataDir}\\certs`), { label: "Opening certificates folder..." })}>{t("SSL Certificate")}</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "npm-install"), { label: `Running npm install for ${host.domain}...` })}>npm install</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "npm-dev"), { label: `Starting Node dev server for ${host.domain}...` })}>npm run dev</Button>
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.runProjectCommand(host.rootFolder, "composer-install"), { label: `Running composer install for ${host.domain}...` })}>composer install</Button>
             </div>
           </Panel>
-          <Panel title="Dependency Map">
+          <Panel title={t("Dependency Map")}>
             <div className="dependency-map">
-              <span><strong>{host.domain}</strong><small>Host</small></span>
-              <span><strong>{host.webServer}</strong><small>Web server</small></span>
-              <span><strong>PHP {host.phpVersion}</strong><small>Runtime</small></span>
-              <span><strong>{host.database || "None"}</strong><small>Database</small></span>
-              <span><strong>{host.ssl ? "SSL on" : "SSL off"}</strong><small>Certificate</small></span>
+              <span><strong>{host.domain}</strong><small>{t("Host")}</small></span>
+              <span><strong>{host.webServer}</strong><small>{t("Web Server")}</small></span>
+              <span><strong>PHP {host.phpVersion}</strong><small>{t("Runtime")}</small></span>
+              <span><strong>{host.database || t("None")}</strong><small>{t("Database")}</small></span>
+              <span><strong>{t(host.ssl ? "SSL on" : "SSL off")}</strong><small>{t("Certificate")}</small></span>
             </div>
           </Panel>
-          <Panel title="Change History">
+          <Panel title={t("Change History")}>
             <div className="content-results compact-results">
               {hostHistory.filter((item) => item.host.id === host.id).slice(0, 6).map((entry) => (
                 <button key={entry.id} onClick={() => void run(() => api.saveHost({ ...entry.host, updatedAt: new Date().toISOString() }), { label: `Restoring ${entry.host.domain}...` })}>
@@ -446,14 +448,14 @@ export function HostsPage({
                   <span>{new Date(entry.changedAt).toLocaleString()}</span>
                 </button>
               ))}
-              {!hostHistory.some((item) => item.host.id === host.id) && <div className="empty-row">No changes yet.</div>}
+              {!hostHistory.some((item) => item.host.id === host.id) && <div className="empty-row">{t("No changes yet.")}</div>}
             </div>
           </Panel>
           {diagnostics?.hostId === host.id && (
-            <Panel title="Host Diagnostics" action={<StatusDot status={diagnostics.errors > 0 ? "error" : diagnostics.warnings > 0 ? "warning" : "valid"} label={diagnostics.errors > 0 ? "Issues" : diagnostics.warnings > 0 ? "Warnings" : "Healthy"} />}>
+            <Panel title={t("Host Diagnostics")} action={<StatusDot status={diagnostics.errors > 0 ? "error" : diagnostics.warnings > 0 ? "warning" : "valid"} label={diagnostics.errors > 0 ? t("Issues") : diagnostics.warnings > 0 ? t("Warnings") : t("Healthy")} />}>
               <div className="kv detail-kv">
-                <span>Summary</span><strong>{diagnostics.summary}</strong>
-                <span>Checks</span><strong>{diagnostics.ok} OK / {diagnostics.warnings} Warning / {diagnostics.errors} Error</strong>
+                <span>{t("Summary")}</span><strong>{diagnostics.summary}</strong>
+                <span>{t("Checks")}</span><strong>{diagnostics.ok} OK / {diagnostics.warnings} {t("Warning")} / {diagnostics.errors} {t("Error")}</strong>
               </div>
               <table className="data-table diagnostics-table">
                 <tbody>
@@ -468,12 +470,12 @@ export function HostsPage({
             </Panel>
           )}
           {dbDiagnostics && (
-            <Panel title="Database Connection" action={<StatusDot status={dbDiagnostics.errors > 0 ? "error" : dbDiagnostics.warnings > 0 ? "warning" : "valid"} />}>
-              <div className="kv detail-kv"><span>Database</span><strong>{dbDiagnostics.database}</strong><span>Summary</span><strong>{dbDiagnostics.summary}</strong></div>
+            <Panel title={t("Database Connection")} action={<StatusDot status={dbDiagnostics.errors > 0 ? "error" : dbDiagnostics.warnings > 0 ? "warning" : "valid"} />}>
+              <div className="kv detail-kv"><span>{t("Database")}</span><strong>{dbDiagnostics.database}</strong><span>{t("Summary")}</span><strong>{dbDiagnostics.summary}</strong></div>
             </Panel>
           )}
           {nodeScripts.length > 0 && (
-            <Panel title="Node App Manager">
+            <Panel title={t("Node App Manager")}>
               <div className="script-list">
                 {nodeScripts.map((script) => (
                   <button key={script.name} onClick={() => void run(() => api.runNodeScript(host.rootFolder, script.name), { label: `Running npm run ${script.name}...` })}>
@@ -490,8 +492,8 @@ export function HostsPage({
               <div className="log-box compact-log">{hostLogs.lines.slice(-20).map((line, index) => <pre key={index}>{line}</pre>)}</div>
             </Panel>
           )}
-          <Panel title="Notes" action={<Button onClick={() => editHost(host)}>Edit</Button>}>
-            <p className="muted">{host.notes}</p>
+          <Panel title={t("Notes")} action={<Button onClick={() => editHost(host)}>{t("Edit")}</Button>}>
+            <p className="muted">{t(host.notes)}</p>
           </Panel>
         </aside>
       )}

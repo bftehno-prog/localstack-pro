@@ -1474,7 +1474,7 @@ fn configure_detected_cms(host: &HostInfo) -> AppResult<()> {
     {
         write_wordpress_config(&public, &database)?;
     }
-    if public.join("administrator").is_dir() || public.join("configuration.php").is_file() {
+    if public.join("configuration.php").is_file() && !public.join("installation").is_dir() {
         write_joomla_config(&public, &database, host)?;
     }
     if public.join("sites").join("default").is_dir() || public.join("core").is_dir() {

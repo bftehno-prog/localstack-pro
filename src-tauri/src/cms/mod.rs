@@ -1398,8 +1398,8 @@ fn validate_installed_cms(
             }
         }
     } else if template.id == "joomla" && database.is_some() {
-        if !public.join("configuration.php").is_file() {
-            issues.push("configuration.php is missing".to_string());
+        if !public.join("installation").is_dir() && !public.join("configuration.php").is_file() {
+            issues.push("Joomla installer or configuration.php is missing".to_string());
         }
     } else if template.id == "drupal"
         && database.is_some()
@@ -1430,7 +1430,7 @@ fn write_cms_config(
 ) -> AppResult<()> {
     match template.id.as_str() {
         "wordpress" => write_wordpress_config(public, database, request),
-        "joomla" => write_joomla_config(public, database, request),
+        "joomla" => write_joomla_install_helper(public, database),
         "drupal" => write_drupal_config(public, database, request),
         _ => Ok(()),
     }
@@ -1473,35 +1473,27 @@ fn write_wordpress_config(
     fs::write(target, config).map_err(|err| format!("Cannot write WordPress config: {err}"))
 }
 
-fn write_joomla_config(
+fn write_joomla_install_helper(
     public: &Path,
     database: Option<&CmsDatabaseCredentials>,
-    request: &CmsInstallRequest,
 ) -> AppResult<()> {
     let Some(database) = database else {
         return Ok(());
     };
-    let log_path = public.join("administrator").join("logs");
-    let tmp_path = public.join("tmp");
-    fs::create_dir_all(&log_path)
+    fs::create_dir_all(public.join("administrator").join("logs"))
         .map_err(|err| format!("Cannot create Joomla log folder: {err}"))?;
-    fs::create_dir_all(&tmp_path)
+    fs::create_dir_all(public.join("tmp"))
         .map_err(|err| format!("Cannot create Joomla temp folder: {err}"))?;
     let content = format!(
-        "<?php\nclass JConfig {{\n\tpublic $offline = false;\n\tpublic $sitename = '{}';\n\tpublic $editor = 'tinymce';\n\tpublic $captcha = '0';\n\tpublic $list_limit = 20;\n\tpublic $access = 1;\n\tpublic $debug = false;\n\tpublic $debug_lang = false;\n\tpublic $dbtype = '{}';\n\tpublic $host = '{}';\n\tpublic $user = '{}';\n\tpublic $password = '{}';\n\tpublic $db = '{}';\n\tpublic $dbprefix = 'lsp_';\n\tpublic $live_site = '{}';\n\tpublic $secret = '{}';\n\tpublic $gzip = false;\n\tpublic $error_reporting = 'default';\n\tpublic $helpurl = 'https://help.joomla.org/proxy?keyref=Help{{major}}{{minor}}:{{keyref}}';\n\tpublic $ftp_enable = false;\n\tpublic $offset = 'UTC';\n\tpublic $mailonline = true;\n\tpublic $mailer = 'mail';\n\tpublic $caching = 0;\n\tpublic $cache_handler = 'file';\n\tpublic $cachetime = 15;\n\tpublic $MetaDesc = '';\n\tpublic $MetaKeys = '';\n\tpublic $MetaTitle = true;\n\tpublic $MetaAuthor = true;\n\tpublic $sef = true;\n\tpublic $sef_rewrite = false;\n\tpublic $sef_suffix = false;\n\tpublic $unicodeslugs = false;\n\tpublic $feed_limit = 10;\n\tpublic $log_path = '{}';\n\tpublic $tmp_path = '{}';\n\tpublic $session_handler = 'database';\n}}\n",
-        php_escape(&request.domain),
-        php_escape(joomla_db_type(&database.engine)),
+        "<?php\nreturn [\n  'host' => '{}',\n  'database' => '{}',\n  'username' => '{}',\n  'password' => '{}',\n  'port' => '{}',\n  'prefix' => 'jos_',\n];\n",
         php_escape(database_host(&database.engine)),
+        php_escape(&database.name),
         php_escape(&database.user),
         php_escape(&database.password),
-        php_escape(&database.name),
-        php_escape(&format!("{}://{}", if request.ssl { "https" } else { "http" }, request.domain)),
-        php_escape(&Uuid::new_v4().simple().to_string()),
-        php_escape(&log_path.display().to_string()),
-        php_escape(&tmp_path.display().to_string())
+        database.port
     );
-    fs::write(public.join("configuration.php"), content)
-        .map_err(|err| format!("Cannot write Joomla configuration.php: {err}"))
+    fs::write(public.join("localstack-database.php"), content)
+        .map_err(|err| format!("Cannot write Joomla database helper: {err}"))
 }
 
 fn write_drupal_config(
@@ -1581,13 +1573,6 @@ fn database_host(engine: &str) -> &'static str {
 
 fn database_host_only(_engine: &str) -> &'static str {
     "127.0.0.1"
-}
-
-fn joomla_db_type(engine: &str) -> &'static str {
-    match engine {
-        "PostgreSQL" => "pgsql",
-        _ => "mysqli",
-    }
 }
 
 fn drupal_driver(engine: &str) -> &'static str {

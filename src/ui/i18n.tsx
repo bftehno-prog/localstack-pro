@@ -93,6 +93,11 @@ const dictionary: Record<string, string> = {
   "Open page": "Открыть раздел",
   "Health Check": "Проверка окружения",
   active: "активно",
+  running: "выполняется",
+  stopped: "остановлен",
+  starting: "запускается",
+  valid: "действителен",
+  warning: "предупреждение",
   error: "ошибка",
   Fix: "Исправить",
   "Action failed": "Действие не выполнено",
@@ -346,6 +351,7 @@ const dictionary: Record<string, string> = {
   "Right Pane": "Правая панель",
   "Operation Queue": "Очередь операций",
   selected: "выбрано",
+  of: "из",
   done: "готово",
   cancelled: "отменено",
   Cancel: "Отменить",
@@ -435,7 +441,7 @@ const dictionary: Record<string, string> = {
   Folder: "Папка",
   "PHP Version": "Версия PHP",
   "Web Server": "Веб-сервер",
-  "Document Root": "Document Root",
+  "Document Root": "Корневая папка сайта",
   "Error Log": "Лог ошибок",
   Status: "Статус",
   Environment: "Окружение",
@@ -444,6 +450,8 @@ const dictionary: Record<string, string> = {
   Actions: "Действия",
   Disabled: "Отключено",
   Valid: "Действителен",
+  Enabled: "Включено",
+  "All Readiness": "Любая готовность",
   "All Status": "Все статусы",
   "All Environments": "Все окружения",
   "All PHP Versions": "Все версии PHP",
@@ -456,7 +464,7 @@ const dictionary: Record<string, string> = {
   "Host Logs": "Логи хоста",
   "Node App Manager": "Менеджер Node-приложения",
   "Test Database": "Проверить БД",
-  "Node Scripts": "Node scripts",
+  "Node Scripts": "Скрипты Node",
   "SSL Auto Repair": "Автоисправление SSL",
   "Database Connection": "Подключение к базе",
   Checks: "Проверки",
@@ -478,6 +486,8 @@ const dictionary: Record<string, string> = {
   Compatibility: "Совместимость",
   Active: "Активна",
   Installed: "Установлена",
+  "Legacy Compatibility": "Устаревшая",
+  "Full Compatibility": "Полная",
   "PHP Actions": "Действия PHP",
   "Edit php.ini": "Редактировать php.ini",
   "Open CLI": "Открыть CLI",
@@ -573,7 +583,6 @@ const dictionary: Record<string, string> = {
   Window: "Окно",
   "Icon button": "Иконка-кнопка",
   "Missing aria-label or title": "Нет aria-label или title",
-  "All Readiness": "Любая готовность",
   "Database Preset": "Пресет базы",
   "Database Name": "Имя базы",
   "Database User": "Пользователь базы",
@@ -581,7 +590,6 @@ const dictionary: Record<string, string> = {
   "Generate password": "Сгенерировать пароль",
   "Password Tool": "Генератор пароля",
   "Auto-Renew": "Автообновление",
-  "SSL off": "SSL выключен",
   "No certificates yet. Generate a local certificate to continue.": "Сертификатов пока нет. Создайте локальный сертификат, чтобы продолжить.",
   "Certificate (CRT)": "Сертификат (CRT)",
   "Private Key (KEY)": "Приватный ключ (KEY)",
@@ -637,6 +645,13 @@ const dictionary: Record<string, string> = {
   "Force HTTPS": "Принудительный HTTPS",
   "Rewrite Rules": "Rewrite-правила",
   "No changes yet.": "Изменений пока нет.",
+  "Restored LocalStack host.": "Хост LocalStack восстановлен.",
+  "Host files were repaired.": "Файлы хоста восстановлены.",
+  "SSL off": "SSL выключен",
+  "SSL on": "SSL включен",
+  None: "Нет",
+  Rows: "Строк",
+  "settings are stored in its host configuration and can be edited with the Edit action.": "настройки хранятся в конфигурации хоста и редактируются через действие Изменить.",
   "System Info": "Информация о системе",
   "Last opened project": "Последний открытый проект",
   "Mailpit SMTP": "Mailpit SMTP",
@@ -696,10 +711,6 @@ const dictionary: Record<string, string> = {
   "Stopping all services...": "Остановка всех сервисов...",
   "Restarting all services...": "Перезапуск всех сервисов...",
   "Main e-commerce DB": "Основная база интернет-магазина",
-  Development: "Разработка",
-  Production: "Продакшен",
-  Staging: "Стейджинг",
-  Legacy: "Легаси",
   Invalid: "Некорректно",
   "Testing & development": "Тестирование и разработка",
   "Analytics reporting": "Аналитическая отчётность",
@@ -720,7 +731,7 @@ const dictionary: Record<string, string> = {
   Vite: "Vite",
   "Next.js": "Next.js",
   Node: "Node",
-  "Node scripts": "Node scripts",
+  "Node scripts": "Скрипты Node",
   Mailpit: "Mailpit",
   MariaDB: "MariaDB",
   "MariaDB 10.6": "MariaDB 10.6",
@@ -758,7 +769,7 @@ export function translate(text: string, language: Language) {
   if (/^\d+\s+hosts$/.test(text)) return text.replace("hosts", "хостов");
   if (/^\d+\s+services running$/.test(text)) return text.replace("services running", "сервисов запущено");
   if (/^\d+\s+Running$/.test(text)) return text.replace("Running", "запущено");
-  if (/^\d+m ago$/.test(text)) return text.replace("m ago", "мин назад");
+  if (/^\d+m ago$/.test(text)) return text.replace(/(\d+)m ago/, "$1 мин назад");
   if (/^Rows:\s+\d+\s+of\s+\d+$/.test(text)) return text.replace("Rows:", "Строк:").replace("of", "из");
   if (/^\d+\s+selected$/.test(text)) return text.replace("selected", "выбрано");
   if (/^\d+\s+errors\s+\/\s+\d+\s+warnings$/.test(text)) return text.replace("errors", "ошибок").replace("warnings", "предупреждений");
@@ -828,7 +839,7 @@ function translateDom(root: HTMLElement) {
 export function useT() {
   const language = useContext(I18nContext);
   return (text: string | number | undefined | null) => {
-    if (typeof text !== "string") return text;
+    if (typeof text !== "string") return text == null ? "" : String(text);
     return translate(text, language);
   };
 }
