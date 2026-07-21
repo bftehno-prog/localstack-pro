@@ -3,6 +3,7 @@ use chrono::Utc;
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use regex::RegexBuilder;
 use serde::Serialize;
+use serde_json::Value;
 use std::{
     fs,
     fs::File,
@@ -1513,27 +1514,169 @@ pub fn create_diagnostic_bundle(target: String) -> AppResult<String> {
         .join(format!("diagnostics-{}", Utc::now().format("%Y%m%d%H%M%S")));
     let _ = fs::remove_dir_all(&temp);
     fs::create_dir_all(&temp).map_err(|err| format!("Cannot create diagnostics temp: {err}"))?;
+    let mut state_json =
+        serde_json::to_value(&snapshot).map_err(|err| format!("Cannot serialize state: {err}"))?;
+    redact_json_secrets(&mut state_json);
+    let mut health_json = serde_json::to_value(crate::health::run_health_check()?)
+        .map_err(|err| format!("Cannot serialize health: {err}"))?;
+    redact_json_secrets(&mut health_json);
     fs::write(
         temp.join("state.json"),
-        serde_json::to_string_pretty(&snapshot)
+        serde_json::to_string_pretty(&state_json)
             .map_err(|err| format!("Cannot serialize state: {err}"))?,
     )
     .map_err(|err| format!("Cannot write diagnostic state: {err}"))?;
     fs::write(
         temp.join("health.json"),
-        serde_json::to_string_pretty(&crate::health::run_health_check()?)
+        serde_json::to_string_pretty(&health_json)
             .map_err(|err| format!("Cannot serialize health: {err}"))?,
     )
     .map_err(|err| format!("Cannot write health report: {err}"))?;
     for name in ["logs", "configs", "hosts"] {
         let source = store.dir.join(name);
         if source.exists() {
-            copy_dir(&source, &temp.join(name))?;
+            copy_dir_redacted(&source, &temp.join(name))?;
         }
     }
     compress_folder(&temp, &target)?;
     let _ = fs::remove_dir_all(&temp);
     Ok(target.display().to_string())
+}
+
+fn redact_json_secrets(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map.iter_mut() {
+                if is_secret_json_key(key) {
+                    *child = Value::String("[redacted]".to_string());
+                } else {
+                    redact_json_secrets(child);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_json_secrets(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_secret_json_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    [
+        "password",
+        "pass",
+        "pwd",
+        "token",
+        "secret",
+        "credential",
+        "api_key",
+        "apikey",
+        "private_key",
+        "privatekey",
+        "db_password",
+        "database_password",
+        "mysql_password",
+        "mysql_pwd",
+    ]
+    .iter()
+    .any(|needle| key.contains(needle))
+}
+
+fn copy_dir_redacted(source: &Path, target: &Path) -> AppResult<()> {
+    fs::create_dir_all(target)
+        .map_err(|err| format!("Cannot create {}: {err}", target.display()))?;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("Cannot read {}: {err}", source.display()))?
+    {
+        let entry = entry.map_err(|err| format!("Cannot read diagnostic entry: {err}"))?;
+        let path = entry.path();
+        let destination = target.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_redacted(&path, &destination)?;
+        } else if should_redact_text_file(&path) {
+            match fs::read_to_string(&path) {
+                Ok(content) => {
+                    fs::write(&destination, redact_secret_text(&content)).map_err(|err| {
+                        format!(
+                            "Cannot write redacted diagnostic {}: {err}",
+                            destination.display()
+                        )
+                    })?
+                }
+                Err(_) => {
+                    fs::copy(&path, &destination)
+                        .map_err(|err| format!("Cannot copy {}: {err}", path.display()))?;
+                }
+            }
+        } else {
+            fs::copy(&path, &destination)
+                .map_err(|err| format!("Cannot copy {}: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn should_redact_text_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if metadata.len() > 5 * 1024 * 1024 {
+        return false;
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    matches!(
+        extension.as_str(),
+        "conf" | "env" | "ini" | "json" | "log" | "php" | "txt" | "xml" | "yml" | "yaml"
+    )
+}
+
+fn redact_secret_text(content: &str) -> String {
+    content
+        .lines()
+        .map(|line| {
+            let lower = line.to_ascii_lowercase();
+            if [
+                "password",
+                "passwd",
+                "pwd",
+                "secret",
+                "token",
+                "api_key",
+                "apikey",
+                "private_key",
+                "credential",
+            ]
+            .iter()
+            .any(|needle| lower.contains(needle))
+            {
+                redact_secret_line(line)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn redact_secret_line(line: &str) -> String {
+    for separator in ["=>", "=", ":", " "] {
+        if let Some(index) = line.find(separator) {
+            let value_start = index + separator.len();
+            let spacing = line[value_start..]
+                .chars()
+                .take_while(|character| character.is_whitespace())
+                .collect::<String>();
+            return format!("{}{}[redacted]", &line[..value_start], spacing);
+        }
+    }
+    "[redacted]".to_string()
 }
 
 pub fn diagnose_ssl(domain: String) -> AppResult<SslDiagnostic> {
@@ -1827,6 +1970,10 @@ fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> App
         .map_err(|err| format!("Cannot read tar entries: {err}"))?
     {
         let mut entry = entry.map_err(|err| format!("Cannot read tar entry: {err}"))?;
+        let entry_type = entry.header().entry_type();
+        if !(entry_type.is_file() || entry_type.is_dir()) {
+            return Err("Archive contains unsupported links or special files.".to_string());
+        }
         let path = entry
             .path()
             .map_err(|err| format!("Cannot read tar entry path: {err}"))?
@@ -2165,8 +2312,8 @@ fn allowed_text_path(path: String) -> AppResult<PathBuf> {
     if !target.is_absolute() {
         return Err("Config path must be absolute.".to_string());
     }
-    let allowed_root = store.dir.canonicalize().unwrap_or(store.dir.clone());
-    let canonical = target.canonicalize().unwrap_or(target.clone());
+    let allowed_root = canonicalize_for_authorization(&store.dir)?;
+    let canonical = canonicalize_for_authorization(&target)?;
     if !canonical.starts_with(&allowed_root) {
         return Err("Config editor can only edit LocalStack Pro data files.".to_string());
     }
@@ -2191,7 +2338,7 @@ fn allowed_workspace_path(path: String) -> AppResult<PathBuf> {
     if !target.is_absolute() {
         return Err("Path must be absolute.".to_string());
     }
-    let canonical = target.canonicalize().unwrap_or(target.clone());
+    let canonical = canonicalize_for_authorization(&target)?;
     let mut roots = vec![
         store.dir.clone(),
         PathBuf::from(&snapshot.settings.projects_folder),
@@ -2205,11 +2352,37 @@ fn allowed_workspace_path(path: String) -> AppResult<PathBuf> {
             .map(|host| PathBuf::from(&host.root_folder)),
     );
     let allowed = roots.into_iter().any(|root| {
-        let root = root.canonicalize().unwrap_or(root);
+        let root = canonicalize_for_authorization(&root).unwrap_or(root);
         canonical.starts_with(root)
     });
     if !allowed {
         return Err("File manager can only access LocalStack Pro project, service, backup and data folders.".to_string());
+    }
+    Ok(canonical)
+}
+
+fn canonicalize_for_authorization(path: &Path) -> AppResult<PathBuf> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Ok(canonical);
+    }
+
+    let mut unresolved = Vec::new();
+    let mut existing = path;
+    while !existing.exists() {
+        let name = existing
+            .file_name()
+            .ok_or_else(|| format!("Cannot resolve an existing parent for {}.", path.display()))?;
+        unresolved.push(name.to_os_string());
+        existing = existing
+            .parent()
+            .ok_or_else(|| format!("Cannot resolve an existing parent for {}.", path.display()))?;
+    }
+
+    let mut canonical = existing
+        .canonicalize()
+        .map_err(|err| format!("Cannot resolve {}: {err}", existing.display()))?;
+    for segment in unresolved.iter().rev() {
+        canonical.push(segment);
     }
     Ok(canonical)
 }
@@ -2271,8 +2444,14 @@ fn decode_text(bytes: Vec<u8>, encoding: &str) -> AppResult<(String, String)> {
                 "utf-8-bom".to_string(),
             ))
         }
-        "utf-16le" => decode_utf16(&bytes, true).map(|content| (content, "utf-16le".to_string())),
-        "utf-16be" => decode_utf16(&bytes, false).map(|content| (content, "utf-16be".to_string())),
+        "utf-16le" => {
+            let slice = bytes.strip_prefix(&[0xFF, 0xFE]).unwrap_or(&bytes);
+            decode_utf16(slice, true).map(|content| (content, "utf-16le".to_string()))
+        }
+        "utf-16be" => {
+            let slice = bytes.strip_prefix(&[0xFE, 0xFF]).unwrap_or(&bytes);
+            decode_utf16(slice, false).map(|content| (content, "utf-16be".to_string()))
+        }
         _ => Err("Supported encodings: auto, utf-8, utf-8-bom, utf-16le, utf-16be.".to_string()),
     }
 }
@@ -2488,4 +2667,38 @@ fn process_name(pid: u32) -> Option<String> {
         .next()
         .and_then(|line| line.split(',').next())
         .map(|value| value.trim_matches('"').to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_json_and_text_secrets() {
+        let mut value = serde_json::json!({
+            "password": "secret",
+            "nested": { "token": "abc" },
+            "name": "LocalStack Pro"
+        });
+        redact_json_secrets(&mut value);
+        assert_eq!(value["password"], "[redacted]");
+        assert_eq!(value["nested"]["token"], "[redacted]");
+        assert_eq!(value["name"], "LocalStack Pro");
+
+        let text = "DB_PASSWORD=secret\napi_token: abc\nAPP_NAME=LocalStack";
+        let redacted = redact_secret_text(text);
+        assert!(redacted.contains("DB_PASSWORD=[redacted]"));
+        assert!(redacted.contains("api_token: [redacted]"));
+        assert!(redacted.contains("APP_NAME=LocalStack"));
+    }
+
+    #[test]
+    fn preserves_supported_text_encodings() {
+        let source = "LocalStack Pro - Привет";
+        for encoding in ["utf-8", "utf-8-bom", "utf-16le", "utf-16be"] {
+            let bytes = encode_text(source, encoding).expect("encoding should succeed");
+            let (decoded, _) = decode_text(bytes, encoding).expect("decoding should succeed");
+            assert_eq!(decoded, source, "{encoding}");
+        }
+    }
 }

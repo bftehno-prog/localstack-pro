@@ -1340,7 +1340,7 @@ fn extended_default_services(services_dir: &str) -> Vec<ServiceInfo> {
         service(
             "dns-helper",
             "DNS Helper",
-            "1.0.1",
+            "1.0.2",
             format!("{services_dir}\\dns-helper\\dns-helper.exe"),
             vec![5353],
         ),

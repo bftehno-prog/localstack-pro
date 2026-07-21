@@ -114,7 +114,7 @@ export function useAppState() {
     } finally {
       if (!silent) {
         setBusyCount((count) => Math.max(0, count - 1));
-        setActionLabel(null);
+        setActionLabel((current) => current === label ? null : current);
       }
     }
   }, []);
@@ -140,7 +140,7 @@ export function useAppState() {
     void refresh();
     const timer = window.setInterval(() => {
       if (!document.hidden && !busyRef.current) void refresh(true);
-    }, window.location.hash.replace(/^#/, "") === "tray" ? 10000 : 15000);
+    }, window.location.hash.replace(/^#/, "") === "tray" ? 15000 : 30000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 

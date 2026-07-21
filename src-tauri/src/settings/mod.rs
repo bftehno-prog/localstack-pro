@@ -806,6 +806,7 @@ $cfg['TempDir'] = __DIR__ . '/tmp';
 }
 
 fn download_tool(name: &str, url: &str, target: &Path) -> AppResult<()> {
+    ensure_allowed_tool_download_url(url)?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| format!("Cannot create tools folder {}: {err}", parent.display()))?;
@@ -986,6 +987,7 @@ fn should_skip_backup_path(path: &Path) -> bool {
 }
 
 fn download_archive(name: &str, url: &str, archive: &Path, extract: &Path) -> AppResult<()> {
+    ensure_allowed_tool_download_url(url)?;
     if let Some(parent) = archive.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             format!(
@@ -1025,6 +1027,35 @@ fn download_archive(name: &str, url: &str, archive: &Path, extract: &Path) -> Ap
         return Err(format!("Cannot download or extract {name}. {detail}"));
     }
     Ok(())
+}
+
+fn ensure_allowed_tool_download_url(url: &str) -> AppResult<()> {
+    ensure_https_url_host(
+        url,
+        &[
+            "www.adminer.org",
+            "www.phpmyadmin.net",
+            "github.com",
+            "codeload.github.com",
+        ],
+    )
+}
+
+fn ensure_https_url_host(url: &str, allowed_hosts: &[&str]) -> AppResult<()> {
+    let lower = url.trim().to_ascii_lowercase();
+    if !lower.starts_with("https://") {
+        return Err("Download URL must use HTTPS.".to_string());
+    }
+    let host = lower
+        .trim_start_matches("https://")
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    if allowed_hosts.contains(&host) {
+        Ok(())
+    } else {
+        Err(format!("Download host is not allowed: {host}"))
+    }
 }
 
 fn extracted_tool_root(extract: &Path, marker: &str) -> AppResult<PathBuf> {

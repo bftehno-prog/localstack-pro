@@ -5,6 +5,7 @@ import type { AppRun, AppSnapshot, InstalledTool, PortInspection, ServiceInfo } 
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
+import { useT } from "../ui/i18n";
 
 export function ServicesPage({
   state,
@@ -17,6 +18,7 @@ export function ServicesPage({
   selected?: ServiceInfo;
   setSelected: (service: ServiceInfo) => void;
 }) {
+  const t = useT();
   const current = selected
     ? state.services.find((service) => service.id === selected.id) ?? selected
     : state.services[0];
@@ -100,18 +102,18 @@ export function ServicesPage({
     <div className="page-grid">
       <section>
         <div className="page-title">
-          <div><h1>Services</h1><p>Manage and monitor all system services</p></div>
+          <div><h1>{t("Services")}</h1><p>{t("Manage and monitor all system services")}</p></div>
           <div className="toolbar">
-            <Button variant="primary" icon={<Play size={16} />} onClick={() => void run(api.startAll, { label: "Starting all services..." })}>Start All</Button>
-            <Button icon={<Square size={15} />} onClick={() => void run(api.stopAll, { label: "Stopping all services..." })}>Stop All</Button>
-            <Button icon={<RefreshCw size={15} />} onClick={() => void run(api.restartAll, { label: "Restarting all services..." })}>Restart All</Button>
-            <Button icon={<Search size={15} />} onClick={() => void run(api.detectDependencies, { label: "Detecting installed dependencies..." })}>Detect</Button>
-            <Button icon={<Search size={15} />} onClick={() => void inspectTools()}>Installed Tools</Button>
-            <Button icon={<Download size={15} />} onClick={() => void run(api.installAllMissingDependencies, { label: "Installing missing service dependencies...", successLabel: "Missing dependencies installed or detected." })}>Install Missing</Button>
+            <Button variant="primary" icon={<Play size={16} />} onClick={() => void run(api.startAll, { label: "Starting all services..." })}>{t("Start All")}</Button>
+            <Button icon={<Square size={15} />} onClick={() => void run(api.stopAll, { label: "Stopping all services..." })}>{t("Stop All")}</Button>
+            <Button icon={<RefreshCw size={15} />} onClick={() => void run(api.restartAll, { label: "Restarting all services..." })}>{t("Restart All")}</Button>
+            <Button icon={<Search size={15} />} onClick={() => void run(api.detectDependencies, { label: "Detecting installed dependencies..." })}>{t("Detect")}</Button>
+            <Button icon={<Search size={15} />} onClick={() => void inspectTools()}>{t("Installed Tools")}</Button>
+            <Button icon={<Download size={15} />} onClick={() => void run(api.installAllMissingDependencies, { label: "Installing missing service dependencies...", successLabel: "Missing dependencies installed or detected." })}>{t("Install Missing")}</Button>
             <Button variant="icon" icon={<MoreVertical size={17} />} onClick={() => void run(() => api.openPath(state.settings.servicesFolder), { label: "Opening services folder..." })} />
           </div>
         </div>
-        <Panel title="Service Profiles">
+        <Panel title={t("Service Profiles")}>
           <div className="profile-grid">
             <Button icon={<Play size={15} />} title="Start Apache, MySQL and Mailpit" onClick={() => startProfile("WordPress", ["apache", "mysql", "mailpit"])}>WordPress</Button>
             <Button icon={<Play size={15} />} title="Start Apache, MySQL, Redis and Mailpit" onClick={() => startProfile("Laravel", ["apache", "mysql", "redis", "mailpit"])}>Laravel</Button>
@@ -120,21 +122,21 @@ export function ServicesPage({
             <Button icon={<Play size={15} />} title="Start Apache for PHP hosts" onClick={() => startProfile("PHP-only", ["apache"])}>PHP-only</Button>
           </div>
         </Panel>
-        <Panel title="Dependency Graph">
+        <Panel title={t("Dependency Graph")}>
           <div className="dependency-graph">
             {dependencyRows.map(({ service, executable, ports, autostart, state }) => (
               <div key={service.id}>
                 <strong>{service.name}</strong>
-                <span>exe: {executable}</span>
-                <span>ports: {ports}</span>
-                <span>autostart: {autostart}</span>
-                <span>{state}</span>
+                <span>{t("exe")}: {t(executable)}</span>
+                <span>{t("ports")}: {ports}</span>
+                <span>{t("autostart")}: {t(autostart)}</span>
+                <span>{t(state)}</span>
               </div>
             ))}
           </div>
         </Panel>
         {timeline.length > 0 && (
-          <Panel title="Startup Timeline">
+          <Panel title={t("Startup Timeline")}>
             <div className="timeline-list">
               {timeline.map((item) => (
                 <div key={item.id}>
@@ -148,12 +150,12 @@ export function ServicesPage({
           </Panel>
         )}
         {tools.length > 0 && (
-          <Panel title="Installed Tools">
+          <Panel title={t("Installed Tools")}>
             <div className="tools-grid">
               {tools.map((tool) => (
                 <div className="tool-card" key={tool.id}>
                   <strong>{tool.name}</strong>
-                  <span className={tool.status === "installed" ? "green-text" : "orange-text"}>{tool.status}</span>
+                  <span className={tool.status === "installed" ? "green-text" : "orange-text"}>{t(tool.status)}</span>
                   <small>{tool.version ?? "-"}</small>
                   <code>{tool.path ?? tool.command}</code>
                 </div>
@@ -171,22 +173,22 @@ export function ServicesPage({
                 <label className="inline-toggle" onClick={(event) => {
                   event.stopPropagation();
                   void run(() => api.saveService({ ...service, autostart: !service.autostart }), { label: `Saving ${service.name} settings...` });
-                }}><span className={`toggle ${service.autostart ? "on" : ""}`} />Autostart</label>
+                }}><span className={`toggle ${service.autostart ? "on" : ""}`} />{t("Autostart")}</label>
                 <div className="service-metrics">
-                  <span>Ports <strong>{service.ports.join(", ")}</strong></span>
+                  <span>{t("Ports")} <strong>{service.ports.join(", ")}</strong></span>
                   <span>CPU <strong>{service.cpu.toFixed(1)}%</strong><i style={{ width: `${Math.max(service.cpu, 3)}%` }} /></span>
                   <span>RAM <strong>{service.memoryMb} MB</strong><i style={{ width: `${Math.min(service.memoryMb / 4, 100)}%` }} /></span>
                 </div>
                 <div className="service-actions">
                   <Button variant="primary" icon={service.status === "running" ? <Square size={14} /> : <Play size={14} />} onClick={(event) => { event.stopPropagation(); void serviceAction(service, service.status === "running" ? "stop" : "start"); }}>
-                    {service.status === "running" ? "Stop" : "Start"}
+                    {t(service.status === "running" ? "Stop" : "Start")}
                   </Button>
-                  <Button icon={<RefreshCw size={16} />} onClick={(event) => { event.stopPropagation(); void serviceAction(service, "restart"); }}>Restart</Button>
-                  <Button icon={<Play size={16} />} onClick={(event) => { event.stopPropagation(); void safeStartService(service); }}>Safe Start</Button>
-                  <Button icon={<Wrench size={16} />} onClick={(event) => { event.stopPropagation(); void fixService(service); }}>Fix</Button>
-                  <Button icon={<Settings size={16} />} onClick={(event) => { event.stopPropagation(); void loadConfig(service); }}>Config</Button>
-                  <Button icon={<FileText size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(service.logPath), { label: `Opening ${service.name} logs...` }); }}>Logs</Button>
-                  <Button icon={<Download size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, successLabel: `${service.name} installed or detected.` }); }}>Install</Button>
+                  <Button icon={<RefreshCw size={16} />} onClick={(event) => { event.stopPropagation(); void serviceAction(service, "restart"); }}>{t("Restart")}</Button>
+                  <Button icon={<Play size={16} />} onClick={(event) => { event.stopPropagation(); void safeStartService(service); }}>{t("Safe Start")}</Button>
+                  <Button icon={<Wrench size={16} />} onClick={(event) => { event.stopPropagation(); void fixService(service); }}>{t("Fix")}</Button>
+                  <Button icon={<Settings size={16} />} onClick={(event) => { event.stopPropagation(); void loadConfig(service); }}>{t("Config")}</Button>
+                  <Button icon={<FileText size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(service.logPath), { label: `Opening ${service.name} logs...` }); }}>{t("Logs")}</Button>
+                  <Button icon={<Download size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, successLabel: `${service.name} installed or detected.` }); }}>{t("Install")}</Button>
                 </div>
               </div>
               {service.lastError && <div className="error-inline">{service.lastError}</div>}
@@ -198,27 +200,27 @@ export function ServicesPage({
         <aside className="detail-rail">
           <Panel title={current.name} action={<><StatusDot status={current.status} /><Button variant="icon" icon={<MoreVertical size={17} />} onClick={() => void run(() => api.saveService(current))} /></>}>
             <div className="kv detail-kv">
-              <span>Version</span><strong>{current.version}</strong>
-              <span>Executable</span><button onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} executable folder...` })}>{current.executablePath}<Folder size={16} /></button>
-              <span>Config</span><button onClick={() => void run(() => api.openPath(current.configPath), { label: `Opening ${current.name} config...` })}>{current.configPath}<FileText size={16} /></button>
-              <span>Log</span><button onClick={() => void run(() => api.openPath(current.logPath), { label: `Opening ${current.name} log...` })}>{current.logPath}<FileText size={16} /></button>
-              <span>Ports</span><strong>{current.ports.join(", ")}</strong>
-              <span>Process ID</span><strong>{current.pid ?? "-"}</strong>
-              <span>Uptime</span><strong>{Math.floor(current.uptimeSeconds / 60)}m</strong>
+              <span>{t("Version")}</span><strong>{current.version}</strong>
+              <span>{t("Executable")}</span><button onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} executable folder...` })}>{current.executablePath}<Folder size={16} /></button>
+              <span>{t("Config")}</span><button onClick={() => void run(() => api.openPath(current.configPath), { label: `Opening ${current.name} config...` })}>{current.configPath}<FileText size={16} /></button>
+              <span>{t("Log")}</span><button onClick={() => void run(() => api.openPath(current.logPath), { label: `Opening ${current.name} log...` })}>{current.logPath}<FileText size={16} /></button>
+              <span>{t("Ports")}</span><strong>{current.ports.join(", ")}</strong>
+              <span>{t("Process ID")}</span><strong>{current.pid ?? "-"}</strong>
+              <span>{t("Uptime")}</span><strong>{Math.floor(current.uptimeSeconds / 60)}m</strong>
             </div>
           </Panel>
-          <Panel title="Quick Actions">
+          <Panel title={t("Quick Actions")}>
             <div className="quick-grid">
-              <Button icon={<Settings size={17} />} onClick={() => void loadConfig(current)}>Edit Config</Button>
-              <Button icon={<FileText size={17} />} onClick={() => void run(() => api.openPath(current.logPath), { label: `Opening ${current.name} logs...` })}>View Logs</Button>
-              <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} folder...` })}>Open Root Folder</Button>
-              <Button icon={<Download size={17} />} onClick={() => void run(() => api.installServiceDependency(current.id), { label: `Installing ${current.name}...`, successLabel: `${current.name} installed or detected.` })}>Install</Button>
-              <Button icon={<Wrench size={17} />} onClick={() => void fixService(current)}>Fix this service</Button>
-              <Button icon={<Play size={17} />} onClick={() => void safeStartService(current)}>Safe Start</Button>
-              <Button icon={<RefreshCw size={17} />} onClick={() => void serviceAction(current, "restart")}>Restart</Button>
+              <Button icon={<Settings size={17} />} onClick={() => void loadConfig(current)}>{t("Edit Config")}</Button>
+              <Button icon={<FileText size={17} />} onClick={() => void run(() => api.openPath(current.logPath), { label: `Opening ${current.name} logs...` })}>{t("View Logs")}</Button>
+              <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} folder...` })}>{t("Open Root Folder")}</Button>
+              <Button icon={<Download size={17} />} onClick={() => void run(() => api.installServiceDependency(current.id), { label: `Installing ${current.name}...`, successLabel: `${current.name} installed or detected.` })}>{t("Install")}</Button>
+              <Button icon={<Wrench size={17} />} onClick={() => void fixService(current)}>{t("Fix this service")}</Button>
+              <Button icon={<Play size={17} />} onClick={() => void safeStartService(current)}>{t("Safe Start")}</Button>
+              <Button icon={<RefreshCw size={17} />} onClick={() => void serviceAction(current, "restart")}>{t("Restart")}</Button>
             </div>
           </Panel>
-          {configPath && <Panel title="Config Editor" action={<Button icon={<Settings size={16} />} onClick={() => void run(() => api.saveConfigFile(configPath, configText), { label: `Saving ${current.name} config...` })}>Save Config</Button>}>
+          {configPath && <Panel title={t("Config Editor")} action={<Button icon={<Settings size={16} />} onClick={() => void run(() => api.saveConfigFile(configPath, configText), { label: `Saving ${current.name} config...` })}>{t("Save Config")}</Button>}>
             <textarea className="config-editor" value={configText} onChange={(event) => setConfigText(event.target.value)} />
             <p className="muted">{configPath}</p>
           </Panel>}

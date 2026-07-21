@@ -1266,6 +1266,7 @@ fn is_database_token(value: &str) -> bool {
 }
 
 fn download_and_extract(url: &str, archive: &Path, extracted: &Path) -> AppResult<()> {
+    ensure_allowed_cms_download_url(url)?;
     let script = format!(
         "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri {} -OutFile {}; Expand-Archive -LiteralPath {} -DestinationPath {} -Force",
         powershell_quote(url),
@@ -1295,6 +1296,35 @@ fn download_and_extract(url: &str, archive: &Path, extracted: &Path) -> AppResul
         return Err(format!("Cannot download or extract CMS package. {detail}"));
     }
     Ok(())
+}
+
+fn ensure_allowed_cms_download_url(url: &str) -> AppResult<()> {
+    ensure_https_url_host(
+        url,
+        &[
+            "wordpress.org",
+            "downloads.joomla.org",
+            "www.drupal.org",
+            "getgrav.org",
+        ],
+    )
+}
+
+fn ensure_https_url_host(url: &str, allowed_hosts: &[&str]) -> AppResult<()> {
+    let lower = url.trim().to_ascii_lowercase();
+    if !lower.starts_with("https://") {
+        return Err("Download URL must use HTTPS.".to_string());
+    }
+    let host = lower
+        .trim_start_matches("https://")
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    if allowed_hosts.contains(&host) {
+        Ok(())
+    } else {
+        Err(format!("Download host is not allowed: {host}"))
+    }
 }
 
 fn powershell_quote(value: &str) -> String {

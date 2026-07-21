@@ -10,13 +10,17 @@ The default visual mode is the Wet Asphalt theme with a lime LocalStack Pro logo
 
 LocalStack Pro — Windows desktop-приложение для локальной веб-разработки. Оно управляет реальными сервисами Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy и DNS Helper, создает хосты `.test`, синхронизирует Windows hosts-файл, генерирует SSL-сертификаты, устанавливает CMS и дает двухпанельный файловый менеджер с редактором кода.
 
-Основные изменения версии `1.0.1`:
+Основные изменения версии `1.0.2`:
 
 - приложение открывается сразу развернутым на весь экран;
 - установщик NSIS использует lime `app.ico`, branded `header.bmp`, `wizard-left.bmp`, кастомную welcome-страницу и такой же стиль в деинсталляторе;
 - вся документация доступна на русском и английском;
 - расширены переводы интерфейса при переключении языка на русский;
 - обновлен lime-логотип для приложения, установщика и tray-состояний.
+- устранены уязвимости в транзитивных npm-зависимостях;
+- подпись и копирование установщика используют фактическую версию из `tauri.conf.json`;
+- файловый менеджер корректно разрешает существующие родительские пути перед операцией, включая junction/symlink-пути;
+- добавлены проверяемые тесты для редактирования файлов и редактирования диагностических данных.
 
 ## Stack
 
@@ -50,8 +54,8 @@ npm run tauri:build
 Build outputs:
 
 - App executable: `src-tauri\target\release\localstack-pro.exe`
-- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.1_x64-setup.exe`
-- Signed convenience copy: `release\LocalStack Pro_1.0.1_x64-setup.exe`
+- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.2_x64-setup.exe`
+- Signed convenience copy: `release\LocalStack Pro_1.0.2_x64-setup.exe`
 
 The installer uses these branded NSIS assets:
 
@@ -382,6 +386,14 @@ Completed checks:
 npm run build
 cargo check
 npm run tauri:build
+```
+
+Полная локальная проверка перед выпуском:
+
+```powershell
+npm run verify
+npm run audit:responsive
+npm run audit:themes
 ```
 
 The NSIS installer was successfully generated.

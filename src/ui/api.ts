@@ -45,6 +45,7 @@ import type {
 } from "./types";
 
 const isTauriRuntime = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const allowBrowserFallback = () => import.meta.env.DEV;
 
 function readFallback<T>(fallback: T | (() => T)): T {
   return typeof fallback === "function" ? (fallback as () => T)() : fallback;
@@ -52,7 +53,7 @@ function readFallback<T>(fallback: T | (() => T)): T {
 
 async function safeInvoke<T>(command: string, args?: Record<string, unknown>, fallback?: T | (() => T)): Promise<T> {
   if (!isTauriRuntime()) {
-    if (fallback !== undefined) return readFallback(fallback);
+    if (fallback !== undefined && allowBrowserFallback()) return readFallback(fallback);
     throw new Error(`Tauri command "${command}" is unavailable in browser preview`);
   }
   return invoke<T>(command, args);

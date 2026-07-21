@@ -1,6 +1,6 @@
 {
   "name": "localstack-pro",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Local Windows virtual server and environment manager for web development.",
   "author": "Farid Leonov",
   "homepage": "https://artnext.ru",
@@ -10,6 +10,7 @@
     "check": "tsc --noEmit",
     "build": "tsc && vite build",
     "lint": "eslint .",
+    "verify": "npm run check && npm run lint && npm audit --audit-level=low && npm run build && npm run tauri:test && npm run tauri:clippy",
     "preview": "vite preview",
     "audit:responsive": "node scripts/responsive-audit.mjs",
     "audit:themes": "node scripts/theme-audit.mjs",
@@ -30,28 +31,28 @@
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-markdown": "^6.5.1",
     "@codemirror/lang-php": "^6.0.2",
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/language-data": "^6.5.2",
     "@tauri-apps/api": "2.10.1",
     "@tauri-apps/plugin-dialog": "2.7.1",
-    "@uiw/react-codemirror": "^4.25.10",
+    "@uiw/react-codemirror": "^4.25.11",
     "lucide-react": "^0.561.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^9.39.5",
     "@tauri-apps/cli": "2.10.1",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
-    "eslint": "^9.39.2",
+    "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "playwright": "^1.59.1",
+    "playwright": "^1.61.1",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.49.0",
+    "typescript-eslint": "^8.65.0",
     "vite": "^7.2.7"
   }
 }

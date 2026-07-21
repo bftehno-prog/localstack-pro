@@ -169,7 +169,7 @@ export function OverviewPage({
             {state.hosts.map((host) => <option key={host.id} value={host.id}>{host.domain}</option>)}
           </select>
           <Button variant="primary" icon={<Play size={16} />} onClick={() => void startWorkday()}>Start Workday</Button>
-          <Button icon={<Wrench size={16} />} onClick={() => void run(() => api.repairEnvironment(), { label: "Repairing environment..." })}>Ready Check</Button>
+          <Button icon={<Wrench size={16} />} onClick={() => void run(() => api.repairEnvironment(), { label: String(t("Repairing environment...")) })}>{t("Ready Check")}</Button>
         </div>
       </Panel>
       <div className="overview-grid">
@@ -190,7 +190,7 @@ export function OverviewPage({
               <div className="toolbar">
                 <label className="search">
                   <Search size={17} />
-                  <input placeholder="Search hosts..." value={query} onChange={(event) => setQuery(event.target.value)} />
+                  <input placeholder={String(t("Search hosts..."))} value={query} onChange={(event) => setQuery(event.target.value)} />
                 </label>
                 <Button variant="primary" icon={<Plus size={16} />} onClick={() => editHost()}>
                   New Host
@@ -319,13 +319,13 @@ export function OverviewPage({
                 <button onClick={() => void run(() => api.openPath(`${selected.rootFolder}\\logs\\error.log`))}>{selected.rootFolder}\\logs\\error.log</button>
               </div>
             </Panel>
-            <Panel title="Quick Actions">
+            <Panel title={t("Quick Actions")}>
               <div className="quick-grid">
                 <Button icon={<Globe2 size={17} />} onClick={() => void openSelectedWithChecks(selected)}>
                   Open in Browser
                 </Button>
                 <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(selected.rootFolder))}>
-                  Open Root Folder
+                  {t("Open Root Folder")}
                 </Button>
                 <Button icon={<Terminal size={17} />} onClick={() => void run(() => api.openTerminal(selected.rootFolder))}>
                   Open in Terminal

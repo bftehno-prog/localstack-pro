@@ -7,8 +7,10 @@ import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { TopServices } from "../components/TopServices";
+import { useT } from "../ui/i18n";
 
 export function DatabasePage({ state, run }: { state: AppSnapshot; run: AppRun }) {
+  const t = useT();
   const fallbackDb: DatabaseInfo = { id: "shop", name: "shop", description: "Main e-commerce DB", engine: "MySQL", version: "8.0.36", schemas: 0, user: "shop_user", password: "localstack", port: 3306, status: "stopped", sizeMb: 0, createdAt: new Date().toISOString() };
   const [selected, setSelected] = useState<DatabaseInfo>(state.databases[0] ?? fallbackDb);
   const [preset, setPreset] = useState<DatabaseInfo["engine"]>("MySQL");
@@ -63,23 +65,23 @@ export function DatabasePage({ state, run }: { state: AppSnapshot; run: AppRun }
       {formError && <div className="error-banner">{formError}</div>}
       <div className="page-grid">
         <section>
-          <Panel title="Databases" action={<><select value={preset} onChange={(event) => setPreset(event.target.value as DatabaseInfo["engine"])}><option>MySQL</option><option>MariaDB</option><option>PostgreSQL</option></select><Button variant="primary" icon={<Plus size={16} />} onClick={createDb}>Create Database</Button><Button icon={<ShieldCheck size={16} />} onClick={() => void testConnection()}>Test Connection</Button><Button icon={<Download size={16} />} onClick={() => void importSql()}>Import SQL</Button><Button icon={<Upload size={16} />} onClick={() => void run(() => api.backupDatabase(db.id), { label: `Exporting ${db.name}...` })}>Export</Button></>}>
+          <Panel title={t("Databases")} action={<><select value={preset} onChange={(event) => setPreset(event.target.value as DatabaseInfo["engine"])}><option>MySQL</option><option>MariaDB</option><option>PostgreSQL</option></select><Button variant="primary" icon={<Plus size={16} />} onClick={createDb}>{t("Create Database")}</Button><Button icon={<ShieldCheck size={16} />} onClick={() => void testConnection()}>{t("Test Connection")}</Button><Button icon={<Download size={16} />} onClick={() => void importSql()}>{t("Import SQL")}</Button><Button icon={<Upload size={16} />} onClick={() => void run(() => api.backupDatabase(db.id), { label: `Exporting ${db.name}...` })}>{t("Export")}</Button></>}>
             <table className="data-table">
-              <thead><tr><th>Database</th><th>Engine</th><th>Schemas</th><th>User</th><th>Password</th><th>Port</th><th>Status</th><th>Size</th></tr></thead>
+              <thead><tr><th>{t("Database")}</th><th>{t("Engine")}</th><th>{t("Schemas")}</th><th>{t("User")}</th><th>{t("Password")}</th><th>{t("Port")}</th><th>{t("Status")}</th><th>{t("Size")}</th></tr></thead>
               <tbody>{state.databases.map((row) => <tr key={row.id} className={db.id === row.id ? "selected" : ""} onClick={() => setSelected(row)}><td><strong>{row.name}</strong><small>{row.description}</small></td><td>{row.engine}<small>{row.version}</small></td><td>{row.schemas}</td><td>{row.user}</td><td>•••••••• <Eye size={14} /></td><td>{row.port}</td><td><StatusDot status={row.status} /></td><td>{row.sizeMb.toFixed(1)} MB</td></tr>)}</tbody>
             </table>
           </Panel>
           <div className="split">
-          <Panel title="Quick Actions"><div className="quick-grid"><Button icon={<Plus size={16} />} onClick={createDb}>Create Database</Button><Button icon={<ShieldCheck size={16} />} onClick={() => void testConnection()}>Test Connection</Button><Button icon={<Download size={16} />} onClick={() => void importSql()}>Import SQL</Button><Button icon={<Upload size={16} />} onClick={() => void run(() => api.backupDatabase(db.id), { label: `Exporting ${db.name}...` })}>Export</Button><Button onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." })}>Open phpMyAdmin</Button><Button onClick={() => void run(() => api.openDatabaseAdmin("adminer"), { label: "Opening Adminer..." })}>Open Adminer</Button><Button icon={<Trash2 size={16} />} variant="danger" onClick={() => void run(() => api.deleteDatabase(db.id), { label: `Deleting ${db.name}...` })}>Delete</Button></div></Panel>
-            <Panel title="Database Usage"><div className="donut" style={{ background: "conic-gradient(var(--blue) 0 30%, var(--green) 30% 55%, var(--brand-3) 55% 100%)" }}><strong>{Math.round(total)} MB</strong><small>Total</small></div></Panel>
+          <Panel title={t("Quick Actions")}><div className="quick-grid"><Button icon={<Plus size={16} />} onClick={createDb}>{t("Create Database")}</Button><Button icon={<ShieldCheck size={16} />} onClick={() => void testConnection()}>{t("Test Connection")}</Button><Button icon={<Download size={16} />} onClick={() => void importSql()}>{t("Import SQL")}</Button><Button icon={<Upload size={16} />} onClick={() => void run(() => api.backupDatabase(db.id), { label: `Exporting ${db.name}...` })}>{t("Export")}</Button><Button onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." })}>{t("Open phpMyAdmin")}</Button><Button onClick={() => void run(() => api.openDatabaseAdmin("adminer"), { label: "Opening Adminer..." })}>{t("Open Adminer")}</Button><Button icon={<Trash2 size={16} />} variant="danger" onClick={() => void run(() => api.deleteDatabase(db.id), { label: `Deleting ${db.name}...` })}>{t("Delete")}</Button></div></Panel>
+            <Panel title={t("Database Usage")}><div className="donut" style={{ background: "conic-gradient(var(--blue) 0 30%, var(--green) 30% 55%, var(--brand-3) 55% 100%)" }}><strong>{Math.round(total)} MB</strong><small>{t("Total")}</small></div></Panel>
           </div>
-          <Panel title="Recent Activity / Query Log"><div className="log-box compact-log">{state.logs.filter((log) => log.service === "MySQL").map((log) => <pre key={log.id}>[{new Date(log.timestamp).toLocaleTimeString()}] &gt; {log.message}</pre>)}</div></Panel>
+          <Panel title={t("Recent Activity / Query Log")}><div className="log-box compact-log">{state.logs.filter((log) => log.service === "MySQL").map((log) => <pre key={log.id}>[{new Date(log.timestamp).toLocaleTimeString()}] &gt; {log.message}</pre>)}</div></Panel>
         </section>
         <aside className="detail-rail">
-          <Panel title="Create Database">
+          <Panel title={t("Create Database")}>
             <div className="form-grid">
               <label>
-                Engine
+                {t("Engine")}
                 <select value={preset} onChange={(event) => setPreset(event.target.value as DatabaseInfo["engine"])}>
                   <option>MySQL</option>
                   <option>MariaDB</option>
@@ -87,7 +89,7 @@ export function DatabasePage({ state, run }: { state: AppSnapshot; run: AppRun }
                 </select>
               </label>
               <label>
-                Database Name
+                {t("Database Name")}
                 <input value={newName} onChange={(event) => {
                   const previousUser = `${newName.trim()}_user`;
                   const nextName = event.target.value;
@@ -96,25 +98,25 @@ export function DatabasePage({ state, run }: { state: AppSnapshot; run: AppRun }
                 }} placeholder="site_db" />
               </label>
               <label>
-                Database User
+                {t("Database User")}
                 <input value={newUser} onChange={(event) => setNewUser(event.target.value)} placeholder="site_user" />
               </label>
               <label>
-                Database Password
+                {t("Database Password")}
                 <input type="text" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
               </label>
-              <button className="input-button" type="button" onClick={() => setNewPassword(generatePassword())}>Generate password <KeyRound size={15} /></button>
-              <Button variant="primary" icon={<Plus size={16} />} onClick={createDb}>Create Database</Button>
+              <button className="input-button" type="button" onClick={() => setNewPassword(generatePassword())}>{t("Generate password")} <KeyRound size={15} /></button>
+              <Button variant="primary" icon={<Plus size={16} />} onClick={createDb}>{t("Create Database")}</Button>
             </div>
           </Panel>
           <Panel title={db.name} action={<StatusDot status={db.status} />}>
-            <div className="kv form-kv"><span>Engine</span><strong>{db.engine} {db.version}</strong><span>Host</span><button onClick={() => copy("127.0.0.1")}>127.0.0.1<Copy size={15} /></button><span>Port</span><button onClick={() => copy(db.port)}>{db.port}<Copy size={15} /></button><span>Database</span><button onClick={() => copy(db.name)}>{db.name}<Copy size={15} /></button><span>Username</span><button onClick={() => copy(db.user)}>{db.user}<Copy size={15} /></button><span>Password</span><button onClick={() => copy(db.password)}>••••••••<Copy size={15} /></button><span>Connection String</span><button onClick={() => copy(`${db.engine.toLowerCase()}://${db.user}:${db.password}@127.0.0.1:${db.port}/${db.name}`)}>{`${db.engine.toLowerCase()}://${db.user}:********@127.0.0.1:${db.port}/${db.name}`}<Copy size={15} /></button></div>
+            <div className="kv form-kv"><span>{t("Engine")}</span><strong>{db.engine} {db.version}</strong><span>{t("Host")}</span><button onClick={() => copy("127.0.0.1")}>127.0.0.1<Copy size={15} /></button><span>{t("Port")}</span><button onClick={() => copy(db.port)}>{db.port}<Copy size={15} /></button><span>{t("Database")}</span><button onClick={() => copy(db.name)}>{db.name}<Copy size={15} /></button><span>{t("Username")}</span><button onClick={() => copy(db.user)}>{db.user}<Copy size={15} /></button><span>{t("Password")}</span><button onClick={() => copy(db.password)}>••••••••<Copy size={15} /></button><span>{t("Connection String")}</span><button onClick={() => copy(`${db.engine.toLowerCase()}://${db.user}:${db.password}@127.0.0.1:${db.port}/${db.name}`)}>{`${db.engine.toLowerCase()}://${db.user}:********@127.0.0.1:${db.port}/${db.name}`}<Copy size={15} /></button></div>
           </Panel>
           {diagnostics?.databaseId === db.id && (
-            <Panel title="Connection Diagnostics" action={<StatusDot status={diagnostics.errors > 0 ? "error" : diagnostics.warnings > 0 ? "warning" : "valid"} label={diagnostics.errors > 0 ? "Issues" : diagnostics.warnings > 0 ? "Warnings" : "Healthy"} />}>
+            <Panel title={t("Connection Diagnostics")} action={<StatusDot status={diagnostics.errors > 0 ? "error" : diagnostics.warnings > 0 ? "warning" : "valid"} label={diagnostics.errors > 0 ? String(t("Issues")) : diagnostics.warnings > 0 ? String(t("Warnings")) : String(t("Healthy"))} />}>
               <div className="kv detail-kv">
-                <span>Summary</span><strong>{diagnostics.summary}</strong>
-                <span>Checks</span><strong>{diagnostics.ok} OK / {diagnostics.warnings} Warning / {diagnostics.errors} Error</strong>
+                <span>{t("Summary")}</span><strong>{diagnostics.summary}</strong>
+                <span>{t("Checks")}</span><strong>{diagnostics.ok} OK / {diagnostics.warnings} Warning / {diagnostics.errors} Error</strong>
               </div>
               <table className="data-table diagnostics-table">
                 <tbody>
@@ -128,7 +130,7 @@ export function DatabasePage({ state, run }: { state: AppSnapshot; run: AppRun }
               </table>
             </Panel>
           )}
-          <Panel title="Recent Backups"><p className="muted">{db.name}_backup.sql.gz</p><p className="muted">{db.name}_yesterday.sql.gz</p></Panel>
+          <Panel title={t("Recent Backups")}><p className="muted">{db.name}_backup.sql.gz</p><p className="muted">{db.name}_yesterday.sql.gz</p></Panel>
         </aside>
       </div>
     </>

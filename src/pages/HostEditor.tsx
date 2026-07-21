@@ -5,6 +5,7 @@ import type { AppRun, AppSnapshot, DatabaseInfo, HostInfo, ProjectInspection } f
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
+import { useT } from "../ui/i18n";
 import { hostUrl } from "./Overview";
 
 export function HostEditorPage({
@@ -18,6 +19,7 @@ export function HostEditorPage({
   back: () => void;
   run: AppRun;
 }) {
+  const t = useT();
   const blank = useMemo<HostInfo>(() => ({
     id: crypto.randomUUID(),
     domain: "new.test",
@@ -206,7 +208,7 @@ export function HostEditorPage({
     <div className="editor-page">
       <div className="editor-head">
         <Button variant="icon" icon={<ArrowLeft size={20} />} onClick={back} />
-        <div><h1>New Host / Edit Host</h1><p>Create a new local site or edit an existing one</p></div>
+        <div><h1>{t("New Host / Edit Host")}</h1><p>{t("Create a new local site or edit an existing one")}</p></div>
       </div>
       {error && <div className="error-banner">{error}</div>}
       {configOk && <div className="success-banner">{configOk}</div>}
@@ -219,62 +221,62 @@ export function HostEditorPage({
               ))}
             </div>
             <div className="form-grid">
-              <label>Environment Preset<select value={environmentPreset} onChange={(event) => applyPreset(event.target.value)}><option>PHP CMS</option><option>WordPress</option><option>Laravel</option><option>Next.js</option><option>Static</option><option>Production</option></select></label>
-              <label>Host Name *<input value={host.domain} onChange={(event) => updateDomain(event.target.value)} /></label>
-              <label>Domain *<input value={host.domain} onChange={(event) => updateDomain(event.target.value)} /></label>
-              <label>Description<input value={host.notes} onChange={(event) => update("notes", event.target.value)} /></label>
+              <label>{t("Environment Preset")}<select value={environmentPreset} onChange={(event) => applyPreset(event.target.value)}><option>PHP CMS</option><option>WordPress</option><option>Laravel</option><option>Next.js</option><option value="Static">{t("Static")}</option><option value="Production">{t("Production")}</option></select></label>
+              <label>{t("Host Name")} *<input value={host.domain} onChange={(event) => updateDomain(event.target.value)} /></label>
+              <label>{t("Domain")} *<input value={host.domain} onChange={(event) => updateDomain(event.target.value)} /></label>
+              <label>{t("Description")}<input value={host.notes} onChange={(event) => update("notes", event.target.value)} /></label>
             </div>
           </Panel>
           <Panel title="Git Import">
             <div className="form-grid">
-              <label>Repository URL<input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder="https://github.com/user/project.git" /></label>
-              <Button icon={<GitBranch size={16} />} disabled={!gitUrl.trim()} onClick={() => void run(() => api.cloneProjectRepository(gitUrl, host.rootFolder), { label: `Cloning repository into ${host.rootFolder}...` })}>Import from Git</Button>
+              <label>{t("Repository URL")}<input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder="https://github.com/user/project.git" /></label>
+              <Button icon={<GitBranch size={16} />} disabled={!gitUrl.trim()} onClick={() => void run(() => api.cloneProjectRepository(gitUrl, host.rootFolder), { label: `Cloning repository into ${host.rootFolder}...` })}>{t("Import from Git")}</Button>
             </div>
           </Panel>
-          <Panel title="Project Doctor" action={<Button icon={<TestTube2 size={16} />} onClick={() => void inspectProject()}>Detect Project</Button>}>
+          <Panel title={t("Project Doctor")} action={<Button icon={<TestTube2 size={16} />} onClick={() => void inspectProject()}>{t("Detect Project")}</Button>}>
             {projectInfo ? (
               <>
-                <div className="kv detail-kv"><span>Type</span><strong>{projectInfo.kind}</strong><span>Document Root</span><strong>{projectInfo.documentRoot}</strong><span>Commands</span><strong>{projectInfo.commands.join(", ") || "None"}</strong></div>
+                <div className="kv detail-kv"><span>{t("Type")}</span><strong>{projectInfo.kind}</strong><span>{t("Document Root")}</span><strong>{projectInfo.documentRoot}</strong><span>{t("Commands")}</span><strong>{projectInfo.commands.join(", ") || t("None")}</strong></div>
                 <table className="mini-table"><tbody>{projectInfo.checks.map((check) => <tr key={check.title}><td>{check.title}</td><td>{check.severity}</td><td>{check.message}</td></tr>)}</tbody></table>
-                <Button onClick={() => void run(() => api.generateEnvTemplate(host.rootFolder, projectInfo.kind, host.database, databaseUser, databasePassword, host.domain), { label: `Generating .env for ${host.domain}...` })}>Generate .env</Button>
+                <Button onClick={() => void run(() => api.generateEnvTemplate(host.rootFolder, projectInfo.kind, host.database, databaseUser, databasePassword, host.domain), { label: `Generating .env for ${host.domain}...` })}>{t("Generate .env")}</Button>
               </>
-            ) : <p className="muted">Detect project type, document root, commands and .env template.</p>}
+            ) : <p className="muted">{t("Detect project type, document root, commands and .env template.")}</p>}
           </Panel>
           <Panel title="Paths">
             <div className="form-grid two">
-              <label>Root Folder *<input value={host.rootFolder} onChange={(event) => update("rootFolder", event.target.value)} /></label>
-              <label>Document Root *<input value={host.documentRoot} onChange={(event) => update("documentRoot", event.target.value)} /></label>
+              <label>{t("Root Folder")} *<input value={host.rootFolder} onChange={(event) => update("rootFolder", event.target.value)} /></label>
+              <label>{t("Document Root")} *<input value={host.documentRoot} onChange={(event) => update("documentRoot", event.target.value)} /></label>
             </div>
             <p className="hint">Full path: {host.rootFolder}\\{host.documentRoot}</p>
           </Panel>
           <Panel title="PHP & Web Server">
             <div className="form-grid two">
-              <label>PHP Version<select value={host.phpVersion} onChange={(event) => update("phpVersion", event.target.value)}>{state.phpVersions.map((php) => <option key={php.version}>{php.version}</option>)}</select></label>
-              <label>Web Server<select value={host.webServer} onChange={(event) => update("webServer", event.target.value)}><option>Apache</option><option>Nginx</option></select></label>
-              <label className="toggle-line">Enable SSL<span className={`toggle ${host.ssl ? "on" : ""}`} onClick={() => update("ssl", !host.ssl)} /></label>
-              <label className="toggle-line">Force HTTPS<span className={`toggle ${forceHttps ? "on" : ""}`} onClick={toggleForceHttps} /></label>
+              <label>{t("PHP Version")}<select value={host.phpVersion} onChange={(event) => update("phpVersion", event.target.value)}>{state.phpVersions.map((php) => <option key={php.version}>{php.version}</option>)}</select></label>
+              <label>{t("Web Server")}<select value={host.webServer} onChange={(event) => update("webServer", event.target.value)}><option>Apache</option><option>Nginx</option></select></label>
+              <label className="toggle-line">{t("Enable SSL")}<span className={`toggle ${host.ssl ? "on" : ""}`} onClick={() => update("ssl", !host.ssl)} /></label>
+              <label className="toggle-line">{t("Force HTTPS")}<span className={`toggle ${forceHttps ? "on" : ""}`} onClick={toggleForceHttps} /></label>
             </div>
           </Panel>
           <Panel title="Custom Ports">
             <div className="form-grid two">
-              <label>HTTP Port<input type="number" value={host.httpPort} onChange={(event) => update("httpPort", Number(event.target.value))} /></label>
-              <label>HTTPS Port<input type="number" value={host.httpsPort} onChange={(event) => update("httpsPort", Number(event.target.value))} /></label>
+              <label>{t("HTTP Port")}<input type="number" value={host.httpPort} onChange={(event) => update("httpPort", Number(event.target.value))} /></label>
+              <label>{t("HTTPS Port")}<input type="number" value={host.httpsPort} onChange={(event) => update("httpsPort", Number(event.target.value))} /></label>
             </div>
           </Panel>
           <Panel title="Database">
             <div className="form-grid two">
-              <label>Credential Vault<select value="" onChange={(event) => applyVault(event.target.value)}><option value="">Select saved credentials</option>{vaultItems.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
-              <label>Vault Name<input value={vaultName} onChange={(event) => setVaultName(event.target.value)} placeholder={host.domain} /></label>
-              <label>Database Preset<select value={databasePresetFromEngine(databaseEngine)} onChange={(event) => setDatabaseEngine(databaseEngineFromPreset(event.target.value))}><option>MySQL 8.0</option><option>MariaDB 10.6</option><option>PostgreSQL 15</option></select></label>
-              <label className="toggle-line">Create Database<span className={`toggle ${createDatabaseWithHost ? "on" : ""}`} onClick={() => setCreateDatabaseWithHost((value) => !value)} /></label>
-              <label>Database Name<input value={host.database} onChange={(event) => updateDatabaseName(event.target.value)} /></label>
-              <label>Database User<input value={databaseUser} disabled={!createDatabaseWithHost} onChange={(event) => setDatabaseUser(event.target.value)} /></label>
-              <label>Database Password<input type="text" value={databasePassword} disabled={!createDatabaseWithHost} onChange={(event) => setDatabasePassword(event.target.value)} /></label>
-              <label>Password Tool<button className="input-button" type="button" disabled={!createDatabaseWithHost} onClick={() => setDatabasePassword(generatePassword())}>Generate password <KeyRound size={15} /></button></label>
-              <label>Vault Tool<button className="input-button" type="button" onClick={saveVault}>Save credentials <KeyRound size={15} /></button></label>
+              <label>{t("Credential Vault")}<select value="" onChange={(event) => applyVault(event.target.value)}><option value="">{t("Select saved credentials")}</option>{vaultItems.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+              <label>{t("Vault Name")}<input value={vaultName} onChange={(event) => setVaultName(event.target.value)} placeholder={host.domain} /></label>
+              <label>{t("Database Preset")}<select value={databasePresetFromEngine(databaseEngine)} onChange={(event) => setDatabaseEngine(databaseEngineFromPreset(event.target.value))}><option>MySQL 8.0</option><option>MariaDB 10.6</option><option>PostgreSQL 15</option></select></label>
+              <label className="toggle-line">{t("Create Database")}<span className={`toggle ${createDatabaseWithHost ? "on" : ""}`} onClick={() => setCreateDatabaseWithHost((value) => !value)} /></label>
+              <label>{t("Database Name")}<input value={host.database} onChange={(event) => updateDatabaseName(event.target.value)} /></label>
+              <label>{t("Database User")}<input value={databaseUser} disabled={!createDatabaseWithHost} onChange={(event) => setDatabaseUser(event.target.value)} /></label>
+              <label>{t("Database Password")}<input type="text" value={databasePassword} disabled={!createDatabaseWithHost} onChange={(event) => setDatabasePassword(event.target.value)} /></label>
+              <label>{t("Password Tool")}<button className="input-button" type="button" disabled={!createDatabaseWithHost} onClick={() => setDatabasePassword(generatePassword())}>{t("Generate password")} <KeyRound size={15} /></button></label>
+              <label>{t("Vault Tool")}<button className="input-button" type="button" onClick={saveVault}>{t("Save credentials")} <KeyRound size={15} /></button></label>
             </div>
           </Panel>
-          <Panel title="Environment Variables" action={<Button icon={<Plus size={15} />} disabled={!envKey.trim()} onClick={addVariable}>Add Variable</Button>}>
+          <Panel title={t("Environment Variables")} action={<Button icon={<Plus size={15} />} disabled={!envKey.trim()} onClick={addVariable}>{t("Add Variable")}</Button>}>
             <div className="env-inline">
               <input value={envKey} onChange={(event) => setEnvKey(event.target.value)} placeholder="KEY" />
               <input value={envValue} onChange={(event) => setEnvValue(event.target.value)} placeholder="Value" />
@@ -283,8 +285,8 @@ export function HostEditorPage({
           </Panel>
           <Panel title="Mail Testing">
             <div className="form-grid two">
-              <label>Mail Service<select value={host.mailService} onChange={(event) => update("mailService", event.target.value)}><option>Mailpit</option><option>Disabled</option></select></label>
-              <label>SMTP From Address<input value={`noreply@${host.domain}`} readOnly /></label>
+              <label>{t("Mail Service")}<select value={host.mailService} onChange={(event) => update("mailService", event.target.value)}><option>Mailpit</option><option value="Disabled">{t("Disabled")}</option></select></label>
+              <label>{t("SMTP From Address")}<input value={`noreply@${host.domain}`} readOnly /></label>
             </div>
           </Panel>
           <Panel title="Notes">
@@ -294,16 +296,16 @@ export function HostEditorPage({
         <aside className="detail-rail">
           <Panel title="Live Preview" action={<StatusDot status={host.status} />}>
             <div className="preview-url">{hostUrl(host)} <ExternalLink size={16} /></div>
-            <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => initial ? api.openHost(host.id) : api.openUrl(hostUrl(host)))}>Open in Browser</Button>
+            <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => initial ? api.openHost(host.id) : api.openUrl(hostUrl(host)))}>{t("Open in Browser")}</Button>
           </Panel>
           <Panel title="Status Summary">
             <div className="kv detail-kv">
-              <span>Document Root</span><strong>{host.rootFolder}\\{host.documentRoot}</strong>
-              <span>Web Root URL</span><strong>{hostUrl(host)}</strong>
-              <span>SSL</span><strong>{host.ssl ? "Enabled" : "Disabled"}</strong>
-              <span>HTTP Port</span><strong>{host.httpPort}</strong>
-              <span>HTTPS Port</span><strong>{host.httpsPort}</strong>
-              <span>Database</span><strong>{host.database}</strong>
+              <span>{t("Document Root")}</span><strong>{host.rootFolder}\\{host.documentRoot}</strong>
+              <span>{t("Web Root URL")}</span><strong>{hostUrl(host)}</strong>
+              <span>SSL</span><strong>{t(host.ssl ? "Enabled" : "Disabled")}</strong>
+              <span>{t("HTTP Port")}</span><strong>{host.httpPort}</strong>
+              <span>{t("HTTPS Port")}</span><strong>{host.httpsPort}</strong>
+              <span>{t("Database")}</span><strong>{host.database}</strong>
             </div>
           </Panel>
           {hostDiff.length > 0 && (
@@ -320,14 +322,14 @@ export function HostEditorPage({
           )}
           <Panel title="Actions">
             <div className="stack-buttons">
-              <Button variant="primary" icon={<Save size={16} />} onClick={() => void save(false)}>Save</Button>
-              <Button variant="primary" icon={<Save size={16} />} onClick={() => void save(true)}>Save & Start</Button>
+              <Button variant="primary" icon={<Save size={16} />} onClick={() => void save(false)}>{t("Save")}</Button>
+              <Button variant="primary" icon={<Save size={16} />} onClick={() => void save(true)}>{t("Save & Start")}</Button>
               <Button icon={<TestTube2 size={16} />} onClick={() => {
                 const validation = validateHost(host, state.hosts.filter((item) => item.id !== host.id));
                 setError(validation);
                 setConfigOk(validation ? null : "Configuration test passed.");
-              }}>Test Configuration</Button>
-              <Button icon={<X size={16} />} onClick={back}>Cancel</Button>
+              }}>{t("Test Configuration")}</Button>
+              <Button icon={<X size={16} />} onClick={back}>{t("Cancel")}</Button>
             </div>
           </Panel>
         </aside>

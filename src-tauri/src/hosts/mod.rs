@@ -277,14 +277,13 @@ pub fn diagnose_host(host_id: String) -> AppResult<HostDiagnosticReport> {
         &mut checks,
         "runtime-config",
         "Runtime vhost config",
-        if runtime_ok {
-            "ok"
-        } else {
-            "error"
-        },
+        if runtime_ok { "ok" } else { "error" },
         if runtime_ok {
             if let Some(target) = &node_proxy_target {
-                format!("Runtime config contains {} and proxy target {}.", host.domain, target)
+                format!(
+                    "Runtime config contains {} and proxy target {}.",
+                    host.domain, target
+                )
             } else {
                 format!(
                     "Runtime config contains {} and its document root.",
@@ -293,7 +292,10 @@ pub fn diagnose_host(host_id: String) -> AppResult<HostDiagnosticReport> {
             }
         } else {
             if let Some(target) = &node_proxy_target {
-                format!("Runtime config is missing {} or proxy target {}.", host.domain, target)
+                format!(
+                    "Runtime config is missing {} or proxy target {}.",
+                    host.domain, target
+                )
             } else {
                 format!(
                     "Runtime config is missing {} or {}.",

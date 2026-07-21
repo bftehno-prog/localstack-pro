@@ -1625,7 +1625,7 @@ const server = http.createServer((req, res) => {
   });
 });
 startConfiguredApps();
-setInterval(startConfiguredApps, 10000);
+setInterval(startConfiguredApps, 30000);
 server.listen(3000, '127.0.0.1');
 "#
 }
