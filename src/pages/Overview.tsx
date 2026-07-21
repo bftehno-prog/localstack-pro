@@ -376,9 +376,9 @@ export function OverviewPage({
 }
 
 export function hostUrl(host: HostInfo) {
-  const forceHttps = host.ssl && host.rewriteRules.includes("FORCE_HTTPS=1");
-  const scheme = forceHttps ? "https" : "http";
-  const port = forceHttps ? host.httpsPort : host.httpPort;
-  const defaultPort = (forceHttps && port === 443) || (!forceHttps && port === 80);
+  const useHttps = host.ssl;
+  const scheme = useHttps ? "https" : "http";
+  const port = useHttps ? host.httpsPort : host.httpPort;
+  const defaultPort = (useHttps && port === 443) || (!useHttps && port === 80);
   return defaultPort ? `${scheme}://${host.domain}` : `${scheme}://${host.domain}:${port}`;
 }

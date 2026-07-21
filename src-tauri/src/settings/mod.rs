@@ -333,9 +333,17 @@ pub fn open_host(host_id: String) -> AppResult<crate::state::AppSnapshot> {
             service_name, service_name, host.domain
         ));
     }
+    if host.ssl {
+        if !host_certificate_files_ready(&store, &snapshot, &host.domain) {
+            crate::ssl::generate_certificate(
+                host.domain.clone(),
+                vec![host.domain.clone(), format!("www.{}", host.domain)],
+            )?;
+        }
+        crate::ssl::ensure_host_certificate_trusted(&host.domain)?;
+    }
     ensure_node_proxy_service(&store, &snapshot, &host)?;
-    let cert_ready = !host.ssl || host_certificate_files_ready(&store, &snapshot, &host.domain);
-    let candidates = host_open_candidates(&host, cert_ready);
+    let candidates = host_open_candidates(&host);
     let candidate_ready =
         |candidate_scheme: &str, candidate_host: &str, candidate_port: u16| -> bool {
             if is_node_host(&host) && candidate_scheme == "https" {
@@ -561,16 +569,13 @@ fn database_service_id(engine: &str) -> &'static str {
     }
 }
 
-fn host_open_candidates(
-    host: &crate::state::HostInfo,
-    cert_ready: bool,
-) -> Vec<(&'static str, String, u16)> {
+fn host_open_candidates(host: &crate::state::HostInfo) -> Vec<(&'static str, String, u16)> {
     let mut candidates = Vec::new();
-    candidates.push(("http", host.domain.clone(), host.http_port));
-    if host.ssl && cert_ready {
+    if host.ssl {
         candidates.push(("https", host.domain.clone(), host.https_port));
+    } else {
+        candidates.push(("http", host.domain.clone(), host.http_port));
     }
-    candidates.dedup();
     candidates
 }
 

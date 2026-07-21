@@ -9,7 +9,7 @@ export function Logo({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <div>
           <strong>LocalStack Pro</strong>
-          <small>v1.0.3</small>
+          <small>v1.0.4</small>
         </div>
       )}
     </div>

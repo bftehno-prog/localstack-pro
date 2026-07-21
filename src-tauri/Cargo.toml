@@ -1,6 +1,6 @@
 [package]
 name = "localstack-pro"
-version = "1.0.3"
+version = "1.0.4"
 description = "LocalStack Pro"
 authors = ["Farid Leonov <https://artnext.ru>"]
 edition = "2021"

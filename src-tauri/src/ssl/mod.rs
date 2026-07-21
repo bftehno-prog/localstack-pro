@@ -42,7 +42,8 @@ pub fn generate_certificate(
     let mut snapshot = store.load_static()?;
     let (cert_path, key_path, pem_path) =
         write_host_certificate(&store, &domain, &san_domains, true)?;
-    let trusted = local_ca_trusted();
+    let ca_path = store.dir.join("certs").join(LOCAL_CA_CERT_FILE);
+    let trusted = local_ca_trusted() || trust_local_ca_for_current_user(&ca_path).is_ok();
     let item = CertificateInfo {
         id: domain.clone(),
         domain: domain.clone(),
@@ -79,8 +80,7 @@ pub fn trust_certificate(certificate_id: String) -> AppResult<crate::state::AppS
         .find(|cert| cert.id == certificate_id)
         .ok_or_else(|| "Certificate not found.".to_string())?;
     let (_, _, ca_path, _) = ensure_local_ca(&store)?;
-    let ca_path = ca_path.display().to_string();
-    run_elevated_certutil(&["-addstore", "-f", "Root", &ca_path])?;
+    trust_local_ca_for_current_user(&ca_path)?;
     for cert in &mut snapshot.certificates {
         cert.trusted = true;
     }
@@ -93,6 +93,40 @@ pub fn trust_certificate(certificate_id: String) -> AppResult<crate::state::AppS
     );
     store.save(&snapshot)?;
     Ok(snapshot)
+}
+
+pub(crate) fn ensure_host_certificate_trusted(domain: &str) -> AppResult<()> {
+    let store = Store::new()?;
+    let mut snapshot = store.load_static()?;
+    let certificate_exists = snapshot
+        .certificates
+        .iter()
+        .any(|cert| cert.domain.eq_ignore_ascii_case(domain));
+    if !certificate_exists {
+        return Err(format!("Certificate for {domain} was not found."));
+    }
+    if !local_ca_trusted() {
+        let (_, _, ca_path, _) = ensure_local_ca(&store)?;
+        trust_local_ca_for_current_user(&ca_path)?;
+    }
+    let mut changed = false;
+    for certificate in &mut snapshot.certificates {
+        if !certificate.trusted {
+            certificate.trusted = true;
+            changed = true;
+        }
+    }
+    if changed {
+        store.log(
+            &mut snapshot,
+            LogLevel::Info,
+            "SSL",
+            format!("{LOCAL_CA_NAME} trusted in the current Windows user store"),
+            None,
+        );
+        store.save(&snapshot)?;
+    }
+    Ok(())
 }
 
 pub fn revoke_certificate(certificate_id: String) -> AppResult<crate::state::AppSnapshot> {
@@ -317,7 +351,7 @@ fn certificate_subject_matches(path: &Path, subject: &str) -> bool {
 fn local_ca_trusted() -> bool {
     let mut command = Command::new("certutil");
     command
-        .args(["-store", "Root", LOCAL_CA_NAME])
+        .args(["-user", "-store", "Root", LOCAL_CA_NAME])
         .stdin(Stdio::null())
         .stderr(Stdio::null());
     #[cfg(windows)]
@@ -327,6 +361,31 @@ fn local_ca_trusted() -> bool {
             String::from_utf8_lossy(&output.stdout).contains(LOCAL_CA_NAME)
         }
         _ => false,
+    }
+}
+
+fn trust_local_ca_for_current_user(ca_path: &Path) -> AppResult<()> {
+    let ca_path = ca_path
+        .to_str()
+        .ok_or_else(|| "Local CA path is not valid Unicode.".to_string())?;
+    let mut command = Command::new("certutil");
+    command
+        .args(["-user", "-addstore", "-f", "Root", ca_path])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot trust LocalStack Pro Local CA: {err}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Cannot trust LocalStack Pro Local CA: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
     }
 }
 

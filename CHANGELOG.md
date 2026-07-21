@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+- SSL hosts now open over HTTPS instead of falling back to HTTP.
+- LocalStack Pro trusts its local CA in the current Windows user certificate store without a console window or elevation prompt.
+- Existing SSL hosts repair certificate trust automatically before opening in the browser.
+
 ## 1.0.3
 
 - Removed light-corner artifacts from the transparent system-tray panel.
