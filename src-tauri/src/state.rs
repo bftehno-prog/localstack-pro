@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Mutex,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use sysinfo::{Disks, Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
@@ -20,6 +20,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 static BUNDLE_EXTRACTION_LOCK: Mutex<()> = Mutex::new(());
 static SYSTEM_METRICS: Mutex<Option<System>> = Mutex::new(None);
+static DISK_METRICS: Mutex<Option<(Instant, f64)>> = Mutex::new(None);
 
 pub type AppResult<T> = Result<T, String>;
 
@@ -1173,6 +1174,24 @@ fn current_system_metrics(previous: &SystemInfo) -> (f32, f64, f64) {
         (previous.cpu, previous.memory_gb)
     };
 
+    let disk_gb = if let Ok(mut guard) = DISK_METRICS.lock() {
+        if let Some((refreshed_at, disk_gb)) = guard.as_ref() {
+            if refreshed_at.elapsed() < Duration::from_secs(30) {
+                *disk_gb
+            } else {
+                refresh_disk_metric(previous, &mut guard)
+            }
+        } else {
+            refresh_disk_metric(previous, &mut guard)
+        }
+    } else {
+        previous.disk_gb
+    };
+
+    (cpu, memory_gb, disk_gb)
+}
+
+fn refresh_disk_metric(previous: &SystemInfo, cache: &mut Option<(Instant, f64)>) -> f64 {
     let disks = Disks::new_with_refreshed_list();
     let total_disk: u64 = disks.iter().map(|disk| disk.total_space()).sum();
     let available_disk: u64 = disks.iter().map(|disk| disk.available_space()).sum();
@@ -1181,8 +1200,8 @@ fn current_system_metrics(previous: &SystemInfo) -> (f32, f64, f64) {
     } else {
         previous.disk_gb
     };
-
-    (cpu, memory_gb, disk_gb)
+    *cache = Some((Instant::now(), disk_gb));
+    disk_gb
 }
 
 pub fn bootstrap_bundled_services() -> AppResult<()> {

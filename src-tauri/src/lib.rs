@@ -275,7 +275,7 @@ pub fn current_state() -> AppResult<AppSnapshot> {
     let cache = STATE_CACHE.get_or_init(|| Mutex::new(None));
     if let Ok(guard) = cache.lock() {
         if let Some((created_at, snapshot)) = guard.as_ref() {
-            if created_at.elapsed() < Duration::from_secs(2) {
+            if created_at.elapsed() < Duration::from_secs(5) {
                 return Ok(snapshot.clone());
             }
         }
