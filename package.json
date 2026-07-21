@@ -1,6 +1,6 @@
 {
   "name": "localstack-pro",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Local Windows virtual server and environment manager for web development.",
   "author": "Farid Leonov",
   "homepage": "https://artnext.ru",

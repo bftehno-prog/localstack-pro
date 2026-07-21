@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3
+
+- Removed light-corner artifacts from the transparent system-tray panel.
+- Refreshed the bilingual in-app documentation with the Wet Asphalt lime theme.
+- Reduced unnecessary runtime, disk-metric and hidden log polling work.
+
 ## 1.0.2
 
 - Fixed high-severity vulnerabilities in the npm dependency graph.

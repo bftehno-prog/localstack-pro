@@ -5,26 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LocalStack Pro Documentation</title>
   <style>
-    body{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#0f1718;color:#eef5ef}
-    main{max-width:1180px;margin:0 auto;padding:28px}
-    header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:0 0 18px}
-    section{background:#151f20;border:1px solid #2b3a3c;border-radius:8px;padding:18px;margin:0 0 12px}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    h1{font-size:28px;margin:0} h2{font-size:18px;margin:0 0 10px} h3{font-size:15px;margin:12px 0 6px}
-    p{line-height:1.45;margin:0 0 8px;color:#c7d1ce} li{margin:5px 0;line-height:1.4;color:#d7e0dd}
-    code{background:#223033;color:#b7ff38;padding:2px 6px;border-radius:4px}
-    a{color:#b7ff38}.lang{font-size:12px;color:#9db0ab;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
-    .brand{display:flex;gap:12px;align-items:center}.mark{width:42px;height:42px;position:relative}.mark span{position:absolute;left:7px;width:28px;height:10px;border-radius:3px;background:#b7ff38;transform:skewY(-28deg)}.mark span:nth-child(2){top:13px;background:#92df23}.mark span:nth-child(3){top:24px;background:#6dac18}.mark span:first-child{top:2px}
-    @media(max-width:860px){main{padding:16px}.grid{grid-template-columns:1fr}header{display:block}}
+    :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:"Segoe UI",Arial,sans-serif;margin:0;background:#0d1114;color:#edf2f4}
+    main{max-width:1180px;margin:0 auto;padding:24px}header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:0 0 18px;border-bottom:1px solid #3a4248;margin:0 0 14px}
+    section{background:#161d21;border:1px solid #3a4248;border-radius:8px;padding:18px;margin:0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    h1{font-size:28px;line-height:1.12;margin:0;color:#fff}h2{font-size:18px;line-height:1.2;margin:0 0 10px;color:#fff}h3{font-size:15px;margin:12px 0 6px;color:#fff}
+    p{line-height:1.5;margin:0 0 8px;color:#d7dee2}li{margin:5px 0;line-height:1.45;color:#d7dee2}code{background:#11171b;border:1px solid #3a4248;color:#b7ff3c;padding:2px 6px;border-radius:4px}
+    a{color:#b7ff3c}.lang{font-size:11px;color:#aab4b9;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}.release{color:#101511;background:#9be22d;border-color:#9be22d;font-size:12px;font-weight:700}
+    .release code{color:#101511;background:transparent;border:0;padding:0}.brand{display:flex;gap:12px;align-items:center}.mark{width:42px;height:42px;position:relative}.mark span{position:absolute;left:7px;width:28px;height:10px;border-radius:3px;background:#d7ff62;transform:skewY(-28deg)}.mark span:nth-child(2){top:13px;background:#b7ff3c}.mark span:nth-child(3){top:24px;background:#70a51e}.mark span:first-child{top:2px}
+    @media(max-width:860px){main{padding:16px}.grid{grid-template-columns:1fr}header{display:block}.release{display:inline-block;margin-top:14px}}
   </style>
 </head>
 <body><main>
-  <header><div class="brand"><div class="mark"><span></span><span></span><span></span></div><div><h1>LocalStack Pro Documentation</h1><p>Windows local server, host manager, CMS installer and file manager.</p><p>Creator: <a href="https://artnext.ru">Farid Leonov</a></p></div></div><code>v1.0.2</code></header>
+  <header><div class="brand"><div class="mark"><span></span><span></span><span></span></div><div><h1>LocalStack Pro Documentation</h1><p>Windows local server, host manager, CMS installer and file manager.</p><p>Creator: <a href="https://artnext.ru">Farid Leonov</a></p></div></div><div class="release">Release <code>v1.0.3</code></div></header>
   <div class="grid">
     <section><div class="lang">Русский</div><h2>Быстрый старт</h2><ol><li>Откройте <b>Сервисы</b> и нажмите <b>Найти</b>.</li><li>Установите отсутствующие компоненты через <b>Установить отсутствующие</b>.</li><li>Запустите Apache/MySQL/Node proxy, синхронизируйте hosts и откройте сайт.</li></ol></section>
     <section><div class="lang">English</div><h2>Quick start</h2><ol><li>Open <b>Services</b> and click <b>Detect</b>.</li><li>Install missing components with <b>Install Missing</b>.</li><li>Start Apache/MySQL/Node proxy, sync hosts and open the site.</li></ol></section>
     <section><div class="lang">Русский</div><h2>Окно и ярлык</h2><p>Приложение стартует развернутым на весь экран. Установщик создает ярлык <code>LocalStack Pro.lnk</code> на рабочем столе текущего пользователя и использует lime-иконку приложения.</p></section>
     <section><div class="lang">English</div><h2>Window and shortcut</h2><p>The app starts maximized. The installer creates a <code>LocalStack Pro.lnk</code> desktop shortcut for the current user and uses the lime application icon.</p></section>
+    <section><div class="lang">Русский</div><h2>Трей</h2><p>Клик по значку LocalStack Pro открывает компактную панель, повторный клик закрывает её. Панель использует активную тему приложения, не имеет светлых углов и не открывает отдельное окно в панели задач.</p></section>
+    <section><div class="lang">English</div><h2>System tray</h2><p>Clicking the LocalStack Pro icon opens the compact panel; clicking it again closes it. The panel follows the active application theme, has no light corner artifacts and stays out of the taskbar.</p></section>
     <section><div class="lang">Русский</div><h2>Сервисы</h2><p>Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy и DNS Helper управляются через настоящий Rust backend. Статусы, PID, порты, ошибки и логи берутся из runtime, а не из макета.</p></section>
     <section><div class="lang">English</div><h2>Services</h2><p>Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy and DNS Helper are controlled by the Rust backend. Status, PID, ports, errors and logs come from runtime state.</p></section>
     <section><div class="lang">Русский</div><h2>Хосты</h2><p>Хост хранит домен, root folder, document root, PHP-версию, web server, SSL, порты, БД, почту, env-переменные и заметки. <b>Sync Hosts File</b> добавляет домены в Windows hosts с повышением прав.</p></section>
@@ -41,6 +40,8 @@
     <section><div class="lang">English</div><h2>File manager</h2><p>The dual-pane manager supports create, rename, copy, move, chmod/ACL, upload, archives, content search and a code editor with syntax highlighting.</p></section>
     <section><div class="lang">Русский</div><h2>Настройки и темы</h2><p>Язык, тема, плотность, автозапуск, трей, папки, порты, уведомления, backups и logs сохраняются локально. Тема <b>Мокрый асфальт</b> с lime-акцентом используется как основной визуальный режим.</p></section>
     <section><div class="lang">English</div><h2>Settings and themes</h2><p>Language, theme, density, startup, tray, folders, ports, notifications, backups and logs are stored locally. The <b>Wet Asphalt</b> lime-accent theme is the main visual mode.</p></section>
+    <section><div class="lang">Русский</div><h2>Производительность</h2><p>Состояние сервисов кэшируется между обновлениями, метрики диска обновляются реже, а просмотр логов не опрашивает файлы в скрытом окне. После запуска, остановки или изменения конфигурации состояние обновляется сразу.</p></section>
+    <section><div class="lang">English</div><h2>Performance</h2><p>Service state is cached between refreshes, disk metrics update less often, and Log Viewer does not poll files while the window is hidden. State is refreshed immediately after service, host and configuration actions.</p></section>
     <section><div class="lang">Русский</div><h2>Диагностика</h2><ul><li>503/502: проверьте Apache/Node proxy и логи хоста.</li><li>ERR_CERT_AUTHORITY_INVALID: выполните SSL Repair Trust.</li><li>Domain not mapped: нажмите Sync Hosts File.</li><li>MySQL access denied: проверьте сервис, native client и пароль пользователя.</li></ul></section>
     <section><div class="lang">English</div><h2>Troubleshooting</h2><ul><li>503/502: check Apache/Node proxy and host logs.</li><li>ERR_CERT_AUTHORITY_INVALID: run SSL Repair Trust.</li><li>Domain not mapped: click Sync Hosts File.</li><li>MySQL access denied: check the service, native client and user password.</li></ul></section>
   </div>

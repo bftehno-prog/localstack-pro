@@ -10,7 +10,7 @@ The default visual mode is the Wet Asphalt theme with a lime LocalStack Pro logo
 
 LocalStack Pro — Windows desktop-приложение для локальной веб-разработки. Оно управляет реальными сервисами Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy и DNS Helper, создает хосты `.test`, синхронизирует Windows hosts-файл, генерирует SSL-сертификаты, устанавливает CMS и дает двухпанельный файловый менеджер с редактором кода.
 
-Основные изменения версии `1.0.2`:
+Основные изменения версии `1.0.3`:
 
 - приложение открывается сразу развернутым на весь экран;
 - установщик NSIS использует lime `app.ico`, branded `header.bmp`, `wizard-left.bmp`, кастомную welcome-страницу и такой же стиль в деинсталляторе;
@@ -21,6 +21,9 @@ LocalStack Pro — Windows desktop-приложение для локально�
 - подпись и копирование установщика используют фактическую версию из `tauri.conf.json`;
 - файловый менеджер корректно разрешает существующие родительские пути перед операцией, включая junction/symlink-пути;
 - добавлены проверяемые тесты для редактирования файлов и редактирования диагностических данных.
+- исправлены светлые углы компактного окна в системном трее;
+- обновлена двуязычная встроенная документация в стиле темы «Мокрый асфальт»;
+- оптимизированы фоновые обновления системных метрик и логов.
 
 ## Stack
 
@@ -54,8 +57,8 @@ npm run tauri:build
 Build outputs:
 
 - App executable: `src-tauri\target\release\localstack-pro.exe`
-- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.2_x64-setup.exe`
-- Signed convenience copy: `release\LocalStack Pro_1.0.2_x64-setup.exe`
+- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.3_x64-setup.exe`
+- Signed convenience copy: `release\LocalStack Pro_1.0.3_x64-setup.exe`
 
 The installer uses these branded NSIS assets:
 
