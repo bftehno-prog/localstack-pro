@@ -114,6 +114,8 @@ pub fn reset_settings() -> AppResult<crate::state::AppSnapshot> {
     snapshot.settings.show_notifications = true;
     snapshot.settings.play_sound = false;
     snapshot.settings.check_updates_on_startup = true;
+    snapshot.settings.auto_update_environment = false;
+    snapshot.settings.auto_update_cms = false;
     snapshot.settings.telemetry = false;
     snapshot.settings.ui_density = "Comfortable".to_string();
     snapshot.settings.theme = "Wet Asphalt".to_string();

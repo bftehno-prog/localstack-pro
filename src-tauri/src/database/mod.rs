@@ -682,7 +682,7 @@ fn escape_mysql_string(value: &str) -> String {
 
 fn mysql_create_sql(database: &DatabaseInfo) -> String {
     format!(
-        "CREATE DATABASE IF NOT EXISTS `{db}`; CREATE USER IF NOT EXISTS '{user}'@'localhost' IDENTIFIED BY '{password}'; ALTER USER '{user}'@'localhost' IDENTIFIED BY '{password}'; GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'localhost'; CREATE USER IF NOT EXISTS '{user}'@'127.0.0.1' IDENTIFIED BY '{password}'; ALTER USER '{user}'@'127.0.0.1' IDENTIFIED BY '{password}'; GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'127.0.0.1'; CREATE USER IF NOT EXISTS '{user}'@'::1' IDENTIFIED BY '{password}'; ALTER USER '{user}'@'::1' IDENTIFIED BY '{password}'; GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'::1'; CREATE USER IF NOT EXISTS '{user}'@'%' IDENTIFIED BY '{password}'; ALTER USER '{user}'@'%' IDENTIFIED BY '{password}'; GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'%'; FLUSH PRIVILEGES;",
+        "CREATE DATABASE IF NOT EXISTS `{db}`; DROP USER IF EXISTS '{user}'@'%'; CREATE USER IF NOT EXISTS '{user}'@'localhost' IDENTIFIED BY '{password}'; ALTER USER '{user}'@'localhost' IDENTIFIED BY '{password}'; GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'localhost'; CREATE USER IF NOT EXISTS '{user}'@'127.0.0.1' IDENTIFIED BY '{password}'; ALTER USER '{user}'@'127.0.0.1' IDENTIFIED BY '{password}'; GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'127.0.0.1'; CREATE USER IF NOT EXISTS '{user}'@'::1' IDENTIFIED BY '{password}'; ALTER USER '{user}'@'::1' IDENTIFIED BY '{password}'; GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'::1'; FLUSH PRIVILEGES;",
         db = escape_mysql_identifier(&database.name),
         user = escape_mysql_string(&database.user),
         password = escape_mysql_string(&database.password)
@@ -706,5 +706,32 @@ fn postgres_sql(database: &DatabaseInfo, action: &str) -> Vec<String> {
             format!("DROP DATABASE IF EXISTS \"{db}\";"),
             format!("DROP ROLE IF EXISTS \"{user}\";"),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mysql_create_sql;
+    use crate::state::{DatabaseInfo, ServiceStatus};
+
+    #[test]
+    fn mysql_users_are_limited_to_local_hosts() {
+        let database = DatabaseInfo {
+            id: "app".to_string(),
+            name: "app".to_string(),
+            description: String::new(),
+            engine: "MySQL".to_string(),
+            version: String::new(),
+            schemas: 0,
+            user: "app_user".to_string(),
+            password: "a-secure-password".to_string(),
+            port: 3306,
+            status: ServiceStatus::Stopped,
+            size_mb: 0.0,
+            created_at: String::new(),
+        };
+        let sql = mysql_create_sql(&database);
+        assert!(sql.contains("DROP USER IF EXISTS 'app_user'@'%"));
+        assert!(sql.contains("'app_user'@'localhost'"));
     }
 }

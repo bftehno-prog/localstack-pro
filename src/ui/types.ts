@@ -119,6 +119,17 @@ export interface CmsInstallInfo {
   status: string;
 }
 
+export interface CmsUpdateInfo {
+  domain: string;
+  templateId: string;
+  name: string;
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  canUpdate: boolean;
+  message: string;
+}
+
 export interface CmsInstallRequest {
   templateId: string;
   domain: string;
@@ -156,6 +167,8 @@ export interface AppSettings {
   showNotifications: boolean;
   playSound: boolean;
   checkUpdatesOnStartup: boolean;
+  autoUpdateEnvironment: boolean;
+  autoUpdateCms: boolean;
   telemetry: boolean;
   uiDensity: string;
   theme: string;
@@ -315,6 +328,15 @@ export interface InstalledTool {
   status: string;
 }
 
+export interface ProjectTool {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  version?: string;
+  configured: boolean;
+}
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -360,11 +382,11 @@ export interface LogFileTail {
   lines: string[];
 }
 
-export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | PortInspection[] | ProjectInspection | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | InstalledTool[] | FileEntry[] | FileSearchResult[] | ArchiveEntry[] | EnvironmentSnapshotInfo[] | EnvironmentSnapshotInfo | ResourceProcess[] | NodeScript[] | TrashRecord | TrashRecord[] | string[] | string | void;
+export type AppRunResult = AppSnapshot | HealthReport | HostDiagnosticReport | DatabaseDiagnosticReport | LogFileTail | CmsTemplate[] | CmsUpdateInfo | CmsUpdateInfo[] | PortInspection[] | ProjectInspection | ProjectTool[] | SitePreview | ReleaseInfo | ConfigFile | SslDiagnostic | InstalledTool[] | FileEntry[] | FileSearchResult[] | ArchiveEntry[] | EnvironmentSnapshotInfo[] | EnvironmentSnapshotInfo | ResourceProcess[] | NodeScript[] | TrashRecord | TrashRecord[] | string[] | string | void;
 
 export type AppRun = (
   action: () => Promise<AppRunResult>,
-  options?: { silent?: boolean; label?: string; successLabel?: string; serial?: boolean }
+  options?: { silent?: boolean; label?: string; successLabel?: string; serial?: boolean; resource?: string }
 ) => Promise<AppRunResult>;
 
 export interface OperationEntry {

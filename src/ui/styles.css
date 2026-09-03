@@ -560,6 +560,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .metrics span { font-weight: 600; }
 .metrics small { display: block; color: #8a929d; font-weight: 400; margin-bottom: 8px; }
 .sidebar-footer { display: flex; gap: 8px; }
+.sidebar-tools-menu .action-menu { bottom: calc(100% + 6px); top: auto; right: auto; left: 0; }
 
 .main {
   flex: 1;
@@ -673,6 +674,8 @@ p { color: var(--muted); }
 .command-stack .btn svg { flex: 0 0 auto; }
 .command-stack .btn span { max-width: 100%; font-size: 14px; }
 .system-info .kv { font-size: 13px; }
+.minimal-top-row { grid-template-columns: minmax(0, 1fr); }
+.minimal-top-row .services-strip { min-height: 0; }
 
 .overview-grid, .page-grid, .editor-grid, .settings-grid, .cms-grid {
   display: grid;

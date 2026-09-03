@@ -23,7 +23,7 @@ function nowIso() {
 export function createMockState(): AppSnapshot {
   return {
     appDataDir: "Tauri AppData",
-    system: { appVersion: "1.0.4", os: "Windows 11 Pro 23H2", uptimeSeconds: 8040, cpu: 12, memoryGb: 2.1, diskGb: 127 },
+    system: { appVersion: "1.0.5", os: "Windows 11 Pro 23H2", uptimeSeconds: 8040, cpu: 12, memoryGb: 2.1, diskGb: 127 },
     services: [
       service("apache", "Apache", "2.4.58", [80, 443], "C:\\LocalStack\\services\\apache\\bin\\httpd.exe"),
       service("nginx", "Nginx", "1.25.4", [8080, 8443], "C:\\LocalStack\\services\\nginx\\nginx.exe"),
@@ -112,6 +112,8 @@ export function createMockState(): AppSnapshot {
       showNotifications: true,
       playSound: false,
       checkUpdatesOnStartup: true,
+      autoUpdateEnvironment: false,
+      autoUpdateCms: false,
       telemetry: false,
       uiDensity: "Comfortable",
       theme: "Wet Asphalt",
@@ -228,7 +230,7 @@ export function mockSitePreview(hostId: string): SitePreview {
 }
 
 export function mockReleaseInfo(): ReleaseInfo {
-  return { currentVersion: "1.0.4", latestVersion: "1.0.4", updateAvailable: false, url: "" };
+  return { currentVersion: "1.0.5", latestVersion: "1.0.5", updateAvailable: false, url: "" };
 }
 
 export function mockSslDiagnostic(domain: string): SslDiagnostic {

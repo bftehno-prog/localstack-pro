@@ -1,6 +1,6 @@
 {
   "name": "localstack-pro",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Local Windows virtual server and environment manager for web development.",
   "author": "Farid Leonov",
   "homepage": "https://artnext.ru",
@@ -35,8 +35,8 @@
     "@codemirror/lang-php": "^6.0.2",
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/language-data": "^6.5.2",
-    "@tauri-apps/api": "2.10.1",
-    "@tauri-apps/plugin-dialog": "2.7.1",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.3",
     "@uiw/react-codemirror": "^4.25.11",
     "lucide-react": "^0.561.0",
     "react": "^19.2.8",
@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@tauri-apps/cli": "2.10.1",
+    "@tauri-apps/cli": "2.11.4",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

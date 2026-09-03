@@ -21,6 +21,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 static BUNDLE_EXTRACTION_LOCK: Mutex<()> = Mutex::new(());
 static SYSTEM_METRICS: Mutex<Option<System>> = Mutex::new(None);
 static DISK_METRICS: Mutex<Option<(Instant, f64)>> = Mutex::new(None);
+const STATE_SCHEMA_VERSION: u32 = 2;
 
 pub type AppResult<T> = Result<T, String>;
 
@@ -67,10 +68,14 @@ struct BundledPhpEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSnapshot {
+    #[serde(default = "default_state_schema_version")]
+    pub schema_version: u32,
     pub services: Vec<ServiceInfo>,
     pub hosts: Vec<HostInfo>,
     pub php_versions: Vec<PhpVersion>,
     pub databases: Vec<DatabaseInfo>,
+    #[serde(default)]
+    pub database_secrets: HashMap<String, String>,
     pub certificates: Vec<CertificateInfo>,
     #[serde(default)]
     pub cms_installations: Vec<CmsInstallInfo>,
@@ -169,6 +174,7 @@ pub struct DatabaseInfo {
     pub version: String,
     pub schemas: u32,
     pub user: String,
+    #[serde(default, skip_serializing)]
     pub password: String,
     pub port: u16,
     pub status: ServiceStatus,
@@ -242,6 +248,10 @@ pub struct AppSettings {
     pub show_notifications: bool,
     pub play_sound: bool,
     pub check_updates_on_startup: bool,
+    #[serde(default)]
+    pub auto_update_environment: bool,
+    #[serde(default)]
+    pub auto_update_cms: bool,
     pub telemetry: bool,
     pub ui_density: String,
     #[serde(default = "default_theme")]
@@ -314,18 +324,21 @@ impl Store {
 
     pub fn load_static(&self) -> AppResult<AppSnapshot> {
         if self.state_file.exists() {
-            let text = fs::read_to_string(&self.state_file)
-                .map_err(|err| format!("Cannot read application state: {err}"))?;
-            let mut snapshot: AppSnapshot = serde_json::from_str(&text)
-                .map_err(|err| format!("Cannot parse application state: {err}"))?;
+            let mut snapshot = self.read_state_with_backup()?;
             snapshot.app_data_dir = self.dir.display().to_string();
             let needs_save = snapshot.services.iter().any(|service| {
                 service.id == "mysql" && service.arguments.iter().any(|arg| arg == "--console")
             });
+            let service_count = snapshot.services.len();
             self.ensure_defaults(&mut snapshot);
-            let changed = (!self.bundled_snapshot_ready(&snapshot)
-                && self.apply_bundled_services(&mut snapshot, false))
-                || needs_save;
+            let secrets_changed = self.hydrate_database_passwords(&mut snapshot)?;
+            let schema_changed = self.migrate_snapshot(&mut snapshot)?;
+            let changed = snapshot.services.len() != service_count
+                || (!self.bundled_snapshot_ready(&snapshot)
+                    && self.apply_bundled_services(&mut snapshot, false))
+                || needs_save
+                || secrets_changed
+                || schema_changed;
             if changed {
                 let _ = self.save(&snapshot);
             }
@@ -754,10 +767,98 @@ impl Store {
     }
 
     pub fn save(&self, snapshot: &AppSnapshot) -> AppResult<()> {
-        let text = serde_json::to_string_pretty(snapshot)
+        let mut persisted = snapshot.clone();
+        persisted.schema_version = STATE_SCHEMA_VERSION;
+        self.seal_database_passwords(&mut persisted)?;
+        let text = serde_json::to_string_pretty(&persisted)
             .map_err(|err| format!("Cannot serialize application state: {err}"))?;
-        fs::write(&self.state_file, text)
-            .map_err(|err| format!("Cannot save application state: {err}"))
+        let temporary = self.state_file.with_extension("json.tmp");
+        let backup = self.state_file.with_extension("json.bak");
+        fs::write(&temporary, &text)
+            .map_err(|err| format!("Cannot write temporary application state: {err}"))?;
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary)
+            .and_then(|file| file.sync_all())
+            .map_err(|err| format!("Cannot finalize temporary application state: {err}"))?;
+        fs::write(&backup, &text)
+            .map_err(|err| format!("Cannot write application state backup: {err}"))?;
+        fs::rename(&temporary, &self.state_file)
+            .map_err(|err| format!("Cannot replace application state: {err}"))
+    }
+
+    fn read_state_with_backup(&self) -> AppResult<AppSnapshot> {
+        let backup = self.state_file.with_extension("json.bak");
+        match read_snapshot_file(&self.state_file) {
+            Ok(snapshot) => Ok(snapshot),
+            Err(primary_error) => {
+                let mut recovered = read_snapshot_file(&backup).map_err(|backup_error| {
+                    format!("Cannot parse application state ({primary_error}); backup recovery also failed: {backup_error}")
+                })?;
+                recovered.logs.push(LogEntry {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: Utc::now().to_rfc3339(),
+                    level: LogLevel::Warning,
+                    service: "State".to_string(),
+                    host: None,
+                    process_id: None,
+                    source: Some("state.json.bak".to_string()),
+                    line: None,
+                    message: "Recovered application state from the protected backup.".to_string(),
+                    detail: Some(primary_error),
+                });
+                Ok(recovered)
+            }
+        }
+    }
+
+    fn migrate_snapshot(&self, snapshot: &mut AppSnapshot) -> AppResult<bool> {
+        if snapshot.schema_version > STATE_SCHEMA_VERSION {
+            return Err(format!(
+                "Application state schema {} is newer than this version supports ({}). Update LocalStack Pro before opening it.",
+                snapshot.schema_version, STATE_SCHEMA_VERSION
+            ));
+        }
+        if snapshot.schema_version == STATE_SCHEMA_VERSION {
+            return Ok(false);
+        }
+        snapshot.schema_version = STATE_SCHEMA_VERSION;
+        Ok(true)
+    }
+
+    fn hydrate_database_passwords(&self, snapshot: &mut AppSnapshot) -> AppResult<bool> {
+        let mut changed = false;
+        for database in &mut snapshot.databases {
+            if database.password.is_empty() {
+                let protected = snapshot.database_secrets.get(&database.id).ok_or_else(|| {
+                    format!("Database password for {} is unavailable. Restore it from a backup or recreate the database user.", database.name)
+                })?;
+                database.password = crate::secrets::unprotect(protected)?;
+            } else if !snapshot.database_secrets.contains_key(&database.id) {
+                snapshot.database_secrets.insert(
+                    database.id.clone(),
+                    crate::secrets::protect(&database.password)?,
+                );
+                changed = true;
+            }
+        }
+        Ok(changed)
+    }
+
+    fn seal_database_passwords(&self, snapshot: &mut AppSnapshot) -> AppResult<()> {
+        for database in &snapshot.databases {
+            if database.password.is_empty() {
+                continue;
+            }
+            snapshot.database_secrets.insert(
+                database.id.clone(),
+                crate::secrets::protect(&database.password)?,
+            );
+        }
+        snapshot
+            .database_secrets
+            .retain(|id, _| snapshot.databases.iter().any(|database| database.id == *id));
+        Ok(())
     }
 
     pub fn ensure_host_files(&self, snapshot: &AppSnapshot) {
@@ -892,8 +993,9 @@ impl Store {
                 ServiceStatus::Running | ServiceStatus::Starting
             ) {
                 if Path::new(&service.executable_path).exists()
-                    && !service.ports.is_empty()
-                    && service.ports.iter().all(|port| port_accepting(*port))
+                    && ((service.id == "docker" && crate::services::service_is_live(service))
+                        || (!service.ports.is_empty()
+                            && service.ports.iter().all(|port| port_accepting(*port))))
                 {
                     service.status = ServiceStatus::Running;
                     service.cpu = 0.0;
@@ -988,6 +1090,7 @@ impl Store {
         }
 
         AppSnapshot {
+            schema_version: STATE_SCHEMA_VERSION,
             app_data_dir: base.clone(),
             services: extended_default_services(&services_dir),
             hosts: vec![
@@ -1109,6 +1212,7 @@ impl Store {
                     now: &now,
                 }),
             ],
+            database_secrets: HashMap::new(),
             certificates: vec![
                 certificate_for(&base, "shop.test"),
                 certificate_for(&base, "api.test"),
@@ -1128,6 +1232,8 @@ impl Store {
                 show_notifications: true,
                 play_sound: false,
                 check_updates_on_startup: true,
+                auto_update_environment: false,
+                auto_update_cms: false,
                 telemetry: false,
                 ui_density: "Comfortable".to_string(),
                 theme: default_theme(),
@@ -1153,6 +1259,16 @@ impl Store {
             },
         }
     }
+}
+
+fn default_state_schema_version() -> u32 {
+    1
+}
+
+fn read_snapshot_file(path: &Path) -> AppResult<AppSnapshot> {
+    let text =
+        fs::read_to_string(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))?;
+    serde_json::from_str(&text).map_err(|err| format!("Cannot parse {}: {err}", path.display()))
 }
 
 fn current_system_metrics(previous: &SystemInfo) -> (f32, f64, f64) {
@@ -1405,6 +1521,20 @@ fn extended_default_services(services_dir: &str) -> Vec<ServiceInfo> {
             format!("{services_dir}\\caddy\\caddy.exe"),
             vec![2019, 8081, 8444],
         ),
+        optional_service(
+            "meilisearch",
+            "Meilisearch",
+            "latest",
+            format!("{services_dir}\\meilisearch\\meilisearch.exe"),
+            vec![7700],
+        ),
+        optional_service(
+            "docker",
+            "Docker Desktop",
+            "latest",
+            "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe".to_string(),
+            vec![],
+        ),
     ]
 }
 
@@ -1511,12 +1641,17 @@ fn database(seed: DatabaseSeed<'_>) -> DatabaseInfo {
         version: seed.version.to_string(),
         schemas: 4,
         user: seed.user.to_string(),
-        password: "localstack".to_string(),
+        password: generate_database_password(),
         port: seed.port,
         status: ServiceStatus::Stopped,
         size_mb: seed.size_mb,
         created_at: seed.now.to_string(),
     }
+}
+
+fn generate_database_password() -> String {
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    format!("Ls!{}{}", &token[..10], &token[10..18])
 }
 
 fn clean_windows_path(path: &str) -> String {
@@ -1586,6 +1721,15 @@ fn fast_service_executable(service_id: &str) -> Option<PathBuf> {
             "%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\caddy.exe",
             "C:\\Program Files\\Caddy\\caddy.exe",
             "C:\\caddy\\caddy.exe",
+        ],
+        "meilisearch" => &[
+            "%APPDATA%\\LocalStack\\LocalStack Pro\\data\\services\\meilisearch\\meilisearch.exe",
+            "%APPDATA%\\LocalStack Pro\\data\\services\\meilisearch\\meilisearch.exe",
+            "%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\meilisearch.exe",
+        ],
+        "docker" => &[
+            "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+            "%ProgramFiles%\\Docker\\Docker\\Docker Desktop.exe",
         ],
         "dns-helper" => {
             return std::env::current_exe().ok();
@@ -1750,4 +1894,39 @@ fn port_accepting(port: u16) -> bool {
     addresses
         .into_iter()
         .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(20)).is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_store() -> Store {
+        let directory =
+            std::env::temp_dir().join(format!("localstack-pro-state-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&directory).expect("test state directory");
+        Store {
+            state_file: directory.join("state.json"),
+            dir: directory,
+        }
+    }
+
+    #[test]
+    fn database_passwords_are_encrypted_and_recoverable() {
+        let store = test_store();
+        let snapshot = store.default_snapshot();
+        let password = snapshot.databases[0].password.clone();
+
+        store.save(&snapshot).expect("save protected state");
+        store.save(&snapshot).expect("replace protected state");
+
+        let saved = fs::read_to_string(&store.state_file).expect("read state");
+        assert!(!saved.contains(&password));
+        assert!(saved.contains("dpapi:"));
+
+        fs::write(&store.state_file, "not json").expect("corrupt primary state");
+        let recovered = store.load_static().expect("recover backup state");
+        assert_eq!(recovered.databases[0].password, password);
+
+        fs::remove_dir_all(&store.dir).expect("remove test state directory");
+    }
 }

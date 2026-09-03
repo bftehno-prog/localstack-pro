@@ -16,18 +16,21 @@ export function OverviewPage({
   run,
   selectedHost,
   selectHost,
-  editHost
+  editHost,
+  openDatabases
 }: {
   state: AppSnapshot;
   run: AppRun;
   selectedHost?: HostInfo;
   selectHost: (host: HostInfo) => void;
   editHost: (host?: HostInfo) => void;
+  openDatabases: () => void;
 }) {
   const t = useT();
   const selected = state.hosts.find((host) => host.id === selectedHost?.id) ?? state.hosts.find((host) => host.domain === "shop.test") ?? state.hosts[0];
   const [query, setQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
+  const [overviewDetails, setOverviewDetails] = useState(false);
   const [preview, setPreview] = useState<SitePreview>();
   const [monitorResults, setMonitorResults] = useState<Record<string, SitePreview>>({});
   const [linksVersion, setLinksVersion] = useState(0);
@@ -107,7 +110,7 @@ export function OverviewPage({
   const runHttpMonitor = async () => {
     const next: Record<string, SitePreview> = {};
     for (const host of visibleHosts.slice(0, 8)) {
-      const result = await run(() => api.previewHost(host.id), { label: `Checking ${host.domain}...`, serial: true });
+      const result = await run(() => api.previewHost(host.id), { label: `Checking ${host.domain}...`, serial: true, resource: `host:${host.id}` });
       if (result && typeof result === "object" && "responseTimeMs" in result) next[host.id] = result as SitePreview;
     }
     setMonitorResults(next);
@@ -162,7 +165,7 @@ export function OverviewPage({
           </div>
         </Panel>
       )}
-      <Panel title="Workday">
+      {overviewDetails && <Panel title="Workday">
         <div className="workday-row">
           <select value={workdayHostId} onChange={(event) => setWorkdayHostId(event.target.value)}>
             <option value="">{t("Last opened project")}</option>
@@ -170,11 +173,14 @@ export function OverviewPage({
           </select>
           <Button variant="primary" icon={<Play size={16} />} onClick={() => void startWorkday()}>Start Workday</Button>
           <Button icon={<Wrench size={16} />} onClick={() => void run(() => api.repairEnvironment(), { label: String(t("Repairing environment...")) })}>{t("Ready Check")}</Button>
+          <Button icon={<Folder size={16} />} onClick={() => void run(() => api.openPath(state.settings.projectsFolder), { label: "Opening projects folder..." })}>{t("Open Projects Folder")}</Button>
+          <Button icon={<Database size={16} />} onClick={openDatabases}>{t("Create Database")}</Button>
+          <Button icon={<Database size={16} />} onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." })}>{t("Edit Databases")}</Button>
         </div>
-      </Panel>
+      </Panel>}
       <div className="overview-grid">
         <section className="stack-left">
-          <Panel title="Recent Projects">
+          {overviewDetails && <Panel title="Recent Projects">
             <div className="recent-project-grid">
               {visibleHosts.slice(0, 6).map((host) => (
                 <button key={host.id} onClick={() => { selectHost(host); void openSelectedWithChecks(host); }}>
@@ -183,7 +189,7 @@ export function OverviewPage({
                 </button>
               ))}
             </div>
-          </Panel>
+          </Panel>}
           <Panel
             title="Hosts"
             action={
@@ -195,14 +201,15 @@ export function OverviewPage({
                 <Button variant="primary" icon={<Plus size={16} />} onClick={() => editHost()}>
                   New Host
                 </Button>
-                <Button icon={<ExternalLink size={16} />} onClick={() => void importHosts()}>Import</Button>
+                <Button variant="icon" aria-label="Import" icon={<ExternalLink size={16} />} onClick={() => void importHosts()} />
                 <div className="menu-anchor">
                   <Button variant="icon" aria-label="More host actions" icon={<MoreVertical size={17} />} onClick={() => setMoreOpen((value) => !value)} />
                   {moreOpen && (
                     <div className="action-menu" onMouseLeave={() => setMoreOpen(false)}>
-                      <button onClick={() => { setMoreOpen(false); void exportHosts(); }}>Export Hosts</button>
-                      <button onClick={() => { setMoreOpen(false); void run(() => api.openPath(`${state.appDataDir}\\hosts`), { label: "Opening hosts folder..." }); }}>Open Hosts Folder</button>
-                      <button onClick={() => { setMoreOpen(false); void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." }); }}>Sync Hosts File</button>
+                      <button onClick={() => { setOverviewDetails((value) => !value); setMoreOpen(false); }}>{t(overviewDetails ? "Hide details" : "Show details")}</button>
+                      <button onClick={() => { setMoreOpen(false); void exportHosts(); }}>{t("Export Hosts")}</button>
+                      <button onClick={() => { setMoreOpen(false); void run(() => api.openPath(`${state.appDataDir}\\hosts`), { label: "Opening hosts folder..." }); }}>{t("Open Hosts Folder")}</button>
+                      <button onClick={() => { setMoreOpen(false); void run(() => api.syncHostsFile(), { label: "Synchronizing Windows hosts file..." }); }}>{t("Sync Hosts File")}</button>
                     </div>
                   )}
                 </div>
@@ -213,16 +220,13 @@ export function OverviewPage({
               <thead>
                 <tr>
                   <th>{t("Domain")}</th>
-                  <th>{t("Root Folder")}</th>
                   <th>{t("PHP Version")}</th>
                   <th>SSL</th>
-                  <th>{t("Readiness")}</th>
                   <th>{t("Status")}</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleHosts.map((host) => {
-                  const score = hostReadinessScore(state, host);
                   return (
                   <tr key={host.id} className={selected?.id === host.id ? "selected" : ""} onClick={() => selectHost(host)}>
                     <td>
@@ -230,10 +234,8 @@ export function OverviewPage({
                       <Globe2 size={18} />
                       <strong>{host.domain}</strong>
                     </td>
-                    <td>{host.rootFolder}</td>
                     <td>{host.phpVersion}</td>
                     <td><span className={host.ssl ? "green-text" : "muted"}>{t(host.ssl ? "Valid" : "Disabled")}</span></td>
-                    <td><span className={`score-pill ${readinessClass(score)}`}>{score}%</span></td>
                     <td>
                       <StatusDot status={host.status} />
                     </td>
@@ -250,6 +252,7 @@ export function OverviewPage({
               </div>
             </div>
           </Panel>
+          {overviewDetails && <>
           <Panel title="Ports" action={<Button icon={<Search size={16} />} onClick={() => void runHttpMonitor()}>Run Monitor</Button>}>
             <div className="port-grid">
               {portCards.map(({ name, port, running }) => (
@@ -288,6 +291,7 @@ export function OverviewPage({
               ))}
             </div>
           </Panel>
+          </>}
         </section>
         {selected && (
           <aside className="detail-rail">

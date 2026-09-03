@@ -1,20 +1,5 @@
-import {
-  Box,
-  CircleHelp,
-  Database,
-  FileText,
-  Folder,
-  Gauge,
-  Home,
-  Layers,
-  Minus,
-  PanelLeft,
-  Settings,
-  Shield,
-  Square,
-  X
-} from "lucide-react";
-import type { ReactNode } from "react";
+import { CircleHelp, Database, Folder, Home, Layers, Minus, MoreHorizontal, PanelLeft, Settings, Square, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { api } from "../ui/api";
 import { Button } from "./Button";
@@ -26,13 +11,16 @@ const nav: Array<{ key: PageKey; label: string; icon: ReactNode }> = [
   { key: "overview", label: "Overview", icon: <Home size={20} /> },
   { key: "hosts", label: "Hosts", icon: <PanelLeft size={20} /> },
   { key: "services", label: "Services", icon: <Settings size={20} /> },
-  { key: "php", label: "PHP", icon: <Gauge size={20} /> },
   { key: "database", label: "Database", icon: <Database size={20} /> },
-  { key: "cms", label: "CMS", icon: <Box size={20} /> },
-  { key: "ssl", label: "SSL", icon: <Shield size={20} /> },
-  { key: "logs", label: "Logs", icon: <FileText size={20} /> },
   { key: "files", label: "Files", icon: <Folder size={20} /> },
   { key: "settings", label: "Settings", icon: <Settings size={20} /> }
+];
+
+const tools: Array<{ key: PageKey; label: string }> = [
+  { key: "php", label: "PHP" },
+  { key: "cms", label: "CMS" },
+  { key: "ssl", label: "SSL" },
+  { key: "logs", label: "Logs" }
 ];
 
 export function Shell({
@@ -51,6 +39,7 @@ export function Shell({
   const allRunning = runningCount === state.services.length && state.services.length > 0;
   const theme = state.settings.theme.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "light";
   const density = state.settings.uiDensity.toLowerCase().includes("compact") ? "density-compact" : "density-comfortable";
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   return (
     <div className={`app-frame theme-${theme} ${density}`}>
@@ -90,22 +79,18 @@ export function Shell({
               {t("System Status")}
             </div>
             <strong>{allRunning ? t("All services running") : runningCount > 0 ? `${runningCount} ${t("services running")}` : t("All services stopped")}</strong>
-            <div className="metrics">
-              <span>
-                <small>CPU</small>
-                {state.system.cpu.toFixed(0)}%
-              </span>
-              <span>
-                <small>{t("Memory")}</small>
-                {state.system.memoryGb.toFixed(1)} GB
-              </span>
-              <span>
-                <small>{t("Disk")}</small>
-                {Math.round(state.system.diskGb)} GB
-              </span>
-            </div>
           </div>
           <div className="sidebar-footer">
+            <div className="menu-anchor sidebar-tools-menu">
+              <Button variant="icon" aria-label={t("More tools")} icon={<MoreHorizontal size={17} />} onClick={() => setToolsOpen((value) => !value)} />
+              {toolsOpen && (
+                <div className="action-menu">
+                  {tools.map((item) => (
+                    <button key={item.key} onClick={() => { setToolsOpen(false); setPage(item.key); }}>{t(item.label)}</button>
+                  ))}
+                </div>
+              )}
+            </div>
             <Button variant="icon" aria-label="Theme" icon={<Settings size={16} />} onClick={() => setPage("settings")} />
             <Button variant="icon" aria-label="Help" icon={<CircleHelp size={16} />} onClick={() => void api.openDocumentation()} />
           </div>

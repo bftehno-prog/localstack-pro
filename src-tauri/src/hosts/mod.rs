@@ -1559,7 +1559,22 @@ fn write_wordpress_config(public: &Path, database: &HostDatabaseConfig) -> AppRe
     config = set_php_define(&config, "DB_USER", &database.user);
     config = set_php_define(&config, "DB_PASSWORD", &database.password);
     config = set_php_define(&config, "DB_HOST", &database_host(database));
+    config = ensure_wordpress_direct_filesystem(config);
     fs::write(target, config).map_err(|err| format!("Cannot write WordPress config: {err}"))
+}
+
+fn ensure_wordpress_direct_filesystem(config: String) -> String {
+    let updated = set_php_define(&config, "FS_METHOD", "direct");
+    if updated != config {
+        return updated;
+    }
+
+    let define = "define( 'FS_METHOD', 'direct' );\n";
+    if let Some(index) = config.find("/* That's all, stop editing!") {
+        format!("{}{}{}", &config[..index], define, &config[index..])
+    } else {
+        format!("{config}\n{define}")
+    }
 }
 
 fn write_joomla_config(

@@ -2,7 +2,7 @@ import { Bell, Database, Download, Folder, Globe2, Link, RefreshCw, Save, Settin
 import { useEffect, useRef, useState } from "react";
 import { api } from "../ui/api";
 import { pickJsonFile, pickZipFile, saveJsonFile, saveZipFile } from "../ui/dialogs";
-import type { AppRun, AppSettings, AppSnapshot, EnvironmentSnapshotInfo, HealthReport, PortInspection, ReleaseInfo, ResourceProcess } from "../ui/types";
+import type { AppRun, AppSettings, AppSnapshot, CmsUpdateInfo, EnvironmentSnapshotInfo, HealthReport, PortInspection, ReleaseInfo, ResourceProcess } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { useT } from "../ui/i18n";
@@ -31,6 +31,7 @@ export function SettingsPage({
   const [healthError, setHealthError] = useState("");
   const [ports, setPorts] = useState<PortInspection[]>([]);
   const [release, setRelease] = useState<ReleaseInfo>();
+  const [cmsUpdates, setCmsUpdates] = useState<CmsUpdateInfo[]>([]);
   const [snapshots, setSnapshots] = useState<EnvironmentSnapshotInfo[]>([]);
   const [processes, setProcesses] = useState<ResourceProcess[]>([]);
   const [uiIssues, setUiIssues] = useState<UiHealthIssue[]>([]);
@@ -84,6 +85,21 @@ export function SettingsPage({
   const downloadUpdate = async () => {
     const result = await run(api.downloadLatestReleaseInstaller, { label: "Downloading update installer..." });
     if (typeof result === "string") setDownloadedInstaller(result);
+  };
+  const checkCmsUpdates = async () => {
+    const result = await run(api.checkCmsUpdates, { label: "Checking CMS updates..." });
+    if (Array.isArray(result)) setCmsUpdates(result as CmsUpdateInfo[]);
+  };
+  const updateCms = async (domain: string) => {
+    const result = await run(() => api.updateCms(domain), { label: `Updating ${domain}...`, successLabel: "CMS updated." });
+    if (result && typeof result === "object" && "domain" in result) {
+      const updated = result as CmsUpdateInfo;
+      setCmsUpdates((current) => current.map((item) => item.domain === updated.domain ? updated : item));
+    }
+  };
+  const updateAllCms = async () => {
+    const result = await run(api.updateAllCms, { label: "Updating installed CMS...", successLabel: "CMS updates completed." });
+    if (Array.isArray(result)) setCmsUpdates(result as CmsUpdateInfo[]);
   };
   const createDiagnosticBundle = async () => {
     const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
@@ -141,7 +157,7 @@ export function SettingsPage({
   };
   const backupAllDatabases = async () => {
     for (const database of state.databases) {
-      await run(() => api.backupDatabase(database.id), { label: `Backing up ${database.name}...`, serial: true });
+      await run(() => api.backupDatabase(database.id), { label: `Backing up ${database.name}...`, serial: true, resource: `database:${database.id}` });
     }
   };
   const restoreBackup = async () => {
@@ -233,11 +249,21 @@ export function SettingsPage({
             <SettingSelect label="Preferred Browser" value={settings.preferredBrowser} onChange={(value) => update("preferredBrowser", value)} options={["Default System Browser", "Chrome", "Edge", "Firefox"]} />
             <Button icon={<Folder size={16} />} onClick={() => void run(() => api.openPath(state.appDataDir))}>Open App Data</Button>
           </Panel>}
-          {activeTab === "Updates" && <Panel title="Updates">
-            <Switch label="Check for Updates on Startup" checked={settings.checkUpdatesOnStartup} onChange={(value) => update("checkUpdatesOnStartup", value)} />
-            <Button icon={<RefreshCw size={16} />} onClick={() => void checkRelease()}>Check Now</Button>
-            {release && <div className="release-card"><strong>{release.updateAvailable ? t("Update available") : t("You are up to date")}</strong><span>{release.currentVersion} → {release.latestVersion}</span><div className="toolbar"><Button onClick={() => void run(() => api.openUrl(release.url))}>Open Release</Button><Button onClick={() => void downloadUpdate()}>Download Update</Button>{downloadedInstaller && <Button variant="primary" onClick={() => void run(() => api.installDownloadedUpdate(downloadedInstaller), { label: "Starting update installer..." })}>Install Update</Button>}</div></div>}
-          </Panel>}
+          {activeTab === "Updates" && <>
+            <Panel title="Updates">
+              <Switch label="Check for Updates on Startup" checked={settings.checkUpdatesOnStartup} onChange={(value) => update("checkUpdatesOnStartup", value)} />
+              <Switch label="Automatically install LocalStack Pro updates" checked={settings.autoUpdateEnvironment} onChange={(value) => update("autoUpdateEnvironment", value, true)} />
+              <Button icon={<RefreshCw size={16} />} onClick={() => void checkRelease()}>Check Now</Button>
+              {release && <div className="release-card"><strong>{release.updateAvailable ? t("Update available") : t("You are up to date")}</strong><span>{release.currentVersion} → {release.latestVersion}</span><div className="toolbar"><Button onClick={() => void run(() => api.openUrl(release.url))}>Open Release</Button><Button onClick={() => void downloadUpdate()}>Download Update</Button>{downloadedInstaller && <Button variant="primary" onClick={() => void run(() => api.installDownloadedUpdate(downloadedInstaller), { label: "Starting update installer..." })}>Install Update</Button>}</div></div>}
+            </Panel>
+            <Panel title="CMS Updates" action={<div className="toolbar"><Button icon={<RefreshCw size={16} />} onClick={() => void checkCmsUpdates()}>Check CMS Updates</Button><Button variant="primary" icon={<Download size={16} />} disabled={!cmsUpdates.some((item) => item.canUpdate && item.updateAvailable)} onClick={() => void updateAllCms()}>Update All CMS</Button></div>}>
+              <Switch label="Automatically update installed CMS" checked={settings.autoUpdateCms} onChange={(value) => update("autoUpdateCms", value, true)} />
+              {cmsUpdates.length > 0 ? <table className="data-table compact-table">
+                <thead><tr><th>{t("CMS")}</th><th>{t("Host")}</th><th>{t("Current Version")}</th><th>{t("Latest Version")}</th><th>{t("Status")}</th><th>{t("Action")}</th></tr></thead>
+                <tbody>{cmsUpdates.map((item) => <tr key={item.domain}><td><strong>{item.name}</strong></td><td>{item.domain}</td><td>{item.currentVersion}</td><td>{item.latestVersion}</td><td title={item.message}>{item.updateAvailable ? t("Update available") : item.message}</td><td>{item.canUpdate && item.updateAvailable ? <Button onClick={() => void updateCms(item.domain)}>Update</Button> : "-"}</td></tr>)}</tbody>
+              </table> : <p className="muted">{t("Check CMS Updates to inspect installed CMS.")}</p>}
+            </Panel>
+          </>}
           {activeTab === "Backups" && <Panel title="Backups">
             <SettingInput label="Backups Folder" value={settings.backupsFolder} onChange={(value) => update("backupsFolder", value)} />
             <SettingNumber label="Backup Retention Days" value={settings.backupRetentionDays} onChange={(value) => update("backupRetentionDays", value)} />

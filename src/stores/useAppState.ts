@@ -7,6 +7,7 @@ type RunOptions = {
   label?: string;
   successLabel?: string;
   serial?: boolean;
+  resource?: string;
 };
 
 export function useAppState() {
@@ -17,7 +18,7 @@ export function useAppState() {
   const [busyCount, setBusyCount] = useState(0);
   const [actionLabel, setActionLabel] = useState<string | null>(null);
   const [operations, setOperations] = useState<OperationEntry[]>([]);
-  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const queueRef = useRef(new Map<string, Promise<void>>());
   const lastActionRef = useRef<{ action: () => Promise<AppRunResult>; options?: RunOptions } | null>(null);
   const busyRef = useRef(false);
   const busy = busyCount > 0;
@@ -121,13 +122,14 @@ export function useAppState() {
 
   const run = useCallback((action: () => Promise<AppRunResult>, options?: RunOptions) => {
     if (!options?.silent) lastActionRef.current = { action, options };
-    if (options?.silent) return execute(action, options);
-    if (options?.serial === false) return execute(action, options);
+    if (options?.silent || options?.serial !== true) return execute(action, options);
 
-    const next = queueRef.current
+    const resource = options.resource ?? "environment";
+    const previous = queueRef.current.get(resource) ?? Promise.resolve();
+    const next = previous
       .catch(() => undefined)
       .then(() => execute(action, options));
-    queueRef.current = next.then(() => undefined, () => undefined);
+    queueRef.current.set(resource, next.then(() => undefined, () => undefined));
     return next;
   }, [execute]);
 

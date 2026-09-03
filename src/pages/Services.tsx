@@ -1,7 +1,7 @@
 import { Box, Clock, Database, Download, FileText, Folder, MoreVertical, Play, RefreshCw, Search, Settings, Square, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../ui/api";
-import type { AppRun, AppSnapshot, InstalledTool, PortInspection, ServiceInfo } from "../ui/types";
+import type { AppRun, AppSnapshot, InstalledTool, PortInspection, ProjectTool, ServiceInfo } from "../ui/types";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
@@ -25,7 +25,10 @@ export function ServicesPage({
   const [configPath, setConfigPath] = useState("");
   const [configText, setConfigText] = useState("");
   const [tools, setTools] = useState<InstalledTool[]>([]);
+  const [projectTools, setProjectTools] = useState<ProjectTool[]>([]);
+  const [projectHostDomain, setProjectHostDomain] = useState(state.hosts[0]?.domain ?? "");
   const [timeline, setTimeline] = useState<Array<{ id: string; time: string; service: string; action: string; status: string }>>([]);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const dependencyRows = useMemo(() => state.services.map((service) => ({
     service,
     executable: service.executablePath ? "set" : "missing",
@@ -40,9 +43,9 @@ export function ServicesPage({
     addTimeline(service, action, "queued");
     try {
       if (action === "start" && service.lastError?.toLowerCase().includes("not found")) {
-        await run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, serial: true });
+        await run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, serial: true, resource: "services" });
       }
-      await run(() => action === "start" ? api.startService(service.id) : action === "stop" ? api.stopService(service.id) : api.restartService(service.id), { label: `${action === "start" ? "Starting" : action === "stop" ? "Stopping" : "Restarting"} ${service.name}...`, serial: true });
+      await run(() => action === "start" ? api.startService(service.id) : action === "stop" ? api.stopService(service.id) : api.restartService(service.id), { label: `${action === "start" ? "Starting" : action === "stop" ? "Stopping" : "Restarting"} ${service.name}...`, serial: true, resource: "services" });
       addTimeline(service, action, "done");
     } catch {
       addTimeline(service, action, "error");
@@ -51,9 +54,9 @@ export function ServicesPage({
   const fixService = async (service: ServiceInfo) => {
     addTimeline(service, "fix", "queued");
     try {
-      await run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, serial: true });
-      await run(api.detectDependencies, { label: "Detecting installed dependencies...", serial: true });
-      await run(() => api.restartService(service.id), { label: `Restarting ${service.name}...`, serial: true });
+      await run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, serial: true, resource: "services" });
+      await run(api.detectDependencies, { label: "Detecting installed dependencies...", serial: true, resource: "services" });
+      await run(() => api.restartService(service.id), { label: `Restarting ${service.name}...`, serial: true, resource: "services" });
       addTimeline(service, "fix", "done");
     } catch {
       addTimeline(service, "fix", "error");
@@ -74,7 +77,7 @@ export function ServicesPage({
           used.add(candidate);
           return candidate;
         });
-        await run(() => api.saveService({ ...service, ports: nextPorts }), { label: `Assigning free ports for ${service.name}...`, serial: true });
+        await run(() => api.saveService({ ...service, ports: nextPorts }), { label: `Assigning free ports for ${service.name}...`, serial: true, resource: "services" });
         addTimeline(service, "free port", nextPorts.join(", "));
       }
     }
@@ -98,6 +101,30 @@ export function ServicesPage({
     const result = await run(api.inspectInstalledTools, { label: "Inspecting installed tools..." });
     if (Array.isArray(result)) setTools(result as InstalledTool[]);
   };
+  const selectedProjectHost = state.hosts.find((host) => host.domain === projectHostDomain) ?? state.hosts[0];
+  const inspectProjectTools = async () => {
+    if (!selectedProjectHost) return;
+    const result = await run(() => api.inspectProjectTools(selectedProjectHost.rootFolder), {
+      label: "Checking project tools for " + selectedProjectHost.domain + "..."
+    });
+    if (Array.isArray(result)) setProjectTools(result as ProjectTool[]);
+  };
+  const manageProjectTool = async (tool: ProjectTool, action: "install" | "update") => {
+    if (!selectedProjectHost) return;
+    const verb = action === "install" ? "Installing" : "Updating";
+    const result = await run(
+      () => action === "install"
+        ? api.installProjectTool(selectedProjectHost.rootFolder, tool.id)
+        : api.updateProjectTool(selectedProjectHost.rootFolder, tool.id),
+      {
+        label: verb + " " + tool.name + " for " + selectedProjectHost.domain + "...",
+        successLabel: tool.name + (action === "install" ? " installed." : " updated."),
+        serial: true,
+        resource: `project:${selectedProjectHost.id}`
+      }
+    );
+    if (Array.isArray(result)) setProjectTools(result as ProjectTool[]);
+  };
   return (
     <div className="page-grid">
       <section>
@@ -107,11 +134,15 @@ export function ServicesPage({
             <Button variant="primary" icon={<Play size={16} />} onClick={() => void run(api.startAll, { label: "Starting all services..." })}>{t("Start All")}</Button>
             <Button icon={<Square size={15} />} onClick={() => void run(api.stopAll, { label: "Stopping all services..." })}>{t("Stop All")}</Button>
             <Button icon={<RefreshCw size={15} />} onClick={() => void run(api.restartAll, { label: "Restarting all services..." })}>{t("Restart All")}</Button>
-            <Button icon={<Search size={15} />} onClick={() => void run(api.detectDependencies, { label: "Detecting installed dependencies..." })}>{t("Detect")}</Button>
-            <Button icon={<Search size={15} />} onClick={() => void inspectTools()}>{t("Installed Tools")}</Button>
-            <Button icon={<Download size={15} />} onClick={() => void run(api.installAllMissingDependencies, { label: "Installing missing service dependencies...", successLabel: "Missing dependencies installed or detected." })}>{t("Install Missing")}</Button>
-            <Button variant="icon" icon={<MoreVertical size={17} />} onClick={() => void run(() => api.openPath(state.settings.servicesFolder), { label: "Opening services folder..." })} />
+            <Button variant="icon" aria-label={t(advancedOpen ? "Hide details" : "Show details")} icon={<MoreVertical size={17} />} onClick={() => setAdvancedOpen((value) => !value)} />
           </div>
+        </div>
+        {advancedOpen && <>
+        <div className="toolbar compact-toolbar">
+          <Button icon={<Search size={15} />} onClick={() => void run(api.detectDependencies, { label: "Detecting installed dependencies..." })}>{t("Detect")}</Button>
+          <Button icon={<Search size={15} />} onClick={() => void inspectTools()}>{t("Installed Tools")}</Button>
+          <Button icon={<Download size={15} />} onClick={() => void run(api.installAllMissingDependencies, { label: "Installing missing service dependencies...", successLabel: "Missing dependencies installed or detected." })}>{t("Install Missing")}</Button>
+          <Button icon={<Folder size={15} />} onClick={() => void run(() => api.openPath(state.settings.servicesFolder), { label: "Opening services folder..." })}>{t("Open Services Folder")}</Button>
         </div>
         <Panel title={t("Service Profiles")}>
           <div className="profile-grid">
@@ -120,7 +151,44 @@ export function ServicesPage({
             <Button icon={<Play size={15} />} title="Start Nginx and Node.js Proxy" onClick={() => startProfile("Static", ["nginx", "node-proxy"])}>Static</Button>
             <Button icon={<Play size={15} />} title="Start MySQL, PostgreSQL and Redis" onClick={() => startProfile("Database", ["mysql", "postgresql", "redis"])}>Database</Button>
             <Button icon={<Play size={15} />} title="Start Apache for PHP hosts" onClick={() => startProfile("PHP-only", ["apache"])}>PHP-only</Button>
+            <Button icon={<Play size={15} />} title="Start Meilisearch" onClick={() => startProfile("Meilisearch", ["meilisearch"])}>Meilisearch</Button>
+            <Button icon={<Play size={15} />} title="Start Docker Desktop" onClick={() => startProfile("Docker", ["docker"])}>Docker</Button>
           </div>
+        </Panel>
+        <Panel
+          title={t("Project Tools")}
+          action={
+            <select
+              aria-label={t("Project host")}
+              value={selectedProjectHost?.domain ?? ""}
+              onChange={(event) => {
+                setProjectHostDomain(event.target.value);
+                setProjectTools([]);
+              }}
+            >
+              {state.hosts.map((host) => <option key={host.id} value={host.domain}>{host.domain}</option>)}
+            </select>
+          }
+        >
+          <div className="toolbar">
+            <Button icon={<Search size={15} />} onClick={() => void inspectProjectTools()} disabled={!selectedProjectHost}>{t("Check Project Tools")}</Button>
+          </div>
+          {projectTools.length > 0 && (
+            <div className="tools-grid project-tools-grid">
+              {projectTools.map((tool) => (
+                <div className="tool-card" key={tool.id}>
+                  <strong>{tool.name}</strong>
+                  <span className={tool.status === "installed" ? "green-text" : "orange-text"}>{t(tool.status)}</span>
+                  <small>{tool.version ?? "-"}</small>
+                  <p>{t(tool.description)}</p>
+                  <div className="toolbar">
+                    <Button icon={<Download size={15} />} onClick={() => void manageProjectTool(tool, "install")} disabled={!selectedProjectHost || tool.status === "not available"}>{t("Install")}</Button>
+                    <Button icon={<RefreshCw size={15} />} onClick={() => void manageProjectTool(tool, "update")} disabled={!selectedProjectHost || tool.status !== "installed"}>{t("Update")}</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Panel>
         <Panel title={t("Dependency Graph")}>
           <div className="dependency-graph">
@@ -163,6 +231,7 @@ export function ServicesPage({
             </div>
           </Panel>
         )}
+        </>}
         <div className="service-list">
           {state.services.map((service) => (
             <Panel key={service.id} className={current?.id === service.id ? "selected-panel" : ""}>
@@ -184,11 +253,7 @@ export function ServicesPage({
                     {t(service.status === "running" ? "Stop" : "Start")}
                   </Button>
                   <Button icon={<RefreshCw size={16} />} onClick={(event) => { event.stopPropagation(); void serviceAction(service, "restart"); }}>{t("Restart")}</Button>
-                  <Button icon={<Play size={16} />} onClick={(event) => { event.stopPropagation(); void safeStartService(service); }}>{t("Safe Start")}</Button>
-                  <Button icon={<Wrench size={16} />} onClick={(event) => { event.stopPropagation(); void fixService(service); }}>{t("Fix")}</Button>
-                  <Button icon={<Settings size={16} />} onClick={(event) => { event.stopPropagation(); void loadConfig(service); }}>{t("Config")}</Button>
-                  <Button icon={<FileText size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.openPath(service.logPath), { label: `Opening ${service.name} logs...` }); }}>{t("Logs")}</Button>
-                  <Button icon={<Download size={16} />} onClick={(event) => { event.stopPropagation(); void run(() => api.installServiceDependency(service.id), { label: `Installing ${service.name}...`, successLabel: `${service.name} installed or detected.` }); }}>{t("Install")}</Button>
+                  <Button variant="icon" aria-label={t("Quick Actions")} icon={<MoreVertical size={16} />} onClick={(event) => { event.stopPropagation(); setSelected(service); }} />
                 </div>
               </div>
               {service.lastError && <div className="error-inline">{service.lastError}</div>}
@@ -215,6 +280,7 @@ export function ServicesPage({
               <Button icon={<FileText size={17} />} onClick={() => void run(() => api.openPath(current.logPath), { label: `Opening ${current.name} logs...` })}>{t("View Logs")}</Button>
               <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(current.executablePath), { label: `Opening ${current.name} folder...` })}>{t("Open Root Folder")}</Button>
               <Button icon={<Download size={17} />} onClick={() => void run(() => api.installServiceDependency(current.id), { label: `Installing ${current.name}...`, successLabel: `${current.name} installed or detected.` })}>{t("Install")}</Button>
+              {current.id !== "dns-helper" && <Button icon={<RefreshCw size={17} />} onClick={() => void run(() => api.updateServiceDependency(current.id), { label: "Updating " + current.name + "...", successLabel: current.name + " updated.", serial: true, resource: "services" })}>{t("Update")}</Button>}
               <Button icon={<Wrench size={17} />} onClick={() => void fixService(current)}>{t("Fix this service")}</Button>
               <Button icon={<Play size={17} />} onClick={() => void safeStartService(current)}>{t("Safe Start")}</Button>
               <Button icon={<RefreshCw size={17} />} onClick={() => void serviceAction(current, "restart")}>{t("Restart")}</Button>

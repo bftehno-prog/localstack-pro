@@ -1,5 +1,6 @@
 use crate::state::{AppResult, LogLevel, ServiceInfo, ServiceStatus, Store};
 use std::{
+    fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -34,26 +35,34 @@ pub fn install_service_dependency(service_id: String) -> AppResult<crate::state:
         update_service_path(&mut snapshot, &service_id, path)?;
     } else {
         mark_installing(&store, &mut snapshot, &service_id, &service.name)?;
-        if let Err(err) = install_with_winget(spec.package_id, &service.name) {
-            let mut failed = store.load_static()?;
-            if let Some(service) = failed
-                .services
-                .iter_mut()
-                .find(|service| service.id == service_id)
-            {
-                service.status = ServiceStatus::Error;
-                service.last_error = Some(err.clone());
+        let install_result: AppResult<Option<String>> = if service.id == "meilisearch" {
+            install_meilisearch(&store).map(|(_, version)| Some(version))
+        } else {
+            install_with_winget(spec.package_id, &service.name).map(|_| None)
+        };
+        let downloaded_version = match install_result {
+            Ok(version) => version,
+            Err(err) => {
+                let mut failed = store.load_static()?;
+                if let Some(service) = failed
+                    .services
+                    .iter_mut()
+                    .find(|service| service.id == service_id)
+                {
+                    service.status = ServiceStatus::Error;
+                    service.last_error = Some(err.clone());
+                }
+                store.log(
+                    &mut failed,
+                    LogLevel::Error,
+                    &service.name,
+                    err.clone(),
+                    None,
+                );
+                store.save(&failed)?;
+                return Err(err);
             }
-            store.log(
-                &mut failed,
-                LogLevel::Error,
-                &service.name,
-                err.clone(),
-                None,
-            );
-            store.save(&failed)?;
-            return Err(err);
-        }
+        };
         snapshot = store.load_static()?;
         let path = find_existing_executable(spec, &service).ok_or_else(|| {
             format!(
@@ -63,6 +72,15 @@ pub fn install_service_dependency(service_id: String) -> AppResult<crate::state:
             )
         })?;
         update_service_path(&mut snapshot, &service_id, path)?;
+        if let Some(version) = downloaded_version {
+            if let Some(item) = snapshot
+                .services
+                .iter_mut()
+                .find(|item| item.id == service_id)
+            {
+                item.version = version;
+            }
+        }
     }
     let name = snapshot
         .services
@@ -75,6 +93,85 @@ pub fn install_service_dependency(service_id: String) -> AppResult<crate::state:
         LogLevel::Info,
         &name,
         format!("{name} dependency installed or detected"),
+        None,
+    );
+    store.save(&snapshot)?;
+    Ok(snapshot)
+}
+
+pub fn update_service_dependency(service_id: String) -> AppResult<crate::state::AppSnapshot> {
+    let store = Store::new()?;
+    let mut snapshot = store.load_static()?;
+    let service = snapshot
+        .services
+        .iter()
+        .find(|service| service.id == service_id)
+        .cloned()
+        .ok_or_else(|| format!("Service {service_id} is not configured."))?;
+    let spec = dependency_spec(&service)
+        .ok_or_else(|| format!("No automatic updater is configured for {}.", service.name))?;
+    if matches!(
+        service.status,
+        ServiceStatus::Running | ServiceStatus::Starting
+    ) {
+        return Err(format!(
+            "Stop {} before updating it so LocalStack Pro can replace its files safely.",
+            service.name
+        ));
+    }
+
+    mark_installing(&store, &mut snapshot, &service_id, &service.name)?;
+    let result: AppResult<()> = if service.id == "meilisearch" {
+        let (path, version) = install_meilisearch(&store)?;
+        update_service_path(&mut snapshot, &service_id, path)?;
+        if let Some(item) = snapshot
+            .services
+            .iter_mut()
+            .find(|item| item.id == service_id)
+        {
+            item.version = version;
+        }
+        Ok(())
+    } else {
+        update_with_winget(spec.package_id, &service.name)?;
+        if let Some(path) = find_existing_executable(spec, &service) {
+            update_service_path(&mut snapshot, &service_id, path)?;
+        }
+        Ok(())
+    };
+
+    if let Err(err) = result {
+        let mut failed = store.load_static()?;
+        if let Some(item) = failed
+            .services
+            .iter_mut()
+            .find(|item| item.id == service_id)
+        {
+            item.status = ServiceStatus::Error;
+            item.last_error = Some(err.clone());
+        }
+        store.log(
+            &mut failed,
+            LogLevel::Error,
+            &service.name,
+            err.clone(),
+            None,
+        );
+        store.save(&failed)?;
+        return Err(err);
+    }
+
+    let name = snapshot
+        .services
+        .iter()
+        .find(|item| item.id == service_id)
+        .map(|item| item.name.clone())
+        .unwrap_or(service.name);
+    store.log(
+        &mut snapshot,
+        LogLevel::Info,
+        &name,
+        format!("{name} was updated"),
         None,
     );
     store.save(&snapshot)?;
@@ -245,11 +342,35 @@ fn dependency_spec(service: &ServiceInfo) -> Option<DependencySpec> {
                 "C:\\Program Files\\RabbitMQ Server\\rabbitmq_server-3.12.0\\sbin\\rabbitmq-server.bat",
             ],
         }),
+        "meilisearch" => Some(DependencySpec {
+            package_id: "Meilisearch.Meilisearch",
+            executable_names: &["meilisearch.exe"],
+            common_paths: &[
+                "%APPDATA%\\LocalStack\\LocalStack Pro\\data\\services\\meilisearch\\meilisearch.exe",
+                "%APPDATA%\\LocalStack Pro\\data\\services\\meilisearch\\meilisearch.exe",
+            ],
+        }),
+        "docker" => Some(DependencySpec {
+            package_id: "Docker.DockerDesktop",
+            executable_names: &["Docker Desktop.exe"],
+            common_paths: &[
+                "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+                "%ProgramFiles%\\Docker\\Docker\\Docker Desktop.exe",
+            ],
+        }),
         _ => None,
     }
 }
 
 fn install_with_winget(package_id: &str, service_name: &str) -> AppResult<()> {
+    run_winget(package_id, service_name, "install")
+}
+
+fn update_with_winget(package_id: &str, service_name: &str) -> AppResult<()> {
+    run_winget(package_id, service_name, "upgrade")
+}
+
+fn run_winget(package_id: &str, service_name: &str, action: &str) -> AppResult<()> {
     let winget = which("winget.exe").or_else(|| {
         let fallback = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
@@ -266,7 +387,7 @@ fn install_with_winget(package_id: &str, service_name: &str) -> AppResult<()> {
     })?;
     let mut command = Command::new(winget);
     command.args([
-        "install",
+        action,
         "--id",
         package_id,
         "--exact",
@@ -294,7 +415,7 @@ fn install_with_winget(package_id: &str, service_name: &str) -> AppResult<()> {
         if started.elapsed() > Duration::from_secs(20 * 60) {
             let _ = child.kill();
             return Err(format!(
-                "winget timed out while installing {service_name}. Check Windows Package Manager and try again."
+                "winget timed out while {action}ing {service_name}. Check Windows Package Manager and try again."
             ));
         }
         thread::sleep(Duration::from_millis(250));
@@ -315,12 +436,65 @@ fn install_with_winget(package_id: &str, service_name: &str) -> AppResult<()> {
         .collect::<Vec<_>>()
         .join(" ");
         return Err(format!(
-            "winget failed while installing {service_name} ({package_id}). Exit code: {:?}. {}",
+            "winget failed while {action}ing {service_name} ({package_id}). Exit code: {:?}. {}",
             status.code(),
             detail
         ));
     }
     Ok(())
+}
+
+fn install_meilisearch(store: &Store) -> AppResult<(PathBuf, String)> {
+    let directory = store.dir.join("services").join("meilisearch");
+    let target = directory.join("meilisearch.exe");
+    fs::create_dir_all(&directory)
+        .map_err(|err| format!("Cannot create Meilisearch folder: {err}"))?;
+    let temporary = directory.join("meilisearch.download.exe");
+    let quoted_target = temporary.display().to_string().replace('\'', "''");
+    let script = format!(
+        "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $release=Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/meilisearch/meilisearch/releases/latest'; $asset=$release.assets | Where-Object {{ $_.name -eq 'meilisearch-windows-amd64.exe' }} | Select-Object -First 1; if (!$asset) {{ throw 'The official Meilisearch Windows release asset was not found.' }}; Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile '{quoted_target}'; Write-Output $release.tag_name"
+    );
+    let version = run_hidden_powershell(&script, "Meilisearch download")?;
+    if !temporary.is_file() {
+        return Err("Meilisearch download finished without an executable file.".to_string());
+    }
+    if target.exists() {
+        fs::remove_file(&target).map_err(|err| format!("Cannot replace Meilisearch: {err}"))?;
+    }
+    fs::rename(&temporary, &target).map_err(|err| format!("Cannot finalize Meilisearch: {err}"))?;
+    Ok((target, version.trim_start_matches('v').trim().to_string()))
+}
+
+fn run_hidden_powershell(script: &str, action: &str) -> AppResult<String> {
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot start {action}: {err}"))?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let detail = stderr
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("Unknown PowerShell error.")
+        .trim();
+    Err(format!("{action} failed: {detail}"))
 }
 
 fn find_existing_executable(spec: DependencySpec, service: &ServiceInfo) -> Option<PathBuf> {
@@ -340,7 +514,7 @@ fn find_existing_executable(spec: DependencySpec, service: &ServiceInfo) -> Opti
         }
     }
     for root in searchable_roots(service) {
-        if let Some(path) = find_under(&root, spec.executable_names, 5) {
+        if let Some(path) = find_under(&root, spec.executable_names, 3) {
             return Some(path);
         }
     }
@@ -438,9 +612,6 @@ fn searchable_roots(service: &ServiceInfo) -> Vec<PathBuf> {
     [
         winget_links,
         winget_packages,
-        std::env::var_os("ProgramFiles").map(PathBuf::from),
-        std::env::var_os("ProgramFiles(x86)").map(PathBuf::from),
-        local_app,
         Path::new(&service.executable_path)
             .parent()
             .map(Path::to_path_buf),
