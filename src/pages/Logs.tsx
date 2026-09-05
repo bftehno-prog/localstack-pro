@@ -38,16 +38,29 @@ export function LogsPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   useEffect(() => {
     if (!liveTail) return;
     const timer = window.setInterval(() => {
-      void tailFile(true);
+      if (!document.hidden) void tailFile(true);
     }, 10000);
     return () => window.clearInterval(timer);
   }, [liveTail, tailFile]);
+  const timeRangeStart = useMemo(() => {
+    const now = Date.now();
+    if (timeRange === "Last 15 minutes") return now - 15 * 60 * 1000;
+    if (timeRange === "Last hour") return now - 60 * 60 * 1000;
+    if (timeRange === "Today") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return today.getTime();
+    }
+    return null;
+  }, [timeRange]);
   const logs = state.logs.filter((log) => {
+    const timestamp = Date.parse(log.timestamp);
+    const matchesTimeRange = timeRangeStart === null || Number.isNaN(timestamp) || timestamp >= timeRangeStart;
     const matchesLevel = level === "All" || log.level === level;
     const matchesService = service === "All" || log.service.toLowerCase() === service.toLowerCase();
     const matchesHost = host === "All" || log.host === host;
     const haystack = `${log.service} ${log.host ?? ""} ${log.message} ${log.detail ?? ""}`.toLowerCase();
-    return matchesLevel && matchesService && matchesHost && (!query.trim() || haystack.includes(query.toLowerCase()));
+    return matchesTimeRange && matchesLevel && matchesService && matchesHost && (!query.trim() || haystack.includes(query.toLowerCase()));
   });
   const visibleLogs = (logs.length > 0 ? logs : [fallbackLog]).slice(0, 1000);
   const visibleTailLines = (fileTail?.lines ?? []).slice(-1500).filter((line) => {
@@ -66,7 +79,7 @@ export function LogsPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
     if (upper.includes("DEBUG")) return "log-debug";
     return "log-info";
   };
-  const counts = (wanted: LogLevel) => state.logs.filter((log) => log.level === wanted).length;
+  const counts = (wanted: LogLevel) => logs.filter((log) => log.level === wanted).length;
   const insights = useMemo(() => smartLogInsights(state.logs, fileTail?.lines ?? []), [fileTail, state.logs]);
   const exportLogs = async () => {
     const path = await saveTextFile(`${state.appDataDir}\\logs-export.txt`);
@@ -81,9 +94,9 @@ export function LogsPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   return (
     <div className="logs-page">
       <div className="stat-row">
-        <Panel><div className="stat danger">Recent Errors<strong>{counts("ERROR")}</strong><small>Last 15 minutes</small></div></Panel>
-        <Panel><div className="stat warning">Warnings<strong>{counts("WARNING")}</strong><small>Last 15 minutes</small></div></Panel>
-        <Panel><div className="stat blue">Requests / Min<strong>{Math.max(state.logs.length, 0)}</strong><small>Current log volume</small></div></Panel>
+        <Panel><div className="stat danger">Recent Errors<strong>{counts("ERROR")}</strong><small>{timeRange}</small></div></Panel>
+        <Panel><div className="stat warning">Warnings<strong>{counts("WARNING")}</strong><small>{timeRange}</small></div></Panel>
+        <Panel><div className="stat blue">Requests / Min<strong>{Math.max(logs.length, 0)}</strong><small>Current log volume</small></div></Panel>
         <Panel><div className="stat green">Service Health<strong>{state.services.every((item) => item.status !== "error") ? "Healthy" : "Errors"}</strong><small>{state.services.filter((item) => item.status === "running").length} / {state.services.length} services</small></div></Panel>
         <Panel><div className="toolbar"><select value={timeRange} onChange={(event) => setTimeRange(event.target.value)}><option>Last 15 minutes</option><option>Last hour</option><option>Today</option><option>All time</option></select><Button variant="icon" icon={<RefreshCw size={16} />} onClick={() => void tailFile()} /></div></Panel>
       </div>

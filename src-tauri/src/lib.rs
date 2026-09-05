@@ -5,6 +5,7 @@ mod health;
 mod hosts;
 mod logs;
 mod php;
+mod secrets;
 mod services;
 mod settings;
 mod ssl;
@@ -275,7 +276,7 @@ pub fn current_state() -> AppResult<AppSnapshot> {
     let cache = STATE_CACHE.get_or_init(|| Mutex::new(None));
     if let Ok(guard) = cache.lock() {
         if let Some((created_at, snapshot)) = guard.as_ref() {
-            if created_at.elapsed() < Duration::from_secs(2) {
+            if created_at.elapsed() < Duration::from_secs(5) {
                 return Ok(snapshot.clone());
             }
         }
@@ -324,6 +325,10 @@ fn save_service(service: ServiceInfo) -> AppResult<AppSnapshot> {
 #[tauri::command]
 fn install_service_dependency(service_id: String) -> AppResult<AppSnapshot> {
     with_snapshot_cache(dependencies::install_service_dependency(service_id))
+}
+#[tauri::command]
+fn update_service_dependency(service_id: String) -> AppResult<AppSnapshot> {
+    with_snapshot_cache(dependencies::update_service_dependency(service_id))
 }
 #[tauri::command]
 fn install_all_missing_dependencies() -> AppResult<AppSnapshot> {
@@ -420,6 +425,18 @@ fn get_cms_templates() -> AppResult<Vec<cms::CmsTemplate>> {
 #[tauri::command]
 fn install_cms(request: cms::CmsInstallRequest) -> AppResult<AppSnapshot> {
     with_snapshot_cache(cms::install_cms(request))
+}
+#[tauri::command]
+fn check_cms_updates() -> AppResult<Vec<cms::CmsUpdateInfo>> {
+    cms::check_cms_updates()
+}
+#[tauri::command]
+fn update_cms(domain: String) -> AppResult<cms::CmsUpdateInfo> {
+    with_cache_invalidation(cms::update_cms(domain))
+}
+#[tauri::command]
+fn update_all_cms() -> AppResult<Vec<cms::CmsUpdateInfo>> {
+    with_cache_invalidation(cms::update_all_cms())
 }
 
 #[tauri::command]
@@ -523,6 +540,18 @@ fn clone_project_repository(url: String, folder: String) -> AppResult<String> {
 #[tauri::command]
 fn inspect_project(path: String) -> AppResult<tools::ProjectInspection> {
     tools::inspect_project(path)
+}
+#[tauri::command]
+fn inspect_project_tools(path: String) -> AppResult<Vec<tools::ProjectTool>> {
+    tools::inspect_project_tools(path)
+}
+#[tauri::command]
+fn install_project_tool(path: String, tool_id: String) -> AppResult<Vec<tools::ProjectTool>> {
+    tools::install_project_tool(path, tool_id)
+}
+#[tauri::command]
+fn update_project_tool(path: String, tool_id: String) -> AppResult<Vec<tools::ProjectTool>> {
+    tools::update_project_tool(path, tool_id)
 }
 #[tauri::command]
 fn generate_env_template(
@@ -800,12 +829,33 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let store = Store::new().map_err(|err| tauri::Error::Anyhow(anyhow::anyhow!(err)))?;
-            let _ = store
+            let snapshot = store
                 .load()
                 .map_err(|err| tauri::Error::Anyhow(anyhow::anyhow!(err)))?;
+            let check_updates_on_startup = snapshot.settings.check_updates_on_startup;
+            let auto_update_environment = snapshot.settings.auto_update_environment;
+            let auto_update_cms = snapshot.settings.auto_update_cms;
             std::thread::spawn(|| {
                 let _ = state::bootstrap_bundled_services();
             });
+            if check_updates_on_startup || auto_update_environment || auto_update_cms {
+                std::thread::spawn(move || {
+                    if auto_update_environment {
+                        if let Ok(release) = tools::check_latest_release() {
+                            if release.update_available {
+                                if let Ok(installer) = tools::download_latest_release_installer() {
+                                    let _ = tools::install_downloaded_update(installer);
+                                }
+                            }
+                        }
+                    } else if check_updates_on_startup {
+                        let _ = tools::check_latest_release();
+                    }
+                    if auto_update_cms {
+                        cms::run_configured_auto_updates();
+                    }
+                });
+            }
             tray::setup(app.handle())?;
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.maximize();
@@ -838,6 +888,7 @@ pub fn run() {
             restart_service,
             save_service,
             install_service_dependency,
+            update_service_dependency,
             install_all_missing_dependencies,
             detect_dependencies,
             run_health_check,
@@ -861,6 +912,9 @@ pub fn run() {
             test_database_connection,
             get_cms_templates,
             install_cms,
+            check_cms_updates,
+            update_cms,
+            update_all_cms,
             generate_certificate,
             trust_certificate,
             revoke_certificate,
@@ -886,6 +940,9 @@ pub fn run() {
             run_project_command,
             clone_project_repository,
             inspect_project,
+            inspect_project_tools,
+            install_project_tool,
+            update_project_tool,
             generate_env_template,
             preview_host,
             export_portable_host,

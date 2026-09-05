@@ -204,6 +204,9 @@ fn start_service_at_mode(
         snapshot.services[index].started_at = None;
         snapshot.services[index].uptime_seconds = 0;
     }
+    if snapshot.services[index].id == "docker" {
+        return start_docker_desktop(store, snapshot, index);
+    }
     if wait_until_ready {
         if let Some(service_name) = registered_windows_service(&snapshot.services[index].id) {
             match windows_service_status(service_name) {
@@ -398,6 +401,9 @@ fn stop_service_at(
     index: usize,
 ) -> AppResult<()> {
     let name = snapshot.services[index].name.clone();
+    if snapshot.services[index].id == "docker" {
+        return stop_docker_desktop(store, snapshot, index);
+    }
     if let Some(service_name) = registered_windows_service(&snapshot.services[index].id) {
         if matches!(
             windows_service_status(service_name),
@@ -533,8 +539,8 @@ fn wait_for_spawned_service_ports_quick(
     ports: &[u16],
 ) -> AppResult<()> {
     let (attempts, pause) = match service_id {
-        "mysql" | "mariadb" | "postgresql" => (12, Duration::from_millis(160)),
-        _ => (8, Duration::from_millis(80)),
+        "mysql" | "mariadb" | "postgresql" => (4, Duration::from_millis(120)),
+        _ => (4, Duration::from_millis(50)),
     };
     for _ in 0..attempts {
         if ports.iter().all(|port| port_accepting(*port)) {
@@ -563,7 +569,10 @@ fn wait_for_spawned_service_ports_quick(
     Ok(())
 }
 
-fn service_is_live(service: &ServiceInfo) -> bool {
+pub fn service_is_live(service: &ServiceInfo) -> bool {
+    if service.id == "docker" {
+        return docker_desktop_is_ready(service);
+    }
     if !service.ports.is_empty() && service.ports.iter().all(|port| port_accepting(*port)) {
         return true;
     }
@@ -640,6 +649,166 @@ fn service_process_image(service_id: &str) -> Option<&'static str> {
         "mailpit" => Some("mailpit.exe"),
         _ => None,
     }
+}
+
+fn start_docker_desktop(
+    store: &Store,
+    snapshot: &mut crate::state::AppSnapshot,
+    index: usize,
+) -> AppResult<()> {
+    let name = snapshot.services[index].name.clone();
+    let mut executable = PathBuf::from(&snapshot.services[index].executable_path);
+    if !executable.exists() {
+        executable = crate::state::detect_service_executable("docker").ok_or_else(|| {
+            "Docker Desktop was not found. Install it from Services first.".to_string()
+        })?;
+        snapshot.services[index].executable_path = executable.display().to_string();
+    }
+    if docker_desktop_is_ready(&snapshot.services[index]) {
+        mark_docker_running(snapshot, index);
+        return Ok(());
+    }
+    let cli = docker_cli_path(&executable).ok_or_else(|| {
+        "Docker Desktop CLI was not found. Reinstall Docker Desktop or set its executable path."
+            .to_string()
+    })?;
+    let mut command = Command::new(&cli);
+    command
+        .args(["desktop", "start"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot start Docker Desktop: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Docker Desktop did not start. {detail}"));
+    }
+    for _ in 0..120 {
+        if docker_desktop_is_ready(&snapshot.services[index]) {
+            mark_docker_running(snapshot, index);
+            store.log(
+                snapshot,
+                LogLevel::Info,
+                &name,
+                "Docker Desktop is ready",
+                None,
+            );
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    Err("Docker Desktop started but its engine did not become ready within 60 seconds.".to_string())
+}
+
+fn stop_docker_desktop(
+    store: &Store,
+    snapshot: &mut crate::state::AppSnapshot,
+    index: usize,
+) -> AppResult<()> {
+    let name = snapshot.services[index].name.clone();
+    if !docker_desktop_is_ready(&snapshot.services[index]) {
+        snapshot.services[index].pid = None;
+        snapshot.services[index].status = ServiceStatus::Stopped;
+        snapshot.services[index].started_at = None;
+        snapshot.services[index].uptime_seconds = 0;
+        snapshot.services[index].cpu = 0.0;
+        snapshot.services[index].memory_mb = 0;
+        snapshot.services[index].last_error = None;
+        return Ok(());
+    }
+    let executable = PathBuf::from(&snapshot.services[index].executable_path);
+    let cli = docker_cli_path(&executable)
+        .ok_or_else(|| "Docker Desktop CLI was not found. Reinstall Docker Desktop.".to_string())?;
+    let mut command = Command::new(cli);
+    command
+        .args(["desktop", "stop"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot stop Docker Desktop: {err}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Docker Desktop did not stop. {detail}"));
+    }
+    snapshot.services[index].pid = None;
+    snapshot.services[index].status = ServiceStatus::Stopped;
+    snapshot.services[index].started_at = None;
+    snapshot.services[index].uptime_seconds = 0;
+    snapshot.services[index].cpu = 0.0;
+    snapshot.services[index].memory_mb = 0;
+    snapshot.services[index].last_error = None;
+    store.log(
+        snapshot,
+        LogLevel::Info,
+        &name,
+        "Docker Desktop stopped",
+        None,
+    );
+    Ok(())
+}
+
+fn mark_docker_running(snapshot: &mut crate::state::AppSnapshot, index: usize) {
+    snapshot.services[index].pid = None;
+    snapshot.services[index].status = ServiceStatus::Running;
+    snapshot.services[index].started_at = Some(Utc::now().timestamp());
+    snapshot.services[index].uptime_seconds = 0;
+    snapshot.services[index].last_error = None;
+}
+
+fn docker_cli_path(executable: &Path) -> Option<PathBuf> {
+    let candidates = [
+        executable
+            .parent()
+            .map(|root| root.join("resources").join("bin").join("docker.exe")),
+        Some(PathBuf::from(
+            r"C:\Program Files\Docker\Docker\resources\bin\docker.exe",
+        )),
+        std::env::var_os("ProgramFiles")
+            .map(PathBuf::from)
+            .map(|root| {
+                root.join("Docker")
+                    .join("Docker")
+                    .join("resources")
+                    .join("bin")
+                    .join("docker.exe")
+            }),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| candidate.is_file())
+        .or_else(|| find_executable_in_path("docker.exe"))
+}
+
+fn docker_desktop_is_ready(service: &ServiceInfo) -> bool {
+    let executable = PathBuf::from(&service.executable_path);
+    let Some(cli) = docker_cli_path(&executable) else {
+        return false;
+    };
+    let mut command = Command::new(cli);
+    command
+        .args(["version", "--format", "{{.Server.Version}}"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command.status().is_ok_and(|status| status.success())
+}
+
+fn find_executable_in_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|entry| entry.join(name))
+        .find(|candidate| candidate.is_file())
 }
 
 fn sync_host_statuses(snapshot: &mut crate::state::AppSnapshot) {
@@ -835,6 +1004,24 @@ fn prepare_runtime_config(
                 .to_string();
             Ok(())
         }
+        "meilisearch" => {
+            let data = store.dir.join("services").join("meilisearch").join("data");
+            let logs = store.dir.join("logs");
+            fs::create_dir_all(&data)
+                .map_err(|err| format!("Cannot create Meilisearch data folder: {err}"))?;
+            fs::create_dir_all(&logs)
+                .map_err(|err| format!("Cannot create Meilisearch log folder: {err}"))?;
+            snapshot.services[index].arguments = vec![
+                "--http-addr".to_string(),
+                "127.0.0.1:7700".to_string(),
+                "--db-path".to_string(),
+                data.display().to_string(),
+                "--no-analytics".to_string(),
+            ];
+            snapshot.services[index].ports = vec![7700];
+            snapshot.services[index].log_path = logs.join("meilisearch.log").display().to_string();
+            Ok(())
+        }
         "mongodb" => {
             let data = store.dir.join("services").join("mongodb").join("data");
             let logs = store.dir.join("logs");
@@ -946,13 +1133,52 @@ user=root
         pid_file = slash(&runtime.join("mysql.pid"))
     );
     fs::write(&config, content).map_err(|err| format!("Cannot write MySQL config: {err}"))?;
-    if !data.join("auto.cnf").is_file() {
+    if !mysql_datadir_is_ready(&data) {
+        archive_incomplete_mysql_datadir(store, &data)?;
         initialize_mysql_datadir(&executable, &config)?;
+    }
+    if !mysql_datadir_is_ready(&data) {
+        return Err(
+            "MySQL data directory initialization finished without required system files."
+                .to_string(),
+        );
     }
     snapshot.services[index].arguments = vec![format!("--defaults-file={}", config.display())];
     snapshot.services[index].config_path = config.display().to_string();
     snapshot.services[index].log_path = error_log.display().to_string();
     snapshot.services[index].ports = vec![3306];
+    Ok(())
+}
+
+fn mysql_datadir_is_ready(data: &Path) -> bool {
+    data.join("auto.cnf").is_file() && data.join("ibdata1").is_file() && data.join("mysql").is_dir()
+}
+
+fn archive_incomplete_mysql_datadir(store: &Store, data: &Path) -> AppResult<()> {
+    let has_files = fs::read_dir(data)
+        .map_err(|err| format!("Cannot inspect MySQL data folder: {err}"))?
+        .next()
+        .transpose()
+        .map_err(|err| format!("Cannot inspect MySQL data folder: {err}"))?
+        .is_some();
+    if !has_files {
+        return Ok(());
+    }
+
+    let backup_root = store.dir.join("backups").join("mysql-recovery");
+    fs::create_dir_all(&backup_root)
+        .map_err(|err| format!("Cannot create MySQL recovery folder: {err}"))?;
+    let backup = backup_root.join(format!(
+        "incomplete-data-{}",
+        Utc::now().format("%Y%m%d-%H%M%S")
+    ));
+    fs::rename(data, &backup).map_err(|err| {
+        format!(
+            "Cannot preserve incomplete MySQL data directory at {}: {err}",
+            data.display()
+        )
+    })?;
+    fs::create_dir_all(data).map_err(|err| format!("Cannot recreate MySQL data folder: {err}"))?;
     Ok(())
 }
 
@@ -1625,7 +1851,7 @@ const server = http.createServer((req, res) => {
   });
 });
 startConfiguredApps();
-setInterval(startConfiguredApps, 10000);
+setInterval(startConfiguredApps, 30000);
 server.listen(3000, '127.0.0.1');
 "#
 }

@@ -560,6 +560,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .metrics span { font-weight: 600; }
 .metrics small { display: block; color: #8a929d; font-weight: 400; margin-bottom: 8px; }
 .sidebar-footer { display: flex; gap: 8px; }
+.sidebar-tools-menu .action-menu { bottom: calc(100% + 6px); top: auto; right: auto; left: 0; }
 
 .main {
   flex: 1;
@@ -673,6 +674,8 @@ p { color: var(--muted); }
 .command-stack .btn svg { flex: 0 0 auto; }
 .command-stack .btn span { max-width: 100%; font-size: 14px; }
 .system-info .kv { font-size: 13px; }
+.minimal-top-row { grid-template-columns: minmax(0, 1fr); }
+.minimal-top-row .services-strip { min-height: 0; }
 
 .overview-grid, .page-grid, .editor-grid, .settings-grid, .cms-grid {
   display: grid;
@@ -2401,13 +2404,29 @@ textarea { min-height: 110px; padding: 10px; resize: vertical; }
 
 code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; overflow-wrap: anywhere; }
 
-body:has(.tray-shell) {
-  background: transparent;
+html.tray-window,
+html.tray-window body,
+html.tray-window #root,
+:root:has(.tray-shell),
+body:has(.tray-shell),
+#root:has(.tray-shell) {
+  background: transparent !important;
+}
+html.tray-window,
+html.tray-window body,
+html.tray-window #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 .tray-frame {
   width: 100vw;
   height: 100vh;
   color: var(--text);
+  background: transparent;
+  border-radius: 9px;
+  overflow: hidden;
+  isolation: isolate;
 }
 .tray-shell {
   width: 100vw;
@@ -2424,7 +2443,7 @@ body:has(.tray-shell) {
   padding: 7px;
   border: 0;
   border-radius: 9px;
-  background: color-mix(in srgb, var(--card) 99%, transparent);
+  background: var(--card);
   box-shadow: 0 18px 46px rgba(18, 28, 43, 0.20);
   overflow: hidden;
   display: flex;
@@ -2747,16 +2766,16 @@ body:has(.tray-shell) {
   grid-template-columns: 72px 58px 10px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
-  color: #343941;
+  color: var(--text-soft);
   font-size: 11px;
   line-height: 16px;
 }
 .tray-log-row code {
-  color: #24292f;
+  color: var(--text);
   font-size: 11px;
 }
 .tray-log-row span {
-  color: #4b525b;
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2773,7 +2792,7 @@ body:has(.tray-shell) {
 .tray-log-row i.debug { border-left-color: #6b5ce7; }
 .tray-log-row p {
   min-width: 0;
-  color: #343941;
+  color: var(--text-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

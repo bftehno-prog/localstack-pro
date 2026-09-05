@@ -21,6 +21,7 @@ import type {
   CertificateInfo,
   CmsInstallRequest,
   CmsTemplate,
+  CmsUpdateInfo,
   ConfigFile,
   DatabaseInfo,
   DatabaseDiagnosticReport,
@@ -36,6 +37,7 @@ import type {
   PhpVersion,
   PortInspection,
   ProjectInspection,
+  ProjectTool,
   ReleaseInfo,
   ResourceProcess,
   ServiceInfo,
@@ -45,6 +47,7 @@ import type {
 } from "./types";
 
 const isTauriRuntime = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const allowBrowserFallback = () => import.meta.env.DEV;
 
 function readFallback<T>(fallback: T | (() => T)): T {
   return typeof fallback === "function" ? (fallback as () => T)() : fallback;
@@ -52,7 +55,7 @@ function readFallback<T>(fallback: T | (() => T)): T {
 
 async function safeInvoke<T>(command: string, args?: Record<string, unknown>, fallback?: T | (() => T)): Promise<T> {
   if (!isTauriRuntime()) {
-    if (fallback !== undefined) return readFallback(fallback);
+    if (fallback !== undefined && allowBrowserFallback()) return readFallback(fallback);
     throw new Error(`Tauri command "${command}" is unavailable in browser preview`);
   }
   return invoke<T>(command, args);
@@ -69,6 +72,7 @@ export const api = {
   restartService: (serviceId: string) => safeInvoke<AppSnapshot>(C.restartService, { serviceId }, createMockState),
   saveService: (service: ServiceInfo) => safeInvoke<AppSnapshot>(C.saveService, { service }, createMockState),
   installServiceDependency: (serviceId: string) => safeInvoke<AppSnapshot>(C.installServiceDependency, { serviceId }, createMockState),
+  updateServiceDependency: (serviceId: string) => safeInvoke<AppSnapshot>(C.updateServiceDependency, { serviceId }, createMockState),
   installAllMissingDependencies: () => safeInvoke<AppSnapshot>(C.installAllMissingDependencies, undefined, createMockState),
   detectDependencies: () => safeInvoke<AppSnapshot>(C.detectDependencies, undefined, createMockState),
   runHealthCheck: () => safeInvoke<HealthReport>(C.runHealthCheck, undefined, mockHealthReport),
@@ -133,6 +137,9 @@ export const api = {
     }
   ]),
   installCms: (request: CmsInstallRequest) => safeInvoke<AppSnapshot>(C.installCms, { request }, createMockState),
+  checkCmsUpdates: () => safeInvoke<CmsUpdateInfo[]>(C.checkCmsUpdates, undefined, []),
+  updateCms: (domain: string) => safeInvoke<CmsUpdateInfo>(C.updateCms, { domain }, () => ({ domain, templateId: "", name: domain, currentVersion: "Unknown", latestVersion: "Unknown", updateAvailable: false, canUpdate: false, message: "Browser preview update skipped." })),
+  updateAllCms: () => safeInvoke<CmsUpdateInfo[]>(C.updateAllCms, undefined, []),
   generateCertificate: (domain: string, sanDomains: string[]) => safeInvoke<AppSnapshot>(C.generateCertificate, { domain, sanDomains }, createMockState),
   trustCertificate: (certificateId: string) => safeInvoke<AppSnapshot>(C.trustCertificate, { certificateId }, createMockState),
   revokeCertificate: (certificateId: string) => safeInvoke<AppSnapshot>(C.revokeCertificate, { certificateId }, createMockState),
@@ -158,6 +165,9 @@ export const api = {
   runProjectCommand: (path: string, commandKey: string) => safeInvoke<string>(C.runProjectCommand, { path, commandKey }, "Browser preview command skipped."),
   cloneProjectRepository: (url: string, folder: string) => safeInvoke<string>(C.cloneProjectRepository, { url, folder }, folder),
   inspectProject: (path: string) => safeInvoke<ProjectInspection>(C.inspectProject, { path }, () => mockProjectInspection(path)),
+  inspectProjectTools: (path: string) => safeInvoke<ProjectTool[]>(C.inspectProjectTools, { path }, []),
+  installProjectTool: (path: string, toolId: string) => safeInvoke<ProjectTool[]>(C.installProjectTool, { path, toolId }, []),
+  updateProjectTool: (path: string, toolId: string) => safeInvoke<ProjectTool[]>(C.updateProjectTool, { path, toolId }, []),
   generateEnvTemplate: (path: string, kind: string, database: string, user: string, password: string, domain: string) => safeInvoke<string>(C.generateEnvTemplate, { path, kind, database, user, password, domain }, ""),
   previewHost: (hostId: string) => safeInvoke<SitePreview>(C.previewHost, { hostId }, () => mockSitePreview(hostId)),
   exportPortableHost: (hostId: string, target: string) => safeInvoke<string>(C.exportPortableHost, { hostId, target }, target),

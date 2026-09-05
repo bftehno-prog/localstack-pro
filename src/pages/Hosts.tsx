@@ -10,6 +10,7 @@ import { hostUrl } from "./Overview";
 import { hostReadinessScore, readinessClass, readinessLabel } from "../ui/readiness";
 import { useStoredBoolean, useStoredList } from "../ui/preferences";
 import { useT } from "../ui/i18n";
+import { generatePassword } from "../ui/password";
 
 type HostHistoryEntry = {
   id: string;
@@ -181,6 +182,7 @@ export function HostsPage({
   const createWizardHost = async () => {
     const slug = wizardDomain.split(".")[0].replace(/[^a-z0-9_-]+/gi, "").toLowerCase() || "site";
     const now = new Date().toISOString();
+    const databasePassword = generatePassword();
     const next: HostInfo = {
       id: wizardDomain.trim().toLowerCase(),
       domain: wizardDomain.trim().toLowerCase(),
@@ -200,7 +202,7 @@ export function HostsPage({
         APP_URL: `${wizardSsl ? "https" : "http"}://${wizardDomain.trim().toLowerCase()}`,
         DB_DATABASE: wizardDatabase.trim(),
         DB_USERNAME: `${slug}_user`,
-        DB_PASSWORD: "localstack"
+        DB_PASSWORD: databasePassword
       },
       rewriteRules: "",
       notes: `${wizardType} host created by Host Wizard.`,
@@ -218,7 +220,7 @@ export function HostsPage({
         version: "8.0.36",
         schemas: 1,
         user: `${slug}_user`,
-        password: "localstack",
+        password: databasePassword,
         port: 3306,
         status: "stopped",
         sizeMb: 0,
@@ -358,6 +360,8 @@ export function HostsPage({
                       {openMenuId === row.id && (
                         <div className="action-menu" onMouseLeave={() => setOpenMenuId(null)}>
                           <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); editHost(row); }}>{t("Edit")}</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); editHost(row); }}>{t("Manage Host Database")}</button>
+                          <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." }); }}>{t("Edit in phpMyAdmin")}</button>
                           <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void run(() => api.duplicateHost(row.id), { label: `Duplicating ${row.domain}...` }); }}>{t("Duplicate")}</button>
                           <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void diagnose(row); }}>{t("Diagnose")}</button>
                           <button onClick={(event) => { event.stopPropagation(); setOpenMenuId(null); void repair(row); }}>{t("Repair Host")}</button>
@@ -414,6 +418,8 @@ export function HostsPage({
             <div className="quick-grid">
               <Button icon={<ExternalLink size={17} />} onClick={() => void run(() => api.openHost(host.id), { label: `Opening ${host.domain}...` })}>{t("Open in Browser")}</Button>
               <Button icon={<Folder size={17} />} onClick={() => void run(() => api.openPath(host.rootFolder), { label: `Opening ${host.rootFolder}...` })}>{t("Open Root Folder")}</Button>
+              <Button icon={<Database size={17} />} onClick={() => editHost(host)}>{t("Manage Host Database")}</Button>
+              <Button icon={<Database size={17} />} onClick={() => void run(() => api.openDatabaseAdmin("phpmyadmin"), { label: "Opening phpMyAdmin..." })}>{t("Edit in phpMyAdmin")}</Button>
               <Button icon={<Trash2 size={17} />} onClick={() => void run(() => api.openPath(`${host.rootFolder}\\logs`), { label: `Opening logs for ${host.domain}...` })}>{t("View Logs")}</Button>
               <Button icon={<ShieldCheck size={17} />} onClick={() => void diagnose(host)}>{t("Diagnose")}</Button>
               <Button icon={<Wrench size={17} />} onClick={() => void repair(host)}>{t("Repair Host")}</Button>

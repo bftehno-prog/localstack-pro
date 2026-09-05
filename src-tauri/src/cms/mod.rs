@@ -51,6 +51,19 @@ pub struct CmsInstallRequest {
     pub overwrite: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CmsUpdateInfo {
+    pub domain: String,
+    pub template_id: String,
+    pub name: String,
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub can_update: bool,
+    pub message: String,
+}
+
 pub fn cms_templates() -> Vec<CmsTemplate> {
     vec![
         template(TemplateSpec {
@@ -106,9 +119,9 @@ pub fn cms_templates() -> Vec<CmsTemplate> {
         template(TemplateSpec {
             id: "joomla",
             name: "Joomla",
-            description: "Full package from the official Joomla latest-release channel.",
+            description: "Latest full package from the official Joomla release channel.",
             category: "CMS",
-            download_url: "https://downloads.joomla.org/cms/joomla6/6-1-0/Joomla_6-1-0-Stable-Full_Package.zip?format=zip",
+            download_url: "https://downloads.joomla.org/latest",
             document_root: "public",
             requires_database: true,
             default_database_engine: "MySQL",
@@ -134,6 +147,360 @@ pub fn cms_templates() -> Vec<CmsTemplate> {
             default_database_engine: "MySQL",
         }),
     ]
+}
+
+pub fn check_cms_updates() -> AppResult<Vec<CmsUpdateInfo>> {
+    let store = Store::new()?;
+    let snapshot = store.load_static()?;
+    snapshot
+        .cms_installations
+        .iter()
+        .map(cms_update_info)
+        .collect()
+}
+
+pub fn update_cms(domain: String) -> AppResult<CmsUpdateInfo> {
+    let store = Store::new()?;
+    let snapshot = store.load_static()?;
+    let installation = snapshot
+        .cms_installations
+        .iter()
+        .find(|item| item.domain.eq_ignore_ascii_case(domain.trim()))
+        .cloned()
+        .ok_or_else(|| format!("CMS installation for {} was not found.", domain.trim()))?;
+    let template = cms_templates()
+        .into_iter()
+        .find(|item| item.id == installation.template_id)
+        .ok_or_else(|| format!("CMS template {} was not found.", installation.template_id))?;
+    if is_node_template(&template.id) {
+        return Err(format!(
+            "{} is managed with its package manager, not the CMS updater.",
+            template.name
+        ));
+    }
+
+    let before = cms_update_info(&installation)?;
+    if !before.can_update {
+        return Err(before.message);
+    }
+    if !before.update_available {
+        return Ok(before);
+    }
+
+    let host = snapshot
+        .hosts
+        .iter()
+        .find(|item| item.domain.eq_ignore_ascii_case(&installation.domain))
+        .cloned()
+        .ok_or_else(|| format!("Host {} was not found for this CMS.", installation.domain))?;
+    let backup = PathBuf::from(&snapshot.settings.backups_folder).join(format!(
+        "{}-{}-cms-update.zip",
+        installation.domain,
+        Utc::now().format("%Y%m%d-%H%M%S")
+    ));
+    crate::tools::backup_host(host.id.clone(), backup.display().to_string())?;
+
+    let public = PathBuf::from(&installation.root_folder).join(&installation.document_root);
+    let temp = store
+        .dir
+        .join("temp")
+        .join(format!("cms-update-{}", Uuid::new_v4()));
+    let archive = temp.join("package.zip");
+    let extracted = temp.join("extract");
+    fs::create_dir_all(&extracted)
+        .map_err(|err| format!("Cannot create CMS update temp folder: {err}"))?;
+    let installer_url = resolve_latest_installer_url(&template)?;
+    let result = (|| -> AppResult<()> {
+        download_and_extract(&installer_url, &archive, &extracted)?;
+        let source = extracted_content_root(&extracted)?;
+        copy_cms_update_files(&template.id, &source, &public)
+    })();
+    let _ = fs::remove_dir_all(&temp);
+    result?;
+    clear_wordpress_maintenance_marker(&template.id, &public)?;
+
+    let mut updated_snapshot = store.load_static()?;
+    store.log(
+        &mut updated_snapshot,
+        LogLevel::Info,
+        "CMS",
+        format!(
+            "{} updated for {}. Backup: {}",
+            template.name,
+            installation.domain,
+            backup.display()
+        ),
+        None,
+    );
+    store.save(&updated_snapshot)?;
+    if host.status == ServiceStatus::Running {
+        let service_id = if host.web_server.eq_ignore_ascii_case("nginx") {
+            "nginx"
+        } else {
+            "apache"
+        };
+        let _ = services::restart_service(service_id.to_string());
+    }
+
+    let mut after = cms_update_info(&installation)?;
+    after.message = format!("Updated successfully. Backup: {}", backup.display());
+    Ok(after)
+}
+
+pub fn update_all_cms() -> AppResult<Vec<CmsUpdateInfo>> {
+    let updates = check_cms_updates()?;
+    let mut results = Vec::with_capacity(updates.len());
+    for update in updates {
+        if update.can_update && update.update_available {
+            match update_cms(update.domain.clone()) {
+                Ok(result) => results.push(result),
+                Err(error) => results.push(CmsUpdateInfo {
+                    message: error,
+                    ..update
+                }),
+            }
+        } else {
+            results.push(update);
+        }
+    }
+    Ok(results)
+}
+
+pub fn run_configured_auto_updates() {
+    let Ok(store) = Store::new() else {
+        return;
+    };
+    let Ok(snapshot) = store.load_static() else {
+        return;
+    };
+    if snapshot.settings.auto_update_cms {
+        let _ = update_all_cms();
+    }
+}
+
+fn cms_update_info(installation: &CmsInstallInfo) -> AppResult<CmsUpdateInfo> {
+    let template = cms_templates()
+        .into_iter()
+        .find(|item| item.id == installation.template_id)
+        .ok_or_else(|| format!("CMS template {} was not found.", installation.template_id))?;
+    if is_node_template(&template.id) {
+        return Ok(CmsUpdateInfo {
+            domain: installation.domain.clone(),
+            template_id: template.id,
+            name: template.name.clone(),
+            current_version: "Package-managed".to_string(),
+            latest_version: "-".to_string(),
+            update_available: false,
+            can_update: false,
+            message: "Use npm or the project package manager to update this application."
+                .to_string(),
+        });
+    }
+
+    let public = PathBuf::from(&installation.root_folder).join(&installation.document_root);
+    if !cms_files_match(&template.id, &public) {
+        return Ok(CmsUpdateInfo {
+            domain: installation.domain.clone(),
+            template_id: template.id,
+            name: template.name.clone(),
+            current_version: "Unknown".to_string(),
+            latest_version: "Unknown".to_string(),
+            update_available: false,
+            can_update: false,
+            message: format!(
+                "{} is not a valid {} installation.",
+                public.display(),
+                template.name
+            ),
+        });
+    }
+
+    let current_version =
+        installed_cms_version(&template.id, &public).unwrap_or_else(|| "Unknown".to_string());
+    let latest_version = latest_cms_version(&template)?;
+    let update_available = version_is_newer(&latest_version, &current_version);
+    Ok(CmsUpdateInfo {
+        domain: installation.domain.clone(),
+        template_id: template.id,
+        name: template.name,
+        current_version,
+        latest_version,
+        update_available,
+        can_update: true,
+        message: if update_available {
+            "A core update is available. A host backup is created before installation.".to_string()
+        } else {
+            "CMS core is up to date.".to_string()
+        },
+    })
+}
+
+fn installed_cms_version(template_id: &str, public: &Path) -> Option<String> {
+    let file = match template_id {
+        "wordpress" => public.join("wp-includes").join("version.php"),
+        "joomla" => public.join("libraries").join("src").join("Version.php"),
+        "drupal" => public.join("core").join("lib").join("Drupal.php"),
+        "grav" => public.join("system").join("defines.php"),
+        _ => return None,
+    };
+    let text = fs::read_to_string(file).ok()?;
+    match template_id {
+        "wordpress" => capture_version(&text, "$wp_version = '")
+            .or_else(|| capture_version(&text, "$wp_version = \"")),
+        "joomla" => {
+            let major = capture_version(&text, "MAJOR_VERSION = '")?;
+            let minor = capture_version(&text, "MINOR_VERSION = '")?;
+            let patch = capture_version(&text, "PATCH_VERSION = '")?;
+            Some(format!("{major}.{minor}.{patch}"))
+        }
+        "drupal" => capture_version(&text, "const VERSION = '")
+            .or_else(|| capture_version(&text, "const VERSION = \"")),
+        "grav" => capture_version(&text, "GRAV_VERSION', '").or_else(|| {
+            capture_version(&text, "GRAV_VERSION = '")
+                .or_else(|| capture_version(&text, "GRAV_VERSION = \""))
+        }),
+        _ => None,
+    }
+}
+
+fn capture_version(text: &str, prefix: &str) -> Option<String> {
+    let value = text.split_once(prefix)?.1;
+    let end = value.find(['\'', '"'])?;
+    let version = value[..end].trim();
+    (!version.is_empty()).then(|| version.to_string())
+}
+
+fn latest_cms_version(template: &CmsTemplate) -> AppResult<String> {
+    let script = match template.id.as_str() {
+        "wordpress" => "(Invoke-RestMethod -UseBasicParsing -Uri 'https://api.wordpress.org/core/version-check/1.7/').offers | Select-Object -First 1 -ExpandProperty version".to_string(),
+        "joomla" => {
+            let url = resolve_latest_installer_url(template)?;
+            return url
+                .split("Joomla_")
+                .nth(1)
+                .and_then(|part| part.split("-Stable").next())
+                .map(|value| value.replace('_', "."))
+                .ok_or_else(|| "Cannot read the Joomla version from the official installer URL.".to_string());
+        }
+        "drupal" => "[xml]$feed=(Invoke-WebRequest -UseBasicParsing -Uri 'https://updates.drupal.org/release-history/drupal/current').Content; ($feed.project.releases.release | Select-Object -First 1).version".to_string(),
+        "grav" => "(Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/getgrav/grav/releases/latest').tag_name.TrimStart('v')".to_string(),
+        _ => return Err(format!("CMS updater does not support {}.", template.name)),
+    };
+    let output = run_hidden_powershell(&script, "Cannot check the latest CMS version")?;
+    let version = output.trim().trim_start_matches('v').to_string();
+    if version.is_empty() {
+        return Err(format!(
+            "The latest {} version was not returned by its official channel.",
+            template.name
+        ));
+    }
+    Ok(version)
+}
+
+fn run_hidden_powershell(script: &str, context: &str) -> AppResult<String> {
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("{context}: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{context}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn version_is_newer(latest: &str, current: &str) -> bool {
+    let parts = |value: &str| {
+        value
+            .split(|character: char| !character.is_ascii_digit())
+            .filter(|part| !part.is_empty())
+            .filter_map(|part| part.parse::<u32>().ok())
+            .collect::<Vec<_>>()
+    };
+    let latest = parts(latest);
+    let current = parts(current);
+    if latest.is_empty() || current.is_empty() {
+        return false;
+    }
+    let width = latest.len().max(current.len());
+    (0..width)
+        .find_map(|index| {
+            let left = *latest.get(index).unwrap_or(&0);
+            let right = *current.get(index).unwrap_or(&0);
+            (left != right).then_some(left > right)
+        })
+        .unwrap_or(false)
+}
+
+fn copy_cms_update_files(template_id: &str, source: &Path, target: &Path) -> AppResult<()> {
+    let protected: &[&str] = match template_id {
+        "wordpress" => &["wp-content", "wp-config.php", ".htaccess"],
+        "joomla" => &[
+            "configuration.php",
+            "images",
+            "media",
+            "cache",
+            "tmp",
+            "logs",
+            ".htaccess",
+        ],
+        "drupal" => &["sites", "modules", "themes", "profiles", ".htaccess"],
+        "grav" => &["user", "backup", "cache", "logs", "images", ".htaccess"],
+        _ => &[],
+    };
+    fs::create_dir_all(target).map_err(|err| format!("Cannot prepare CMS target folder: {err}"))?;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("Cannot read CMS update package: {err}"))?
+    {
+        let entry = entry.map_err(|err| format!("Cannot read CMS update entry: {err}"))?;
+        let name = entry.file_name();
+        let normalized = name.to_string_lossy().to_ascii_lowercase();
+        if protected.iter().any(|item| *item == normalized) {
+            continue;
+        }
+        let destination = target.join(&name);
+        if entry.path().is_dir() {
+            copy_dir_all(&entry.path(), &destination, true)?;
+        } else {
+            fs::copy(entry.path(), &destination).map_err(|err| {
+                format!("Cannot update CMS file {}: {err}", destination.display())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn clear_wordpress_maintenance_marker(template_id: &str, public: &Path) -> AppResult<()> {
+    if template_id != "wordpress" {
+        return Ok(());
+    }
+    let marker = public.join(".maintenance");
+    if marker.is_file() {
+        fs::remove_file(&marker).map_err(|err| {
+            format!(
+                "Cannot remove the completed WordPress maintenance marker {}: {err}",
+                marker.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 pub fn install_cms(request: CmsInstallRequest) -> AppResult<crate::state::AppSnapshot> {
@@ -179,12 +546,21 @@ pub fn install_cms(request: CmsInstallRequest) -> AppResult<crate::state::AppSna
         .dir
         .join("temp")
         .join(format!("cms-{}", Uuid::new_v4()));
+    let installer_url = (!use_existing_files)
+        .then(|| resolve_latest_installer_url(&template))
+        .transpose()?;
     if !use_existing_files {
         let archive = temp.join("package.zip");
         let extracted = temp.join("extract");
         fs::create_dir_all(&extracted)
             .map_err(|err| format!("Cannot create temp folder: {err}"))?;
-        download_and_extract(&template.download_url, &archive, &extracted)?;
+        download_and_extract(
+            installer_url
+                .as_deref()
+                .ok_or_else(|| "CMS installer URL was not resolved.".to_string())?,
+            &archive,
+            &extracted,
+        )?;
         let source = extracted_content_root(&extracted)?;
         copy_dir_all(&source, &public, request.overwrite)?;
     }
@@ -303,7 +679,10 @@ pub fn install_cms(request: CmsInstallRequest) -> AppResult<crate::state::AppSna
         if use_existing_files {
             format!("{} attached at {}", template.name, request.domain)
         } else {
-            format!("{} installed at {}", template.name, request.domain)
+            format!(
+                "{} latest installer downloaded and installed at {}",
+                template.name, request.domain
+            )
         },
         None,
     );
@@ -554,10 +933,20 @@ fn extract_zip_archive(archive: &Path, destination: &Path) -> AppResult<()> {
             archive.display()
         )
     })?;
+    const MAX_ENTRIES: usize = 10_000;
+    const MAX_UNPACKED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+    if zip.len() > MAX_ENTRIES {
+        return Err("CMS archive contains too many entries.".to_string());
+    }
+    let mut unpacked_bytes = 0_u64;
     for index in 0..zip.len() {
         let mut entry = zip
             .by_index(index)
             .map_err(|err| format!("Cannot read CMS archive entry: {err}"))?;
+        unpacked_bytes = unpacked_bytes.saturating_add(entry.size());
+        if unpacked_bytes > MAX_UNPACKED_BYTES {
+            return Err("CMS archive expands beyond the 2 GB safety limit.".to_string());
+        }
         let Some(path) = entry.enclosed_name() else {
             continue;
         };
@@ -1265,7 +1654,57 @@ fn is_database_token(value: &str) -> bool {
         .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
+fn resolve_latest_installer_url(template: &CmsTemplate) -> AppResult<String> {
+    if template.id != "joomla" {
+        return Ok(template.download_url.clone());
+    }
+
+    let script = r#"
+$ErrorActionPreference='Stop'
+$ProgressPreference='SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
+$page = Invoke-WebRequest -UseBasicParsing -Uri 'https://downloads.joomla.org/latest'
+$link = $page.Links |
+  Where-Object { $_.href -match '^/cms/joomla\d+/[^/]+/Joomla_[^/]+-Stable-Full_Package\.zip\?format=zip$' } |
+  Select-Object -First 1 -ExpandProperty href
+if ([string]::IsNullOrWhiteSpace($link)) { throw 'The official Joomla latest package link was not found.' }
+[Uri]::new([Uri]'https://downloads.joomla.org', $link).AbsoluteUri
+"#;
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot check the latest Joomla installer: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Cannot check the latest Joomla installer: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    ensure_allowed_cms_download_url(&url)?;
+    if !url.ends_with("format=zip") {
+        return Err("The resolved Joomla installer is not a ZIP package.".to_string());
+    }
+    Ok(url)
+}
+
 fn download_and_extract(url: &str, archive: &Path, extracted: &Path) -> AppResult<()> {
+    ensure_allowed_cms_download_url(url)?;
     let script = format!(
         "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri {} -OutFile {}; Expand-Archive -LiteralPath {} -DestinationPath {} -Force",
         powershell_quote(url),
@@ -1295,6 +1734,35 @@ fn download_and_extract(url: &str, archive: &Path, extracted: &Path) -> AppResul
         return Err(format!("Cannot download or extract CMS package. {detail}"));
     }
     Ok(())
+}
+
+fn ensure_allowed_cms_download_url(url: &str) -> AppResult<()> {
+    ensure_https_url_host(
+        url,
+        &[
+            "wordpress.org",
+            "downloads.joomla.org",
+            "www.drupal.org",
+            "getgrav.org",
+        ],
+    )
+}
+
+fn ensure_https_url_host(url: &str, allowed_hosts: &[&str]) -> AppResult<()> {
+    let lower = url.trim().to_ascii_lowercase();
+    if !lower.starts_with("https://") {
+        return Err("Download URL must use HTTPS.".to_string());
+    }
+    let host = lower
+        .trim_start_matches("https://")
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    if allowed_hosts.contains(&host) {
+        Ok(())
+    } else {
+        Err(format!("Download host is not allowed: {host}"))
+    }
 }
 
 fn powershell_quote(value: &str) -> String {
@@ -1463,6 +1931,7 @@ fn write_wordpress_config(
     config = set_wordpress_define(&config, "DB_USER", &database.user);
     config = set_wordpress_define(&config, "DB_PASSWORD", &database.password);
     config = set_wordpress_define(&config, "DB_HOST", database_host(&database.engine));
+    config = ensure_wordpress_direct_filesystem(config);
     for _ in 0..8 {
         config = config.replacen(
             "put your unique phrase here",
@@ -1563,6 +2032,20 @@ fn set_wordpress_define(config: &str, key: &str, value: &str) -> String {
         .join("\n")
 }
 
+fn ensure_wordpress_direct_filesystem(config: String) -> String {
+    let updated = set_wordpress_define(&config, "FS_METHOD", "direct");
+    if updated != config {
+        return updated;
+    }
+
+    let define = "define( 'FS_METHOD', 'direct' );\n";
+    if let Some(index) = config.find("/* That's all, stop editing!") {
+        format!("{}{}{}", &config[..index], define, &config[index..])
+    } else {
+        format!("{config}\n{define}")
+    }
+}
+
 fn database_host(engine: &str) -> &'static str {
     match engine {
         "MariaDB" => "127.0.0.1:3307",
@@ -1604,4 +2087,25 @@ fn write_install_metadata(
         .map_err(|err| format!("Cannot serialize CMS metadata: {err}"))?;
     fs::write(root.join("localstack-cms.json"), text)
         .map_err(|err| format!("Cannot write CMS metadata: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{capture_version, version_is_newer};
+
+    #[test]
+    fn detects_only_newer_versions() {
+        assert!(version_is_newer("6.1.2", "6.1.1"));
+        assert!(version_is_newer("6.2.0", "6.1.99"));
+        assert!(!version_is_newer("6.1.2", "6.1.2"));
+        assert!(!version_is_newer("6.1.1", "6.1.2"));
+    }
+
+    #[test]
+    fn reads_quoted_versions() {
+        assert_eq!(
+            capture_version("$wp_version = '6.8.1';", "$wp_version = '"),
+            Some("6.8.1".to_string())
+        );
+    }
 }

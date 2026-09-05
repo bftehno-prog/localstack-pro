@@ -3,6 +3,7 @@ use chrono::Utc;
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use regex::RegexBuilder;
 use serde::Serialize;
+use serde_json::Value;
 use std::{
     fs,
     fs::File,
@@ -12,6 +13,9 @@ use std::{
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
+
+const MAX_ARCHIVE_ENTRIES: usize = 10_000;
+const MAX_ARCHIVE_UNPACKED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 use tar::{Archive as TarArchive, Builder as TarBuilder};
 use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
 
@@ -169,6 +173,17 @@ pub struct ResourceProcess {
 pub struct NodeScript {
     pub name: String,
     pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTool {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub status: String,
+    pub version: Option<String>,
+    pub configured: bool,
 }
 
 pub fn scan_ports() -> AppResult<Vec<PortInspection>> {
@@ -1248,6 +1263,216 @@ pub fn list_node_scripts(path: String) -> AppResult<Vec<NodeScript>> {
     Ok(scripts)
 }
 
+pub fn inspect_project_tools(path: String) -> AppResult<Vec<ProjectTool>> {
+    let root = ensure_project_path(path)?;
+    let Some(package) = read_project_package_json(&root)? else {
+        return Ok(project_tools_without_package());
+    };
+    let dependencies = project_dependency_versions(&package);
+    let drizzle_orm = dependencies.get("drizzle-orm").cloned();
+    let drizzle_kit = dependencies.get("drizzle-kit").cloned();
+    let tiptap_core = dependencies.get("@tiptap/core").cloned();
+    let tiptap_starter = dependencies.get("@tiptap/starter-kit").cloned();
+    let drizzle_configured = [
+        "drizzle.config.ts",
+        "drizzle.config.js",
+        "drizzle.config.mts",
+        "drizzle.config.cts",
+        "drizzle.config.json",
+    ]
+    .iter()
+    .any(|name| root.join(name).is_file());
+    Ok(vec![
+        ProjectTool {
+            id: "drizzle".to_string(),
+            name: "Drizzle ORM".to_string(),
+            description: "Typed database schema and migration toolkit".to_string(),
+            status: if drizzle_orm.is_some() && drizzle_kit.is_some() {
+                "installed".to_string()
+            } else {
+                "not installed".to_string()
+            },
+            version: drizzle_orm.or(drizzle_kit),
+            configured: drizzle_configured,
+        },
+        ProjectTool {
+            id: "tiptap".to_string(),
+            name: "TipTap".to_string(),
+            description: "Extensible rich-text editor toolkit".to_string(),
+            status: if tiptap_core.is_some() && tiptap_starter.is_some() {
+                "installed".to_string()
+            } else {
+                "not installed".to_string()
+            },
+            version: tiptap_core.clone().or(tiptap_starter),
+            configured: tiptap_core.is_some(),
+        },
+    ])
+}
+
+pub fn install_project_tool(path: String, tool_id: String) -> AppResult<Vec<ProjectTool>> {
+    let root = ensure_project_path(path)?;
+    ensure_node_project(&root)?;
+    match tool_id.as_str() {
+        "drizzle" => {
+            run_npm(&root, ["install", "--save", "drizzle-orm"])?;
+            run_npm(&root, ["install", "--save-dev", "drizzle-kit"])?;
+        }
+        "tiptap" => {
+            run_npm(
+                &root,
+                [
+                    "install",
+                    "--save",
+                    "@tiptap/core",
+                    "@tiptap/pm",
+                    "@tiptap/starter-kit",
+                ],
+            )?;
+        }
+        _ => return Err("Unknown project tool.".to_string()),
+    }
+    inspect_project_tools(root.display().to_string())
+}
+
+pub fn update_project_tool(path: String, tool_id: String) -> AppResult<Vec<ProjectTool>> {
+    let root = ensure_project_path(path)?;
+    ensure_node_project(&root)?;
+    match tool_id.as_str() {
+        "drizzle" => {
+            run_npm(&root, ["install", "--save", "drizzle-orm@latest"])?;
+            run_npm(&root, ["install", "--save-dev", "drizzle-kit@latest"])?;
+        }
+        "tiptap" => {
+            run_npm(
+                &root,
+                [
+                    "install",
+                    "--save",
+                    "@tiptap/core@latest",
+                    "@tiptap/pm@latest",
+                    "@tiptap/starter-kit@latest",
+                ],
+            )?;
+        }
+        _ => return Err("Unknown project tool.".to_string()),
+    }
+    inspect_project_tools(root.display().to_string())
+}
+
+fn project_tools_without_package() -> Vec<ProjectTool> {
+    ["drizzle", "tiptap"]
+        .into_iter()
+        .map(|id| ProjectTool {
+            id: id.to_string(),
+            name: if id == "drizzle" {
+                "Drizzle ORM".to_string()
+            } else {
+                "TipTap".to_string()
+            },
+            description: "A Node.js project with package.json is required".to_string(),
+            status: "not available".to_string(),
+            version: None,
+            configured: false,
+        })
+        .collect()
+}
+
+fn ensure_node_project(root: &Path) -> AppResult<()> {
+    if root.join("package.json").is_file() {
+        Ok(())
+    } else {
+        Err(
+            "This host does not contain package.json. Create or import a Node.js project first."
+                .to_string(),
+        )
+    }
+}
+
+fn read_project_package_json(root: &Path) -> AppResult<Option<Value>> {
+    let path = root.join("package.json");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let text =
+        fs::read_to_string(&path).map_err(|err| format!("Cannot read package.json: {err}"))?;
+    let package =
+        serde_json::from_str(&text).map_err(|err| format!("Cannot parse package.json: {err}"))?;
+    Ok(Some(package))
+}
+
+fn project_dependency_versions(package: &Value) -> std::collections::HashMap<String, String> {
+    ["dependencies", "devDependencies", "peerDependencies"]
+        .into_iter()
+        .filter_map(|key| package.get(key).and_then(Value::as_object))
+        .flat_map(|items| items.iter())
+        .filter_map(|(name, version)| {
+            version
+                .as_str()
+                .map(|version| (name.clone(), version.to_string()))
+        })
+        .collect()
+}
+
+fn run_npm<const N: usize>(root: &Path, args: [&str; N]) -> AppResult<()> {
+    let npm = npm_executable().ok_or_else(|| {
+        "npm was not found. Install Node.js from Services before installing project tools."
+            .to_string()
+    })?;
+    let mut command = Command::new(npm);
+    command
+        .args(args)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags_hidden();
+    let output = command
+        .output()
+        .map_err(|err| format!("Cannot run npm: {err}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    )
+    .lines()
+    .filter(|line| !line.trim().is_empty())
+    .take(8)
+    .collect::<Vec<_>>()
+    .join(" ");
+    Err(format!("npm could not install the project tool. {detail}"))
+}
+
+fn npm_executable() -> Option<PathBuf> {
+    let candidates = [
+        std::env::var_os("ProgramFiles")
+            .map(PathBuf::from)
+            .map(|path| path.join("nodejs").join("npm.cmd")),
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .map(|path| {
+                path.join("Microsoft")
+                    .join("WinGet")
+                    .join("Links")
+                    .join("npm.cmd")
+            }),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|path| path.is_file())
+        .or_else(|| {
+            std::env::var_os("PATH").and_then(|path| {
+                std::env::split_paths(&path)
+                    .map(|entry| entry.join("npm.cmd"))
+                    .find(|candidate| candidate.is_file())
+            })
+        })
+}
+
 pub fn run_node_script(path: String, script: String) -> AppResult<String> {
     let allowed = list_node_scripts(path.clone())?;
     if !allowed.iter().any(|item| item.name == script) {
@@ -1513,27 +1738,169 @@ pub fn create_diagnostic_bundle(target: String) -> AppResult<String> {
         .join(format!("diagnostics-{}", Utc::now().format("%Y%m%d%H%M%S")));
     let _ = fs::remove_dir_all(&temp);
     fs::create_dir_all(&temp).map_err(|err| format!("Cannot create diagnostics temp: {err}"))?;
+    let mut state_json =
+        serde_json::to_value(&snapshot).map_err(|err| format!("Cannot serialize state: {err}"))?;
+    redact_json_secrets(&mut state_json);
+    let mut health_json = serde_json::to_value(crate::health::run_health_check()?)
+        .map_err(|err| format!("Cannot serialize health: {err}"))?;
+    redact_json_secrets(&mut health_json);
     fs::write(
         temp.join("state.json"),
-        serde_json::to_string_pretty(&snapshot)
+        serde_json::to_string_pretty(&state_json)
             .map_err(|err| format!("Cannot serialize state: {err}"))?,
     )
     .map_err(|err| format!("Cannot write diagnostic state: {err}"))?;
     fs::write(
         temp.join("health.json"),
-        serde_json::to_string_pretty(&crate::health::run_health_check()?)
+        serde_json::to_string_pretty(&health_json)
             .map_err(|err| format!("Cannot serialize health: {err}"))?,
     )
     .map_err(|err| format!("Cannot write health report: {err}"))?;
     for name in ["logs", "configs", "hosts"] {
         let source = store.dir.join(name);
         if source.exists() {
-            copy_dir(&source, &temp.join(name))?;
+            copy_dir_redacted(&source, &temp.join(name))?;
         }
     }
     compress_folder(&temp, &target)?;
     let _ = fs::remove_dir_all(&temp);
     Ok(target.display().to_string())
+}
+
+fn redact_json_secrets(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map.iter_mut() {
+                if is_secret_json_key(key) {
+                    *child = Value::String("[redacted]".to_string());
+                } else {
+                    redact_json_secrets(child);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_json_secrets(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_secret_json_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    [
+        "password",
+        "pass",
+        "pwd",
+        "token",
+        "secret",
+        "credential",
+        "api_key",
+        "apikey",
+        "private_key",
+        "privatekey",
+        "db_password",
+        "database_password",
+        "mysql_password",
+        "mysql_pwd",
+    ]
+    .iter()
+    .any(|needle| key.contains(needle))
+}
+
+fn copy_dir_redacted(source: &Path, target: &Path) -> AppResult<()> {
+    fs::create_dir_all(target)
+        .map_err(|err| format!("Cannot create {}: {err}", target.display()))?;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("Cannot read {}: {err}", source.display()))?
+    {
+        let entry = entry.map_err(|err| format!("Cannot read diagnostic entry: {err}"))?;
+        let path = entry.path();
+        let destination = target.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_redacted(&path, &destination)?;
+        } else if should_redact_text_file(&path) {
+            match fs::read_to_string(&path) {
+                Ok(content) => {
+                    fs::write(&destination, redact_secret_text(&content)).map_err(|err| {
+                        format!(
+                            "Cannot write redacted diagnostic {}: {err}",
+                            destination.display()
+                        )
+                    })?
+                }
+                Err(_) => {
+                    fs::copy(&path, &destination)
+                        .map_err(|err| format!("Cannot copy {}: {err}", path.display()))?;
+                }
+            }
+        } else {
+            fs::copy(&path, &destination)
+                .map_err(|err| format!("Cannot copy {}: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn should_redact_text_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if metadata.len() > 5 * 1024 * 1024 {
+        return false;
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    matches!(
+        extension.as_str(),
+        "conf" | "env" | "ini" | "json" | "log" | "php" | "txt" | "xml" | "yml" | "yaml"
+    )
+}
+
+fn redact_secret_text(content: &str) -> String {
+    content
+        .lines()
+        .map(|line| {
+            let lower = line.to_ascii_lowercase();
+            if [
+                "password",
+                "passwd",
+                "pwd",
+                "secret",
+                "token",
+                "api_key",
+                "apikey",
+                "private_key",
+                "credential",
+            ]
+            .iter()
+            .any(|needle| lower.contains(needle))
+            {
+                redact_secret_line(line)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn redact_secret_line(line: &str) -> String {
+    for separator in ["=>", "=", ":", " "] {
+        if let Some(index) = line.find(separator) {
+            let value_start = index + separator.len();
+            let spacing = line[value_start..]
+                .chars()
+                .take_while(|character| character.is_whitespace())
+                .collect::<String>();
+            return format!("{}{}[redacted]", &line[..value_start], spacing);
+        }
+    }
+    "[redacted]".to_string()
 }
 
 pub fn diagnose_ssl(domain: String) -> AppResult<SslDiagnostic> {
@@ -1737,10 +2104,16 @@ fn extract_zip_safe(source: &Path, target: &Path) -> AppResult<()> {
     let target_root = target
         .canonicalize()
         .unwrap_or_else(|_| target.to_path_buf());
+    let mut unpacked_bytes = 0_u64;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err("Archive contains too many entries.".to_string());
+    }
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
             .map_err(|err| format!("Cannot read zip entry: {err}"))?;
+        unpacked_bytes = unpacked_bytes.saturating_add(entry.size());
+        ensure_archive_budget(index + 1, unpacked_bytes)?;
         let Some(safe_name) = entry.enclosed_name().map(|path| path.to_path_buf()) else {
             continue;
         };
@@ -1793,10 +2166,22 @@ fn list_tar_entries(source: &Path, gzip: bool) -> AppResult<Vec<ArchiveEntry>> {
 
 fn collect_tar_entries<R: Read>(mut archive: TarArchive<R>) -> AppResult<Vec<ArchiveEntry>> {
     let mut entries = Vec::new();
+    let mut unpacked_bytes = 0_u64;
     for entry in archive
         .entries()
         .map_err(|err| format!("Cannot read tar entries: {err}"))?
+        .enumerate()
     {
+        let (index, entry) = entry;
+        unpacked_bytes = unpacked_bytes.saturating_add(
+            entry
+                .as_ref()
+                .map_err(|err| format!("Cannot read tar entry: {err}"))?
+                .header()
+                .size()
+                .unwrap_or(0),
+        );
+        ensure_archive_budget(index + 1, unpacked_bytes)?;
         let entry = entry.map_err(|err| format!("Cannot read tar entry: {err}"))?;
         let path = entry
             .path()
@@ -1822,11 +2207,19 @@ fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> App
     let target_root = target
         .canonicalize()
         .unwrap_or_else(|_| target.to_path_buf());
-    for entry in archive
+    let mut unpacked_bytes = 0_u64;
+    for (index, entry) in archive
         .entries()
         .map_err(|err| format!("Cannot read tar entries: {err}"))?
+        .enumerate()
     {
         let mut entry = entry.map_err(|err| format!("Cannot read tar entry: {err}"))?;
+        unpacked_bytes = unpacked_bytes.saturating_add(entry.header().size().unwrap_or(0));
+        ensure_archive_budget(index + 1, unpacked_bytes)?;
+        let entry_type = entry.header().entry_type();
+        if !(entry_type.is_file() || entry_type.is_dir()) {
+            return Err("Archive contains unsupported links or special files.".to_string());
+        }
         let path = entry
             .path()
             .map_err(|err| format!("Cannot read tar entry path: {err}"))?
@@ -1849,6 +2242,16 @@ fn unpack_tar_entries<R: Read>(mut archive: TarArchive<R>, target: &Path) -> App
         entry
             .unpack(&destination)
             .map_err(|err| format!("Cannot unpack {}: {err}", destination.display()))?;
+    }
+    Ok(())
+}
+
+fn ensure_archive_budget(entries: usize, unpacked_bytes: u64) -> AppResult<()> {
+    if entries > MAX_ARCHIVE_ENTRIES {
+        return Err("Archive contains too many entries.".to_string());
+    }
+    if unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
+        return Err("Archive expands beyond the 2 GB safety limit.".to_string());
     }
     Ok(())
 }
@@ -2165,8 +2568,8 @@ fn allowed_text_path(path: String) -> AppResult<PathBuf> {
     if !target.is_absolute() {
         return Err("Config path must be absolute.".to_string());
     }
-    let allowed_root = store.dir.canonicalize().unwrap_or(store.dir.clone());
-    let canonical = target.canonicalize().unwrap_or(target.clone());
+    let allowed_root = canonicalize_for_authorization(&store.dir)?;
+    let canonical = canonicalize_for_authorization(&target)?;
     if !canonical.starts_with(&allowed_root) {
         return Err("Config editor can only edit LocalStack Pro data files.".to_string());
     }
@@ -2191,7 +2594,7 @@ fn allowed_workspace_path(path: String) -> AppResult<PathBuf> {
     if !target.is_absolute() {
         return Err("Path must be absolute.".to_string());
     }
-    let canonical = target.canonicalize().unwrap_or(target.clone());
+    let canonical = canonicalize_for_authorization(&target)?;
     let mut roots = vec![
         store.dir.clone(),
         PathBuf::from(&snapshot.settings.projects_folder),
@@ -2205,11 +2608,37 @@ fn allowed_workspace_path(path: String) -> AppResult<PathBuf> {
             .map(|host| PathBuf::from(&host.root_folder)),
     );
     let allowed = roots.into_iter().any(|root| {
-        let root = root.canonicalize().unwrap_or(root);
+        let root = canonicalize_for_authorization(&root).unwrap_or(root);
         canonical.starts_with(root)
     });
     if !allowed {
         return Err("File manager can only access LocalStack Pro project, service, backup and data folders.".to_string());
+    }
+    Ok(canonical)
+}
+
+fn canonicalize_for_authorization(path: &Path) -> AppResult<PathBuf> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Ok(canonical);
+    }
+
+    let mut unresolved = Vec::new();
+    let mut existing = path;
+    while !existing.exists() {
+        let name = existing
+            .file_name()
+            .ok_or_else(|| format!("Cannot resolve an existing parent for {}.", path.display()))?;
+        unresolved.push(name.to_os_string());
+        existing = existing
+            .parent()
+            .ok_or_else(|| format!("Cannot resolve an existing parent for {}.", path.display()))?;
+    }
+
+    let mut canonical = existing
+        .canonicalize()
+        .map_err(|err| format!("Cannot resolve {}: {err}", existing.display()))?;
+    for segment in unresolved.iter().rev() {
+        canonical.push(segment);
     }
     Ok(canonical)
 }
@@ -2271,8 +2700,14 @@ fn decode_text(bytes: Vec<u8>, encoding: &str) -> AppResult<(String, String)> {
                 "utf-8-bom".to_string(),
             ))
         }
-        "utf-16le" => decode_utf16(&bytes, true).map(|content| (content, "utf-16le".to_string())),
-        "utf-16be" => decode_utf16(&bytes, false).map(|content| (content, "utf-16be".to_string())),
+        "utf-16le" => {
+            let slice = bytes.strip_prefix(&[0xFF, 0xFE]).unwrap_or(&bytes);
+            decode_utf16(slice, true).map(|content| (content, "utf-16le".to_string()))
+        }
+        "utf-16be" => {
+            let slice = bytes.strip_prefix(&[0xFE, 0xFF]).unwrap_or(&bytes);
+            decode_utf16(slice, false).map(|content| (content, "utf-16be".to_string()))
+        }
         _ => Err("Supported encodings: auto, utf-8, utf-8-bom, utf-16le, utf-16be.".to_string()),
     }
 }
@@ -2488,4 +2923,38 @@ fn process_name(pid: u32) -> Option<String> {
         .next()
         .and_then(|line| line.split(',').next())
         .map(|value| value.trim_matches('"').to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_json_and_text_secrets() {
+        let mut value = serde_json::json!({
+            "password": "secret",
+            "nested": { "token": "abc" },
+            "name": "LocalStack Pro"
+        });
+        redact_json_secrets(&mut value);
+        assert_eq!(value["password"], "[redacted]");
+        assert_eq!(value["nested"]["token"], "[redacted]");
+        assert_eq!(value["name"], "LocalStack Pro");
+
+        let text = "DB_PASSWORD=secret\napi_token: abc\nAPP_NAME=LocalStack";
+        let redacted = redact_secret_text(text);
+        assert!(redacted.contains("DB_PASSWORD=[redacted]"));
+        assert!(redacted.contains("api_token: [redacted]"));
+        assert!(redacted.contains("APP_NAME=LocalStack"));
+    }
+
+    #[test]
+    fn preserves_supported_text_encodings() {
+        let source = "LocalStack Pro - Привет";
+        for encoding in ["utf-8", "utf-8-bom", "utf-16le", "utf-16be"] {
+            let bytes = encode_text(source, encoding).expect("encoding should succeed");
+            let (decoded, _) = decode_text(bytes, encoding).expect("decoding should succeed");
+            assert_eq!(decoded, source, "{encoding}");
+        }
+    }
 }

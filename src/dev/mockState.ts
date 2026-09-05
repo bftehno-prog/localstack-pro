@@ -15,6 +15,7 @@ import type {
   SitePreview,
   SslDiagnostic
 } from "../ui/types";
+import { generatePassword } from "../ui/password";
 
 function nowIso() {
   return new Date().toISOString();
@@ -23,7 +24,7 @@ function nowIso() {
 export function createMockState(): AppSnapshot {
   return {
     appDataDir: "Tauri AppData",
-    system: { appVersion: "1.0.1", os: "Windows 11 Pro 23H2", uptimeSeconds: 8040, cpu: 12, memoryGb: 2.1, diskGb: 127 },
+    system: { appVersion: "1.0.5", os: "Windows 11 Pro 23H2", uptimeSeconds: 8040, cpu: 12, memoryGb: 2.1, diskGb: 127 },
     services: [
       service("apache", "Apache", "2.4.58", [80, 443], "C:\\LocalStack\\services\\apache\\bin\\httpd.exe"),
       service("nginx", "Nginx", "1.25.4", [8080, 8443], "C:\\LocalStack\\services\\nginx\\nginx.exe"),
@@ -33,7 +34,7 @@ export function createMockState(): AppSnapshot {
       service("redis", "Redis", "7.2.4", [6379], "C:\\LocalStack\\services\\redis\\redis-server.exe"),
       service("mailpit", "Mailpit", "1.20.1", [1025, 8025], "C:\\LocalStack\\services\\mailpit\\mailpit.exe"),
       service("node-proxy", "Node.js Proxy", "20.11.1", [3000], "C:\\Program Files\\nodejs\\node.exe"),
-      service("dns-helper", "DNS Helper", "1.0.1", [5353], "C:\\LocalStack\\services\\dns-helper\\dns-helper.exe")
+      service("dns-helper", "DNS Helper", "1.0.4", [5353], "C:\\LocalStack\\services\\dns-helper\\dns-helper.exe")
     ],
     hosts: [
       host("shop.test", "C:\\Projects\\shop", "8.1.23", true, "Production", "running", ["ecommerce", "main"]),
@@ -112,6 +113,8 @@ export function createMockState(): AppSnapshot {
       showNotifications: true,
       playSound: false,
       checkUpdatesOnStartup: true,
+      autoUpdateEnvironment: false,
+      autoUpdateCms: false,
       telemetry: false,
       uiDensity: "Comfortable",
       theme: "Wet Asphalt",
@@ -173,7 +176,7 @@ function host(domain: string, rootFolder: string, phpVersion: string, ssl: boole
 }
 
 function db(name: string, description: string, engine: DatabaseInfo["engine"], version: string, user: string, port: number, status: ServiceInfo["status"], sizeMb: number): DatabaseInfo {
-  return { id: name, name, description, engine, version, schemas: 4, user, password: "localstack", port, status, sizeMb, createdAt: nowIso() };
+  return { id: name, name, description, engine, version, schemas: 4, user, password: generatePassword(), port, status, sizeMb, createdAt: nowIso() };
 }
 
 function log(level: "INFO" | "WARNING" | "ERROR" | "DEBUG", service: string, message: string) {
@@ -228,7 +231,7 @@ export function mockSitePreview(hostId: string): SitePreview {
 }
 
 export function mockReleaseInfo(): ReleaseInfo {
-  return { currentVersion: "1.0.1", latestVersion: "1.0.1", updateAvailable: false, url: "" };
+  return { currentVersion: "1.0.5", latestVersion: "1.0.5", updateAvailable: false, url: "" };
 }
 
 export function mockSslDiagnostic(domain: string): SslDiagnostic {

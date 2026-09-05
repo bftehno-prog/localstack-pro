@@ -9,6 +9,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$tauriConfig = Get-Content -LiteralPath "src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json
+$releaseVersion = $tauriConfig.version
+$installerFileName = "LocalStack Pro_${releaseVersion}_x64-setup.exe"
 
 function Find-SignTool {
   if ($SignToolPath -and (Test-Path -LiteralPath $SignToolPath)) {
@@ -40,7 +43,7 @@ function Resolve-TargetFiles {
 
   $targets = @(
     "src-tauri\target\release\localstack-pro.exe",
-    "src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.1_x64-setup.exe"
+    (Join-Path "src-tauri\target\release\bundle\nsis" $installerFileName)
   )
 
   return $targets | Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object { (Resolve-Path -LiteralPath $_).Path }
@@ -97,10 +100,10 @@ foreach ($file in $files) {
 
 $releaseDir = "release"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-$installer = "src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.1_x64-setup.exe"
+$installer = Join-Path "src-tauri\target\release\bundle\nsis" $installerFileName
 if (Test-Path -LiteralPath $installer) {
-  Copy-Item -LiteralPath $installer -Destination (Join-Path $releaseDir "LocalStack Pro_1.0.1_x64-setup.exe") -Force
-  Write-Host "Release installer copied to release\LocalStack Pro_1.0.1_x64-setup.exe"
+  Copy-Item -LiteralPath $installer -Destination (Join-Path $releaseDir $installerFileName) -Force
+  Write-Host "Release installer copied to release\$installerFileName"
 }
 
 foreach ($file in $files) {

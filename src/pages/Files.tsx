@@ -864,14 +864,14 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
       try {
         const fresh = await api.readFileWithEncoding(openedFile.path, encoding);
         if (fresh.modified && openedFile.modified && fresh.modified !== openedFile.modified) {
-          setEditorMessage("File changed on disk.");
+          setEditorMessage(String(t("File changed on disk.")));
         }
       } catch {
-        setEditorMessage("File is no longer available.");
+        setEditorMessage(String(t("File is no longer available.")));
       }
-    }, 5000);
+    }, 15000);
     return () => window.clearInterval(timer);
-  }, [dirty, editorOpen, encoding, openedFile]);
+  }, [dirty, editorOpen, encoding, openedFile, t]);
 
   useEffect(() => {
     if (!autosave || !dirty || !openedFile || openedFile.readOnly) return;
@@ -885,9 +885,9 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
         <div><h1>{t("File Manager")}</h1><p>{t("Project files, configs, logs and backups")}</p></div>
         <div className="toolbar files-main-toolbar">
           <input className="toolbar-input" value={nameInput} onChange={(event) => setNameInput(event.target.value)} placeholder={String(t("File or folder name"))} />
-          <Button icon={<FolderPlus size={16} />} disabled={!nameInput.trim()} onClick={() => void createFolder()}>New Folder</Button>
-          <Button icon={<FilePlus size={16} />} disabled={!nameInput.trim()} onClick={() => void createFile()}>New File</Button>
-          <Button icon={<Upload size={16} />} onClick={() => void uploadIntoPane()}>Upload</Button>
+          <Button icon={<FolderPlus size={16} />} disabled={!nameInput.trim()} onClick={() => void createFolder()}>{t("New Folder")}</Button>
+          <Button icon={<FilePlus size={16} />} disabled={!nameInput.trim()} onClick={() => void createFile()}>{t("New File")}</Button>
+          <Button icon={<Upload size={16} />} onClick={() => void uploadIntoPane()}>{t("Upload")}</Button>
           <Button onClick={() => toggleFavorite()}>{favorites.includes(pane.folder) ? "Unfavorite" : "Favorite"}</Button>
         </div>
       </div>
@@ -923,7 +923,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <option value="R">Read</option>
               <option value="RX">Read/Execute</option>
               <option value="M">Modify</option>
-              <option value="F">Full</option>
+              <option value="F">{t("Full")}</option>
             </select>
             <label className="check-line"><input type="checkbox" checked={aclInherit} onChange={(event) => setAclInherit(event.target.checked)} /> Inherit</label>
             <Button disabled={!selectedEntries.length} icon={<Shield size={16} />} onClick={() => void applyAcl()}>Apply ACL</Button>
@@ -1103,7 +1103,7 @@ export function FilesPage({ state, run }: { state: AppSnapshot; run: AppRun }) {
               <Button icon={<GitCompare size={16} />} disabled={editorTabs.length < 2} onClick={compareTabs}>Diff</Button>
               <Button onClick={formatCurrentFile}>Format</Button>
             </div>
-            <Suspense fallback={<div className="empty-row">Loading editor...</div>}>
+            <Suspense fallback={<div className="empty-row">{t("Loading editor...")}</div>}>
               <CodeMirror
                 value={content}
                 height="calc(100vh - 260px)"

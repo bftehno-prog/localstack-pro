@@ -8,15 +8,29 @@ The default visual mode is the Wet Asphalt theme with a lime LocalStack Pro logo
 
 ## Кратко по-русски
 
-LocalStack Pro — Windows desktop-приложение для локальной веб-разработки. Оно управляет реальными сервисами Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy и DNS Helper, создает хосты `.test`, синхронизирует Windows hosts-файл, генерирует SSL-сертификаты, устанавливает CMS и дает двухпанельный файловый менеджер с редактором кода.
+LocalStack Pro — Windows desktop-приложение для локальной веб-разработки. Оно управляет реальными сервисами Apache, Nginx, PHP, MySQL, MariaDB, PostgreSQL, Redis, Mailpit, Node.js Proxy, Meilisearch, Docker Desktop и DNS Helper, создает хосты `.test`, синхронизирует Windows hosts-файл, генерирует SSL-сертификаты, устанавливает CMS и дает двухпанельный файловый менеджер с редактором кода.
 
-Основные изменения версии `1.0.1`:
+Основные изменения версии `1.0.5`:
 
 - приложение открывается сразу развернутым на весь экран;
 - установщик NSIS использует lime `app.ico`, branded `header.bmp`, `wizard-left.bmp`, кастомную welcome-страницу и такой же стиль в деинсталляторе;
 - вся документация доступна на русском и английском;
 - расширены переводы интерфейса при переключении языка на русский;
 - обновлен lime-логотип для приложения, установщика и tray-состояний.
+- устранены уязвимости в транзитивных npm-зависимостях;
+- подпись и копирование установщика используют фактическую версию из `tauri.conf.json`;
+- файловый менеджер корректно разрешает существующие родительские пути перед операцией, включая junction/symlink-пути;
+- добавлены проверяемые тесты для редактирования файлов и редактирования диагностических данных.
+- исправлены светлые углы компактного окна в системном трее;
+- обновлена двуязычная встроенная документация в стиле темы «Мокрый асфальт»;
+- оптимизированы фоновые обновления системных метрик и логов.
+- SSL-хосты теперь открываются по HTTPS с автоматическим доверием LocalStack CA в хранилище текущего пользователя Windows.
+- состояние приложения сохраняется атомарно с защищенной резервной копией;
+- пароли баз данных в `state.json` защищаются DPAPI текущего пользователя Windows и не сохраняются открытым текстом;
+- MySQL-пользователи баз данных ограничены `localhost`, `127.0.0.1` и `::1`;
+- обновлены Tauri и его транзитивные зависимости, устранены известные уязвимости `quick-xml`;
+- ускорен отклик независимых команд интерфейса, а старт сервисов теперь быстрее возвращает прогресс выполнения;
+- архивы CMS и файлового менеджера ограничены по числу файлов и распакованному размеру.
 
 ## Stack
 
@@ -50,8 +64,8 @@ npm run tauri:build
 Build outputs:
 
 - App executable: `src-tauri\target\release\localstack-pro.exe`
-- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.1_x64-setup.exe`
-- Signed convenience copy: `release\LocalStack Pro_1.0.1_x64-setup.exe`
+- Windows installer: `src-tauri\target\release\bundle\nsis\LocalStack Pro_1.0.5_x64-setup.exe`
+- Signed convenience copy: `release\LocalStack Pro_1.0.5_x64-setup.exe`
 
 The installer uses these branded NSIS assets:
 
@@ -140,6 +154,10 @@ The Services page includes:
 
 - `Detect`: finds native binaries installed through winget, PATH, Program Files, and common Windows locations.
 - `Install Missing`: installs supported missing dependencies through winget.
+- `Install` and `Update` on each service: download or update a supported runtime. A running service must be stopped before its files can be replaced.
+- Meilisearch: downloaded from the official GitHub release into LocalStack Pro data and started on `127.0.0.1:7700` with a dedicated local data directory.
+- Docker Desktop: installed with `Docker.DockerDesktop` and controlled through the official `docker desktop start`, `stop` and `restart` commands.
+- Project Tools: select a Node.js host to detect, install and update Drizzle ORM or TipTap in its `package.json` project.
 - Per-service `Install`: installs or detects one selected service dependency.
 
 Automatic dependency IDs:
@@ -163,6 +181,8 @@ Default services:
 - Redis
 - Mailpit
 - Node.js Proxy
+- Meilisearch
+- Docker Desktop
 - DNS Helper
 
 If a configured port is already occupied, LocalStack Pro refuses to start the service and reports the port conflict.
@@ -382,6 +402,14 @@ Completed checks:
 npm run build
 cargo check
 npm run tauri:build
+```
+
+Полная локальная проверка перед выпуском:
+
+```powershell
+npm run verify
+npm run audit:responsive
+npm run audit:themes
 ```
 
 The NSIS installer was successfully generated.

@@ -88,11 +88,8 @@ async function startServer() {
   if (await isServerReady(`${baseUrl}/`)) {
     return { pid: undefined, kill: () => undefined };
   }
-  const command = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "npm";
-  const args = process.platform === "win32"
-    ? ["/d", "/s", "/c", `npm run dev -- --host 127.0.0.1 --port ${port}`]
-    : ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port)];
-  const child = spawn(command, args, {
+  const vite = path.join(root, "node_modules", "vite", "bin", "vite.js");
+  const child = spawn(process.execPath, [vite, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, BROWSER: "none" }

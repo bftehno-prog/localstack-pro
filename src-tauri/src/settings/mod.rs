@@ -114,6 +114,8 @@ pub fn reset_settings() -> AppResult<crate::state::AppSnapshot> {
     snapshot.settings.show_notifications = true;
     snapshot.settings.play_sound = false;
     snapshot.settings.check_updates_on_startup = true;
+    snapshot.settings.auto_update_environment = false;
+    snapshot.settings.auto_update_cms = false;
     snapshot.settings.telemetry = false;
     snapshot.settings.ui_density = "Comfortable".to_string();
     snapshot.settings.theme = "Wet Asphalt".to_string();
@@ -333,9 +335,17 @@ pub fn open_host(host_id: String) -> AppResult<crate::state::AppSnapshot> {
             service_name, service_name, host.domain
         ));
     }
+    if host.ssl {
+        if !host_certificate_files_ready(&store, &snapshot, &host.domain) {
+            crate::ssl::generate_certificate(
+                host.domain.clone(),
+                vec![host.domain.clone(), format!("www.{}", host.domain)],
+            )?;
+        }
+        crate::ssl::ensure_host_certificate_trusted(&host.domain)?;
+    }
     ensure_node_proxy_service(&store, &snapshot, &host)?;
-    let cert_ready = !host.ssl || host_certificate_files_ready(&store, &snapshot, &host.domain);
-    let candidates = host_open_candidates(&host, cert_ready);
+    let candidates = host_open_candidates(&host);
     let candidate_ready =
         |candidate_scheme: &str, candidate_host: &str, candidate_port: u16| -> bool {
             if is_node_host(&host) && candidate_scheme == "https" {
@@ -561,16 +571,13 @@ fn database_service_id(engine: &str) -> &'static str {
     }
 }
 
-fn host_open_candidates(
-    host: &crate::state::HostInfo,
-    cert_ready: bool,
-) -> Vec<(&'static str, String, u16)> {
+fn host_open_candidates(host: &crate::state::HostInfo) -> Vec<(&'static str, String, u16)> {
     let mut candidates = Vec::new();
-    candidates.push(("http", host.domain.clone(), host.http_port));
-    if host.ssl && cert_ready {
+    if host.ssl {
         candidates.push(("https", host.domain.clone(), host.https_port));
+    } else {
+        candidates.push(("http", host.domain.clone(), host.http_port));
     }
-    candidates.dedup();
     candidates
 }
 
@@ -806,6 +813,7 @@ $cfg['TempDir'] = __DIR__ . '/tmp';
 }
 
 fn download_tool(name: &str, url: &str, target: &Path) -> AppResult<()> {
+    ensure_allowed_tool_download_url(url)?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| format!("Cannot create tools folder {}: {err}", parent.display()))?;
@@ -986,6 +994,7 @@ fn should_skip_backup_path(path: &Path) -> bool {
 }
 
 fn download_archive(name: &str, url: &str, archive: &Path, extract: &Path) -> AppResult<()> {
+    ensure_allowed_tool_download_url(url)?;
     if let Some(parent) = archive.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             format!(
@@ -1025,6 +1034,35 @@ fn download_archive(name: &str, url: &str, archive: &Path, extract: &Path) -> Ap
         return Err(format!("Cannot download or extract {name}. {detail}"));
     }
     Ok(())
+}
+
+fn ensure_allowed_tool_download_url(url: &str) -> AppResult<()> {
+    ensure_https_url_host(
+        url,
+        &[
+            "www.adminer.org",
+            "www.phpmyadmin.net",
+            "github.com",
+            "codeload.github.com",
+        ],
+    )
+}
+
+fn ensure_https_url_host(url: &str, allowed_hosts: &[&str]) -> AppResult<()> {
+    let lower = url.trim().to_ascii_lowercase();
+    if !lower.starts_with("https://") {
+        return Err("Download URL must use HTTPS.".to_string());
+    }
+    let host = lower
+        .trim_start_matches("https://")
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    if allowed_hosts.contains(&host) {
+        Ok(())
+    } else {
+        Err(format!("Download host is not allowed: {host}"))
+    }
 }
 
 fn extracted_tool_root(extract: &Path, marker: &str) -> AppResult<PathBuf> {
