@@ -5,6 +5,7 @@ import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { api } from "../ui/api";
 import { pickFolder } from "../ui/dialogs";
+import { generatePassword } from "../ui/password";
 import type { AppRun, AppSnapshot, CmsInstallRequest, CmsTemplate, DatabaseInfo, HostInfo, ProjectInspection } from "../ui/types";
 
 export function CmsPage({
@@ -480,11 +481,4 @@ function sanitizeDatabaseName(value: string) {
     .replace(/[^a-z0-9_]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_{2,}/g, "_");
-}
-
-function generatePassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }

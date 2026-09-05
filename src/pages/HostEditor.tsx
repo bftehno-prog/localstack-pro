@@ -6,6 +6,7 @@ import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { useT } from "../ui/i18n";
+import { generatePassword } from "../ui/password";
 import { hostUrl } from "./Overview";
 
 export function HostEditorPage({
@@ -441,13 +442,6 @@ function normalizeDatabaseName(value: string) {
     .replace(/[^a-z0-9_]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_{2,}/g, "_") || "local_db";
-}
-
-function generatePassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
 function projectRootForDomain(projectsFolder: string, domain: string) {

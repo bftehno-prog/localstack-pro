@@ -8,10 +8,11 @@ import { Panel } from "../components/Panel";
 import { StatusDot } from "../components/StatusDot";
 import { TopServices } from "../components/TopServices";
 import { useT } from "../ui/i18n";
+import { generatePassword } from "../ui/password";
 
 export function DatabasePage({ state, run }: { state: AppSnapshot; run: AppRun }) {
   const t = useT();
-  const fallbackDb: DatabaseInfo = { id: "shop", name: "shop", description: "Main e-commerce DB", engine: "MySQL", version: "8.0.36", schemas: 0, user: "shop_user", password: "localstack", port: 3306, status: "stopped", sizeMb: 0, createdAt: new Date().toISOString() };
+  const fallbackDb: DatabaseInfo = { id: "shop", name: "shop", description: "Main e-commerce DB", engine: "MySQL", version: "8.0.36", schemas: 0, user: "shop_user", password: generatePassword(), port: 3306, status: "stopped", sizeMb: 0, createdAt: new Date().toISOString() };
   const [selected, setSelected] = useState<DatabaseInfo>(state.databases[0] ?? fallbackDb);
   const [preset, setPreset] = useState<DatabaseInfo["engine"]>("MySQL");
   const [newName, setNewName] = useState("site_db");
@@ -147,11 +148,4 @@ function validateDatabaseForm(name: string, user: string, password: string, data
     return "Database with this name already exists.";
   }
   return "";
-}
-
-function generatePassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }

@@ -10,6 +10,7 @@ import { hostUrl } from "./Overview";
 import { hostReadinessScore, readinessClass, readinessLabel } from "../ui/readiness";
 import { useStoredBoolean, useStoredList } from "../ui/preferences";
 import { useT } from "../ui/i18n";
+import { generatePassword } from "../ui/password";
 
 type HostHistoryEntry = {
   id: string;
@@ -181,6 +182,7 @@ export function HostsPage({
   const createWizardHost = async () => {
     const slug = wizardDomain.split(".")[0].replace(/[^a-z0-9_-]+/gi, "").toLowerCase() || "site";
     const now = new Date().toISOString();
+    const databasePassword = generatePassword();
     const next: HostInfo = {
       id: wizardDomain.trim().toLowerCase(),
       domain: wizardDomain.trim().toLowerCase(),
@@ -200,7 +202,7 @@ export function HostsPage({
         APP_URL: `${wizardSsl ? "https" : "http"}://${wizardDomain.trim().toLowerCase()}`,
         DB_DATABASE: wizardDatabase.trim(),
         DB_USERNAME: `${slug}_user`,
-        DB_PASSWORD: "localstack"
+        DB_PASSWORD: databasePassword
       },
       rewriteRules: "",
       notes: `${wizardType} host created by Host Wizard.`,
@@ -218,7 +220,7 @@ export function HostsPage({
         version: "8.0.36",
         schemas: 1,
         user: `${slug}_user`,
-        password: "localstack",
+        password: databasePassword,
         port: 3306,
         status: "stopped",
         sizeMb: 0,

@@ -15,6 +15,7 @@ import type {
   SitePreview,
   SslDiagnostic
 } from "../ui/types";
+import { generatePassword } from "../ui/password";
 
 function nowIso() {
   return new Date().toISOString();
@@ -175,7 +176,7 @@ function host(domain: string, rootFolder: string, phpVersion: string, ssl: boole
 }
 
 function db(name: string, description: string, engine: DatabaseInfo["engine"], version: string, user: string, port: number, status: ServiceInfo["status"], sizeMb: number): DatabaseInfo {
-  return { id: name, name, description, engine, version, schemas: 4, user, password: "localstack", port, status, sizeMb, createdAt: nowIso() };
+  return { id: name, name, description, engine, version, schemas: 4, user, password: generatePassword(), port, status, sizeMb, createdAt: nowIso() };
 }
 
 function log(level: "INFO" | "WARNING" | "ERROR" | "DEBUG", service: string, message: string) {
